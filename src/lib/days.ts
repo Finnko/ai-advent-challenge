@@ -2,13 +2,19 @@ export const DAYS = [
   {
     path: '/day1',
     label: 'Day 1',
-    title: 'First LLM call',
-    description: 'Send a prompt to DeepSeek, get a plain text answer.',
+    title: 'Первый вызов LLM',
+    description: 'Отправь промпт в DeepSeek и получи текстовый ответ.',
   },
   {
     path: '/day2',
     label: 'Day 2',
-    title: 'Response format',
-    description: 'Compare free-form vs constrained (JSON) answers.',
+    title: 'Формат ответа',
+    description: 'Сравни свободный и ограниченный (JSON) ответы.',
+  },
+  {
+    path: '/day3',
+    label: 'Day 3',
+    title: 'Стратегии промптов',
+    description: 'Одна задача решается четырьмя способами — сравни точность.',
   },
 ] as const

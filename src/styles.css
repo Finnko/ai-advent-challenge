@@ -171,7 +171,6 @@ pre code {
     0 1px 0 var(--inset-glint) inset,
     0 22px 44px rgba(30, 90, 72, 0.1),
     0 6px 18px rgba(23, 58, 64, 0.08);
-  backdrop-filter: blur(4px);
 }
 
 .feature-card {
@@ -212,7 +211,6 @@ pre code {
     0 1px 0 var(--inset-glint) inset,
     0 18px 34px rgba(30, 90, 72, 0.1),
     0 4px 14px rgba(23, 58, 64, 0.06);
-  backdrop-filter: blur(4px);
 }
 
 .demo-panel {
