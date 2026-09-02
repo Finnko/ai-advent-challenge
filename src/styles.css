@@ -183,7 +183,6 @@ pre code {
 }
 
 .feature-card:hover {
-  transform: translateY(-2px);
   border-color: color-mix(in oklab, var(--lagoon-deep) 35%, var(--line));
 }
 
@@ -297,14 +296,12 @@ pre code {
 }
 
 .demo-button:hover {
-  transform: translateY(-1px);
   background: color-mix(in oklab, var(--lagoon) 30%, var(--surface-strong));
 }
 
 .demo-button:disabled {
   cursor: not-allowed;
   opacity: 0.55;
-  transform: none;
 }
 
 .demo-button-secondary {
