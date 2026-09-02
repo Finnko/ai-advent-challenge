@@ -62,10 +62,13 @@ export default function ThemeToggle() {
     window.localStorage.setItem('theme', nextMode)
   }
 
+  const modeName =
+    mode === 'auto' ? 'system' : mode === 'dark' ? 'dark' : 'light'
+
   const label =
     mode === 'auto'
-      ? 'Theme mode: auto (system). Click to switch to light mode.'
-      : `Theme mode: ${mode}. Click to switch mode.`
+      ? 'Theme mode: system. Click to switch to light mode.'
+      : `Theme mode: ${modeName}. Click to switch mode.`
 
   return (
     <button
@@ -75,7 +78,7 @@ export default function ThemeToggle() {
       title={label}
       className="rounded-full border border-[var(--chip-line)] bg-[var(--chip-bg)] px-3 py-1.5 text-sm font-semibold text-[var(--sea-ink)] shadow-[0_8px_22px_rgba(30,90,72,0.08)] transition-colors hover:border-[color-mix(in_oklab,var(--lagoon-deep)_40%,var(--chip-line))]"
     >
-      {mode === 'auto' ? 'Auto' : mode === 'dark' ? 'Dark' : 'Light'}
+      {mode === 'auto' ? 'System' : mode === 'dark' ? 'Dark' : 'Light'}
     </button>
   )
 }

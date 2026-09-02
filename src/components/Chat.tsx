@@ -61,8 +61,8 @@ export default function Chat({ onSend, renderAssistant, placeholder }: ChatProps
                     </pre>
                   )}
                   <p className="demo-muted mt-1.5 text-xs">
-                    {message.chars} chars · {message.words} words
-                    {message.usage ? ` · ${message.usage.completion_tokens} tokens` : ''}
+                    {message.chars} симв. · {message.words} слов
+                    {message.usage ? ` · ${message.usage.completion_tokens} ток.` : ''}
                   </p>
                 </div>
               </div>
@@ -88,7 +88,7 @@ export default function Chat({ onSend, renderAssistant, placeholder }: ChatProps
         <textarea
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
-          placeholder={placeholder ?? 'Ask the LLM anything…'}
+          placeholder={placeholder ?? 'Спроси у LLM что угодно…'}
           className="demo-textarea min-h-0"
           rows={2}
           disabled={loading}
@@ -99,7 +99,7 @@ export default function Chat({ onSend, renderAssistant, placeholder }: ChatProps
             className="demo-button"
             disabled={loading || prompt.trim().length === 0}
           >
-            {loading ? 'Thinking…' : 'Send'}
+            {loading ? 'Думает…' : 'Отправить'}
           </button>
         </div>
       </form>
@@ -118,7 +118,7 @@ function toMessage(
 
 function TypingDots() {
   return (
-    <div className="flex items-center gap-1.5 py-3" aria-label="Waiting for response">
+    <div className="flex items-center gap-1.5 py-3" aria-label="Ожидание ответа">
       {[0, 1, 2].map((i) => (
         <span
           key={i}

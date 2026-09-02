@@ -16,10 +16,10 @@ function Day2() {
         <div className="flex min-h-0 flex-1 flex-col">
           <header className="mb-4">
             <p className="island-kicker mb-2">AI Advent Challenge · Day 2</p>
-            <h1 className="demo-title mb-2">Response format</h1>
+            <h1 className="demo-title mb-2">Формат ответа</h1>
             <p className="demo-muted m-0 max-w-2xl text-sm">
-              Send the same prompt in both tabs: plain request vs explicit format + length +
-              completion constraints. Compare the answers.
+              Отправь один и тот же промпт в обе вкладки: простой запрос против
+              явного формата + лимита длины + ограничения завершения. Сравни ответы.
             </p>
           </header>
 
@@ -44,13 +44,13 @@ function Day2() {
             <div className={`min-h-0 flex-1 ${active === 'free' ? 'flex flex-col' : 'hidden'}`}>
               <Chat
                 onSend={(prompt) => chat({ data: { prompt, mode: 'free' } })}
-                placeholder="Send the same prompt here and in the Constrained tab…"
+                placeholder="Отправь один и тот же промпт сюда и во вкладку «С ограничениями»…"
               />
             </div>
             <div className={`min-h-0 flex-1 ${active === 'constrained' ? 'flex flex-col' : 'hidden'}`}>
               <Chat
                 onSend={(prompt) => chat({ data: { prompt, mode: 'constrained' } })}
-                placeholder="Send the same prompt here and in the Free form tab…"
+                placeholder="Отправь один и тот же промпт сюда и во вкладку «Свободная форма»…"
                 renderAssistant={(message) => <ConstrainedMessage message={message} />}
               />
             </div>
@@ -58,8 +58,8 @@ function Day2() {
         </div>
 
         <aside className="demo-panel min-h-0 shrink-0 p-4 lg:w-[340px] lg:overflow-y-auto">
-          <h2 className="demo-section-title mb-1">What was sent</h2>
-          <p className="demo-muted m-0 mb-3 text-xs">Request config for the active tab</p>
+          <h2 className="demo-section-title mb-1">Что было отправлено</h2>
+          <p className="demo-muted m-0 mb-3 text-xs">Конфигурация запроса активной вкладки</p>
           <Inspector mode={active} />
         </aside>
       </div>
@@ -104,7 +104,8 @@ function ConstrainedMessage({ message }: { message: ChatMessage }) {
     return (
       <div className="demo-alert">
         <p className="m-0 text-sm">
-          The model returned an empty response — a known JSON mode quirk. Try again.
+          Модель вернула пустой ответ — известная особенность JSON-режима.
+          Попробуй ещё раз.
         </p>
       </div>
     )
@@ -116,11 +117,11 @@ function ConstrainedMessage({ message }: { message: ChatMessage }) {
     return (
       <div className="demo-alert demo-alert-danger">
         <p className="m-0 mb-2 text-sm font-semibold">
-          Response is not valid JSON
+          Ответ — не валидный JSON
         </p>
         <pre className="m-0 whitespace-pre-wrap text-xs">{message.content}</pre>
         <p className="m-0 mt-2 text-xs opacity-80">
-          Possibly cut off by the token budget. Try again.
+          Возможно, ответ обрезан лимитом токенов. Попробуй ещё раз.
         </p>
       </div>
     )
@@ -145,7 +146,7 @@ function ConstrainedMessage({ message }: { message: ChatMessage }) {
       )}
       <details className="mt-3">
         <summary className="cursor-pointer select-none text-xs text-[var(--sea-ink-soft)]">
-          Raw response
+          Сырой ответ
         </summary>
         <pre className="mt-2 max-h-64 overflow-y-auto whitespace-pre-wrap rounded-lg border border-[var(--line)] bg-[color-mix(in_oklab,var(--chip-bg)_85%,transparent)] p-2 text-xs">
           {message.content}
