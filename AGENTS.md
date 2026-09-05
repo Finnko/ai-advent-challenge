@@ -15,8 +15,10 @@ Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 
 - API key and model are read server-side from `process.env` (`DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL`). **The key must never ship to the browser** — no `VITE_`-prefixed key, no `import.meta.env` exposure.
 - `.env` is gitignored; `.env.example` is the committed template.
 - `chat.ts` exposes `callDeepSeek` (private) plus two server fns: `chat` (day1/day2 modes) and generic
-  `ask({ system, user, params? })` used by day3 to compose multi-step strategies on the client.
-  Client-safe prompt/task text (no env) belongs in `src/lib/day3.ts`, never in `chat.ts`.
+  `ask({ system, user, params? })` used by day3+ to compose multi-step strategies on the client.
+  `ask` params accept optional `temperature` (validated 0–2, sent only when given); `ChatResult`
+  returns `model` (from `DEEPSEEK_MODEL`). Client-safe prompt/task text (no env) belongs in
+  `src/lib/day3.ts` / `src/lib/day4.ts`, never in `chat.ts`.
 
 ## Commands
 
