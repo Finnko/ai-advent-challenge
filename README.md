@@ -19,6 +19,7 @@ npm run dev            # http://localhost:3000
 | -------------------- | ----------- | ------------------------------------------ |
 | `DEEPSEEK_API_KEY`   | да          | Ключ API DeepSeek                          |
 | `DEEPSEEK_MODEL`     | нет         | Модель (по умолчанию `deepseek-v4-flash`)  |
+| `HUGGING_FACE_TOKEN` | для Day 5   | Ключ Hugging Face (weak-модель через роутер) |
 
 `.env` в gitignore — ключ никогда не коммитится.
 
@@ -48,7 +49,7 @@ OpenAI-совместимый `chat/completions`, получить обычны�
 
 ### Как это устроено (Day 3)
 
-- `src/lib/chat.ts` — единственный LLM-слой: приватный `callDeepSeek(messages, params)` и два
+- `src/lib/chat.ts` — единственный LLM-слой: приватный `callCompletions(endpoint, apiKey, …)` и server fn `ask`
   server fn: `chat` (day1/day2) и generic `ask({ system, user, params? })` для композиции шагов.
 - `src/lib/day3.ts` — client-safe данные: задания с эталонами, системные промпты всех стратегий,
   текст судьи; никаких env/секретов.
@@ -79,14 +80,33 @@ OpenAI-совместимый `chat/completions`, получить обычны�
 - `src/routes/_layout/day4.tsx` — оркестрация: три параллельных `ask()` с разной `temperature`;
   два источника запроса (готовая задача или свой промпт), каждый новый запуск сбрасывает результаты.
 
+## Day 5 — версии моделей
+
+Страница `/day5`: **один и тот же запрос — продуктовое ТЗ интернет-магазина — уходит в три модели
+разного уровня**: слабую (`Qwen/Qwen3-8B` через Hugging Face-роутер), среднюю (`deepseek-v4-flash`)
+и сильную (`deepseek-v4-pro`). Каждая модель сама предлагает техническую архитектуру. Кнопка
+блокируется, пока все три не ответят; на карточках — время ответа (замер на сервере), токены и текст.
+Успешные ответы автосохраняются в `md/design/proposals/`.
+
+- Бриф — **локальный, gitignored** `md/design/brief.md` (продуктовое ТЗ без тех-подсказок); читается
+  серверной функцией `readBrief` из `process.cwd()`.
+- `src/lib/chat.ts` — приватный обобщённый вызов `callCompletions` (OpenAI-совместимые DeepSeek и HF-роутер,
+  `thinking: disabled` только для DeepSeek), `ChatResult` возвращает `model` и серверный `latencyMs`; новые
+  server fns: `askModel({ tier })` (клиент шлёт только `weak|medium|strong`, маппинг `TIER_ENDPOINTS` на сервере),
+  `readBrief`, `saveProposal`.
+- `src/lib/day5.ts` — client-safe данные: метаданные ступеней, system-промпт, ссылки на модели.
+- `src/routes/_layout/day5.tsx` — кнопка «Собрать 3 предложения», три карточки с ответами и метриками,
+  блок «что отправлено», выводы и ссылки.
+
 ### Структура
 
 ```
 src/
-├── lib/chat.ts          # LLM-слой: callDeepSeek + server fn chat/ask
+├── lib/chat.ts          # LLM-слой: callCompletions + server fn chat/ask/askModel/readBrief/saveProposal
 ├── lib/days.ts          # массив дней для хаба и сайдбара
 ├── lib/day3.ts          # задания, промпты и судья для Day 3
 ├── lib/day4.ts          # задания, температуры и выводы для Day 4
+├── lib/day5.ts          # ступени моделей, system и ссылки для Day 5
 ├── components/          # Header, ThemeToggle, Sidebar, Chat
 └── routes/
     ├── __root.tsx       # корневой layout
@@ -95,7 +115,8 @@ src/
         ├── day1.tsx     # свободный чат
         ├── day2.tsx     # сравнение free vs constrained
         ├── day3.tsx     # 4 стратегии промпта + вердикт
-        └── day4.tsx     # один запрос при temperature 0 / 0.7 / 1.2
+        ├── day4.tsx     # один запрос при temperature 0 / 0.7 / 1.2
+        └── day5.tsx     # один бриф на трёх моделях + предложения архитектуры
 ```
 
 ### Про деплой

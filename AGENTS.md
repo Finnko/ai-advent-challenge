@@ -1,6 +1,6 @@
 # Project: AI Advent Challenge
 
-Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 3 (`feature/day3`).
+Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 5 (`feature/day5`).
 
 ## Stack
 
@@ -10,15 +10,28 @@ Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 
 
 ## LLM layer (Day 1)
 
-- DeepSeek call lives in `src/lib/chat.ts` as a `createServerFn({ method: 'POST' })` server function.
-- **Raw `fetch` to `https://api.deepseek.com/chat/completions` only — no SDKs.** Do not add `openai`, `deepseek`, or any LLM dependency.
-- API key and model are read server-side from `process.env` (`DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL`). **The key must never ship to the browser** — no `VITE_`-prefixed key, no `import.meta.env` exposure.
+- LLM calls live in `src/lib/chat.ts` as `createServerFn` server functions.
+- **Raw `fetch` only — no SDKs.** Days 1–4 hit `https://api.deepseek.com/chat/completions`;
+  Day 5 additionally hits the Hugging Face router `https://router.huggingface.co/v1/chat/completions`
+  for the weak tier. Do not add `openai`, `deepseek`, or any LLM dependency.
+- Secrets are read server-side from `process.env` (`DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL`,
+  `HUGGING_FACE_TOKEN`). **Keys must never ship to the browser** — no `VITE_`-prefixed key,
+  no `import.meta.env` exposure.
 - `.env` is gitignored; `.env.example` is the committed template.
-- `chat.ts` exposes `callDeepSeek` (private) plus two server fns: `chat` (day1/day2 modes) and generic
-  `ask({ system, user, params? })` used by day3+ to compose multi-step strategies on the client.
-  `ask` params accept optional `temperature` (validated 0–2, sent only when given); `ChatResult`
-  returns `model` (from `DEEPSEEK_MODEL`). Client-safe prompt/task text (no env) belongs in
-  `src/lib/day3.ts` / `src/lib/day4.ts`, never in `chat.ts`.
+- `chat.ts` exposes a private generic `callCompletions(endpoint, apiKey, messages, params)`
+  (OpenAI-compatible: DeepSeek + HF router) plus server fns:
+  - `chat` (day1/day2 modes) and generic `ask({ system, user, params? })` used by day3/day4 to
+    compose multi-step strategies on the client. `ask` params accept optional `temperature`
+    (validated 0–2, sent only when given). `ChatResult` returns `model` and server-measured `latencyMs`.
+  - `askModel({ tier, system, user })` for Day 5: client sends only `tier: 'weak' | 'medium' | 'strong'`;
+    the tier→endpoint/model/key mapping (`TIER_ENDPOINTS`) lives server-side in `chat.ts`
+    (weak = `Qwen/Qwen3-8B` via HF, medium = `deepseek-v4-flash`, strong = `deepseek-v4-pro`).
+    Client can never pass arbitrary model strings.
+  - `readBrief` (reads `md/design/brief.md` from `process.cwd()`) and `saveProposal`
+    (writes responses to `md/design/proposals/`) — Day 5's brief/proposals are a **local, gitignored**
+    `md/` folder, not part of the repo, so these only work in local dev where that folder exists.
+- Client-safe prompt/task text (no env) belongs in `src/lib/day3.ts` / `src/lib/day4.ts` /
+  `src/lib/day5.ts`, never in `chat.ts`.
 
 ## Commands
 
