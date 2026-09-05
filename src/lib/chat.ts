@@ -12,6 +12,7 @@ export type ChatUsage = {
 export type ChatResult = {
   content: string
   usage: ChatUsage | null
+  model: string | null
 }
 
 type DeepSeekResponse = {
@@ -23,6 +24,7 @@ type DeepSeekParams = {
   max_tokens?: number
   stop?: string[]
   response_format?: { type: 'json_object' }
+  temperature?: number
 }
 
 export type AskParams = DeepSeekParams
@@ -75,7 +77,7 @@ async function callDeepSeek(
         }
       : null
 
-  return { content, usage } satisfies ChatResult
+  return { content, usage, model } satisfies ChatResult
 }
 
 const FREE_SYSTEM = 'Ты — полезный ассистент.'
@@ -159,6 +161,16 @@ export const ask = createServerFn({ method: 'POST' })
     }
     if (typeof user !== 'string' || user.trim().length === 0) {
       throw new Error('Пользовательский промпт обязателен')
+    }
+    if (
+      params !== undefined &&
+      params.temperature !== undefined &&
+      (typeof params.temperature !== 'number' ||
+        !Number.isFinite(params.temperature) ||
+        params.temperature < 0 ||
+        params.temperature > 2)
+    ) {
+      throw new Error('temperature должна быть числом от 0 до 2')
     }
     return {
       system: system.trim(),

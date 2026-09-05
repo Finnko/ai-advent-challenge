@@ -17,4 +17,10 @@ export const DAYS = [
     title: 'Стратегии промптов',
     description: 'Одна задача решается четырьмя способами — сравни точность.',
   },
+  {
+    path: '/day4',
+    label: 'Day 4',
+    title: 'Температура',
+    description: 'Один запрос с temperature 0 / 0.7 / 1.2 — сравни точность и креативность.',
+  },
 ] as const

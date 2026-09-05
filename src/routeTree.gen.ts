@@ -14,6 +14,7 @@ import { Route as LayoutIndexRouteImport } from './routes/_layout/index'
 import { Route as LayoutDay1RouteImport } from './routes/_layout/day1'
 import { Route as LayoutDay2RouteImport } from './routes/_layout/day2'
 import { Route as LayoutDay3RouteImport } from './routes/_layout/day3'
+import { Route as LayoutDay4RouteImport } from './routes/_layout/day4'
 
 const LayoutRouteRoute = LayoutRouteRouteImport.update({
   id: '/_layout',
@@ -39,17 +40,24 @@ const LayoutDay3Route = LayoutDay3RouteImport.update({
   path: '/day3',
   getParentRoute: () => LayoutRouteRoute,
 } as any)
+const LayoutDay4Route = LayoutDay4RouteImport.update({
+  id: '/day4',
+  path: '/day4',
+  getParentRoute: () => LayoutRouteRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof LayoutIndexRoute
   '/day1': typeof LayoutDay1Route
   '/day2': typeof LayoutDay2Route
   '/day3': typeof LayoutDay3Route
+  '/day4': typeof LayoutDay4Route
 }
 export interface FileRoutesByTo {
   '/day1': typeof LayoutDay1Route
   '/day2': typeof LayoutDay2Route
   '/day3': typeof LayoutDay3Route
+  '/day4': typeof LayoutDay4Route
   '/': typeof LayoutIndexRoute
 }
 export interface FileRoutesById {
@@ -58,19 +66,21 @@ export interface FileRoutesById {
   '/_layout/day1': typeof LayoutDay1Route
   '/_layout/day2': typeof LayoutDay2Route
   '/_layout/day3': typeof LayoutDay3Route
+  '/_layout/day4': typeof LayoutDay4Route
   '/_layout/': typeof LayoutIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/day1' | '/day2' | '/day3'
+  fullPaths: '/' | '/day1' | '/day2' | '/day3' | '/day4'
   fileRoutesByTo: FileRoutesByTo
-  to: '/day1' | '/day2' | '/day3' | '/'
+  to: '/day1' | '/day2' | '/day3' | '/day4' | '/'
   id:
     | '__root__'
     | '/_layout'
     | '/_layout/day1'
     | '/_layout/day2'
     | '/_layout/day3'
+    | '/_layout/day4'
     | '/_layout/'
   fileRoutesById: FileRoutesById
 }
@@ -115,6 +125,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutDay3RouteImport
       parentRoute: typeof LayoutRouteRoute
     }
+    '/_layout/day4': {
+      id: '/_layout/day4'
+      path: '/day4'
+      fullPath: '/day4'
+      preLoaderRoute: typeof LayoutDay4RouteImport
+      parentRoute: typeof LayoutRouteRoute
+    }
   }
 }
 
@@ -122,6 +139,7 @@ interface LayoutRouteRouteChildren {
   LayoutDay1Route: typeof LayoutDay1Route
   LayoutDay2Route: typeof LayoutDay2Route
   LayoutDay3Route: typeof LayoutDay3Route
+  LayoutDay4Route: typeof LayoutDay4Route
   LayoutIndexRoute: typeof LayoutIndexRoute
 }
 
@@ -129,6 +147,7 @@ const LayoutRouteRouteChildren: LayoutRouteRouteChildren = {
   LayoutDay1Route: LayoutDay1Route,
   LayoutDay2Route: LayoutDay2Route,
   LayoutDay3Route: LayoutDay3Route,
+  LayoutDay4Route: LayoutDay4Route,
   LayoutIndexRoute: LayoutIndexRoute,
 }
 
