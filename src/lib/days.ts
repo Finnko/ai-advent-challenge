@@ -29,4 +29,10 @@ export const DAYS = [
     title: 'Версии моделей',
     description: 'Один бриф у трёх моделей разного уровня — каждая сама предлагает архитектуру.',
   },
+  {
+    path: '/day6',
+    label: 'Day 6',
+    title: 'Первый агент',
+    description: 'Агент как сущность: input/output policy, инструменты и судьи. Роль — из токена.',
+  },
 ] as const

@@ -23,7 +23,7 @@ export default function Chat({ onSend, renderAssistant, placeholder }: ChatProps
   const [error, setError] = useState<string | null>(null)
 
   const handleSubmit = async () => {
-    if (loading || prompt.trim().length === 0) return
+    if (loading || prompt.trim().length === 0) {return}
     const text = prompt.trim()
     setPrompt('')
     setError(null)

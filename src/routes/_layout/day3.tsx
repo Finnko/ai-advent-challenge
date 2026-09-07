@@ -78,7 +78,7 @@ function Day3() {
   }
 
   const handleSelectTask = (id: string) => {
-    if (id === selectedId || running) return
+    if (id === selectedId || running) {return}
     setSelectedId(id)
     clearAll()
   }
@@ -123,7 +123,7 @@ function Day3() {
   }
 
   const handleRunAll = async () => {
-    if (running) return
+    if (running) {return}
     setRunning(true)
     clearAll()
     const texts = await Promise.all(
@@ -145,7 +145,7 @@ function Day3() {
   }
 
   const handleRerun = async (id: StrategyId) => {
-    if (running) return
+    if (running) {return}
     setRunning(true)
     setVerdict({ status: 'idle' })
     await runStrategy(id, task)
@@ -568,10 +568,10 @@ function parseVerdict(content: string): VerdictShape | null {
     .trim()
   const start = stripped.indexOf('{')
   const end = stripped.lastIndexOf('}')
-  if (start === -1 || end === -1 || end < start) return null
+  if (start === -1 || end === -1 || end < start) {return null}
   try {
     const parsed = JSON.parse(stripped.slice(start, end + 1))
-    if (parsed && typeof parsed === 'object') return parsed as VerdictShape
+    if (parsed && typeof parsed === 'object') {return parsed as VerdictShape}
     return null
   } catch {
     return null

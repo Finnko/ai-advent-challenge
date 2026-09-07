@@ -53,9 +53,9 @@ function Day4() {
       ?.answer.model ?? null
 
   const handleRunAll = async (source: Source) => {
-    if (running) return
+    if (running) {return}
     const user = source === 'curated' ? TASK.prompt : customPrompt.trim()
-    if (!user) return
+    if (!user) {return}
     setRunning(true)
     setLastRun({ source, user })
     setResults({})

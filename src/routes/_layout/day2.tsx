@@ -164,7 +164,7 @@ function parseConstrained(content: string): ConstrainedShape | null {
   const jsonText = extractJsonObject(stripped)
   try {
     const parsed = JSON.parse(jsonText)
-    if (parsed && typeof parsed === 'object') return parsed as ConstrainedShape
+    if (parsed && typeof parsed === 'object') {return parsed as ConstrainedShape}
     return null
   } catch {
     return null
@@ -174,6 +174,6 @@ function parseConstrained(content: string): ConstrainedShape | null {
 function extractJsonObject(text: string): string {
   const start = text.indexOf('{')
   const end = text.lastIndexOf('}')
-  if (start === -1 || end === -1 || end < start) return text
+  if (start === -1 || end === -1 || end < start) {return text}
   return text.slice(start, end + 1)
 }

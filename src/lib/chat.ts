@@ -1,4 +1,6 @@
 import { createServerFn } from '@tanstack/react-start'
+import { AGENT_JUDGES, AGENT_TOOLS, Agent } from './agent'
+import type { AgentCapabilities, AgentRole, CallLLM } from './agent'
 
 export type ChatMode = 'free' | 'constrained'
 
@@ -65,7 +67,7 @@ export const TIER_ENDPOINTS: Record<Tier, CompletionEndpoint> = {
 
 function requireEnv(name: string): string {
   const value = process.env[name]
-  if (value) return value
+  if (value) {return value}
   const hint =
     name === 'DEEPSEEK_API_KEY'
       ? 'Скопируй .env.example в .env и впиши свой ключ.'
@@ -327,3 +329,95 @@ export const saveProposal = createServerFn({ method: 'POST' })
     await fs.writeFile(nodePath.join(dir, fileName), header + data.content, 'utf8')
     return { path: `md/design/proposals/${fileName}` }
   })
+
+export const MOCK_TOKENS = {
+  employee: 'tok-employee-demo',
+  manager: 'tok-manager-demo',
+} as const
+
+type MockUser = {
+  token: string
+  identity: { name: string; role: AgentRole; title: string }
+  allowedTools: string[]
+}
+
+const MOCK_USERS: Record<AgentRole, MockUser> = {
+  employee: {
+    token: MOCK_TOKENS.employee,
+    identity: { name: 'Пётр', role: 'employee', title: 'Линейный сотрудник' },
+    allowedTools: ['bookMeetingRoom', 'requestVacation'],
+  },
+  manager: {
+    token: MOCK_TOKENS.manager,
+    identity: { name: 'Анна', role: 'manager', title: 'Руководитель команды' },
+    allowedTools: ['bookMeetingRoom', 'requestVacation', 'approveVacation'],
+  },
+}
+
+function resolveCapabilitiesByToken(token: string): AgentCapabilities {
+  const user = Object.values(MOCK_USERS).find((u) => u.token === token)
+  if (!user) {
+    throw new Error('Неизвестный токен: профиль способностей не найден.')
+  }
+  return { identity: user.identity, allowedTools: user.allowedTools }
+}
+
+export const resolveCapabilities = createServerFn({ method: 'POST' })
+  .validator((input: { token: string }) => {
+    if (typeof input !== 'object' || input === null) {
+      throw new Error('Некорректный запрос')
+    }
+    if (typeof input.token !== 'string' || input.token.trim().length === 0) {
+      throw new Error('Токен обязателен')
+    }
+    return { token: input.token.trim() }
+  })
+  .handler(async ({ data }) => resolveCapabilitiesByToken(data.token))
+
+const callFlash: CallLLM = async ({ messages, temperature, response_format, max_tokens }) => {
+  const apiKey = apiKeyFor('DEEPSEEK_API_KEY')
+  const reply = await callCompletions(
+    TIER_ENDPOINTS.medium,
+    apiKey,
+    messages,
+    { temperature, response_format, max_tokens },
+  )
+  return {
+    content: reply.content,
+    usage: reply.usage,
+    latencyMs: reply.latencyMs ?? 0,
+  }
+}
+
+export const runAgent = createServerFn({ method: 'POST' })
+  .validator((input: { token: string; user: string }) => {
+    if (typeof input !== 'object' || input === null) {
+      throw new Error('Некорректный запрос')
+    }
+    if (typeof input.token !== 'string' || input.token.trim().length === 0) {
+      throw new Error('Токен обязателен')
+    }
+    if (typeof input.user !== 'string' || input.user.trim().length === 0) {
+      throw new Error('Сообщение обязательно')
+    }
+    return { token: input.token.trim(), user: input.user.trim() }
+  })
+  .handler(async ({ data }) => {
+    const capabilities = resolveCapabilitiesByToken(data.token)
+    const agent = new Agent({
+      capabilities,
+      tools: AGENT_TOOLS,
+      judges: AGENT_JUDGES,
+      callLLM: callFlash,
+      model: TIER_ENDPOINTS.medium.model,
+      today: todayIso(),
+    })
+    return agent.run(data.user)
+  })
+
+function todayIso(): string {
+  const now = new Date()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  return `${now.getFullYear()}-${month}-${day}`
+}

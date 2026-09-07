@@ -39,9 +39,9 @@ function Day5() {
     const load = async () => {
       try {
         const text = await readBrief()
-        if (active) setBrief({ status: 'ready', text })
+        if (active) {setBrief({ status: 'ready', text })}
       } catch (err) {
-        if (active) setBrief({ status: 'error', error: toError(err) })
+        if (active) {setBrief({ status: 'error', error: toError(err) })}
       }
     }
     void load()
@@ -51,7 +51,7 @@ function Day5() {
   }, [])
 
   const handleRunAll = async () => {
-    if (running || brief.status !== 'ready') return
+    if (running || brief.status !== 'ready') {return}
     const runId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
     setRunning(true)
     setResults({})
