@@ -29,7 +29,8 @@ export const TIERS: TierMeta[] = [
     label: 'Сильная',
     model: 'deepseek-v4-pro',
     provider: 'DeepSeek',
-    description: 'Старшая модель DeepSeek: максимум качества, медленнее и дороже.',
+    description:
+      'Старшая модель DeepSeek: максимум качества, медленнее и дороже.',
   },
 ]
 

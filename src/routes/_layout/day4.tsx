@@ -45,17 +45,19 @@ function Day4() {
   const [lastRun, setLastRun] = useState<LastRun | null>(null)
 
   const firstModel =
-    TEMPERATURES.map((t) => results[t.value])
-      .find(
-        (s): s is Extract<TempState, { status: 'done' }> =>
-          s?.status === 'done' && !!s.answer.model,
-      )
-      ?.answer.model ?? null
+    TEMPERATURES.map((t) => results[t.value]).find(
+      (s): s is Extract<TempState, { status: 'done' }> =>
+        s?.status === 'done' && !!s.answer.model,
+    )?.answer.model ?? null
 
   const handleRunAll = async (source: Source) => {
-    if (running) {return}
+    if (running) {
+      return
+    }
     const user = source === 'curated' ? TASK.prompt : customPrompt.trim()
-    if (!user) {return}
+    if (!user) {
+      return
+    }
     setRunning(true)
     setLastRun({ source, user })
     setResults({})
@@ -96,10 +98,10 @@ function Day4() {
         <p className="island-kicker mb-2">AI Advent Challenge · Day 4</p>
         <h1 className="demo-title mb-2">Температура</h1>
         <p className="demo-muted m-0 max-w-2xl text-sm">
-          Один и тот же запрос отправляется с тремя значениями
-          temperature — 0, 0.7 и 1.2. Возьми готовую логическую задачу или
-          впиши свой промпт и сравни ответы по точности, креативности и
-          разнообразию, затем сверься с выводами ниже.
+          Один и тот же запрос отправляется с тремя значениями temperature — 0,
+          0.7 и 1.2. Возьми готовую логическую задачу или впиши свой промпт и
+          сравни ответы по точности, креативности и разнообразию, затем сверься
+          с выводами ниже.
         </p>
       </header>
 
@@ -107,9 +109,12 @@ function Day4() {
         <div>
           <h2 className="demo-section-title mb-1">{TASK.label}</h2>
           <p className="demo-muted m-0 mb-2 text-xs">
-            Логическая задача с эталонным ответом и автопроверкой строки «Итог:».
+            Логическая задача с эталонным ответом и автопроверкой строки
+            «Итог:».
           </p>
-          <div className="demo-code-block whitespace-pre-wrap">{TASK.prompt}</div>
+          <div className="demo-code-block whitespace-pre-wrap">
+            {TASK.prompt}
+          </div>
           <div className="mt-3 flex flex-wrap items-center gap-3">
             <button
               type="button"
@@ -132,7 +137,8 @@ function Day4() {
         <div>
           <h2 className="demo-section-title mb-1">Свой промпт</h2>
           <p className="demo-muted m-0 mb-2 text-xs">
-            Свободный запрос без эталона: здесь высокая температура особенно заметна.
+            Свободный запрос без эталона: здесь высокая температура особенно
+            заметна.
           </p>
           <textarea
             value={customPrompt}
@@ -239,8 +245,8 @@ function Day4() {
         <aside className="demo-panel w-full shrink-0 self-start p-4 lg:w-[340px]">
           <h2 className="demo-section-title mb-1">Параметры запроса</h2>
           <p className="demo-muted m-0 mb-3 text-xs">
-            Один и тот же запрос для всех температур; в каждом прогоне
-            меняется только temperature. Клик по карточке показывает её значение.
+            Один и тот же запрос для всех температур; в каждом прогоне меняется
+            только temperature. Клик по карточке показывает её значение.
           </p>
           <Inspector
             user={runUser}
@@ -285,10 +291,14 @@ function AnswerBlock({ answer }: { answer: Answer }) {
     <div>
       {answer.content.trim().length === 0 ? (
         <div className="demo-alert">
-          <p className="m-0 text-sm">Модель вернула пустой ответ. Попробуй ещё раз.</p>
+          <p className="m-0 text-sm">
+            Модель вернула пустой ответ. Попробуй ещё раз.
+          </p>
         </div>
       ) : (
-        <pre className="demo-code-block whitespace-pre-wrap text-sm">{answer.content}</pre>
+        <pre className="demo-code-block whitespace-pre-wrap text-sm">
+          {answer.content}
+        </pre>
       )}
       <p className="demo-muted mt-1.5 text-xs">
         {answer.chars ?? 0} симв. · {answer.words ?? 0} слов
@@ -330,7 +340,9 @@ function Inspector({
   return (
     <div className="space-y-3 text-sm">
       <p className="demo-muted m-0 text-xs">
-        {hasRun ? 'Что было отправлено (temperature активной карточки)' : 'Что будет отправлено'}
+        {hasRun
+          ? 'Что было отправлено (temperature активной карточки)'
+          : 'Что будет отправлено'}
       </p>
       <div className="demo-code-block whitespace-pre-wrap">
         <span className="island-kicker">model</span>

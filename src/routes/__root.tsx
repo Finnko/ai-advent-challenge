@@ -45,7 +45,9 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         <div className="flex h-dvh flex-col">
           <Header />
           <div className="min-h-0 flex-1">
-            <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+            <QueryClientProvider client={queryClient}>
+              {children}
+            </QueryClientProvider>
           </div>
         </div>
         <TanStackDevtools

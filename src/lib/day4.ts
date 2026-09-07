@@ -88,9 +88,13 @@ export type FinalCheck = 'correct' | 'wrong' | 'none'
 export function checkFinalAnswer(content: string, task: Day4Task): FinalCheck {
   const lower = content.toLocaleLowerCase('ru')
   const marker = lower.lastIndexOf('итог:')
-  if (marker === -1) {return 'none'}
+  if (marker === -1) {
+    return 'none'
+  }
   const tail = normalize(lower.slice(marker + 'итог:'.length))
-  if (!tail) {return 'none'}
+  if (!tail) {
+    return 'none'
+  }
   const expectedHit = task.expected.some((e) =>
     tail.includes(normalize(e.toLocaleLowerCase('ru'))),
   )

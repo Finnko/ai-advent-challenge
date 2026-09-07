@@ -67,7 +67,9 @@ export const TIER_ENDPOINTS: Record<Tier, CompletionEndpoint> = {
 
 function requireEnv(name: string): string {
   const value = process.env[name]
-  if (value) {return value}
+  if (value) {
+    return value
+  }
   const hint =
     name === 'DEEPSEEK_API_KEY'
       ? 'Скопируй .env.example в .env и впиши свой ключ.'
@@ -123,7 +125,12 @@ async function callCompletions(
         }
       : null
 
-  return { content, usage, model: endpoint.model, latencyMs } satisfies ChatResult
+  return {
+    content,
+    usage,
+    model: endpoint.model,
+    latencyMs,
+  } satisfies ChatResult
 }
 
 const FREE_SYSTEM = 'Ты — полезный ассистент.'
@@ -188,7 +195,10 @@ export const chat = createServerFn({ method: 'POST' })
     const { prompt, mode } = data
     const config = CHAT_CONFIGS[mode]
     const apiKey = apiKeyFor('DEEPSEEK_API_KEY')
-    const endpoint = { ...DEEPSEEK_ENDPOINT, model: requireEnv('DEEPSEEK_MODEL') }
+    const endpoint = {
+      ...DEEPSEEK_ENDPOINT,
+      model: requireEnv('DEEPSEEK_MODEL'),
+    }
     return callCompletions(
       endpoint,
       apiKey,
@@ -230,7 +240,10 @@ export const ask = createServerFn({ method: 'POST' })
   })
   .handler(async ({ data }) => {
     const apiKey = apiKeyFor('DEEPSEEK_API_KEY')
-    const endpoint = { ...DEEPSEEK_ENDPOINT, model: requireEnv('DEEPSEEK_MODEL') }
+    const endpoint = {
+      ...DEEPSEEK_ENDPOINT,
+      model: requireEnv('DEEPSEEK_MODEL'),
+    }
     return callCompletions(
       endpoint,
       apiKey,
@@ -326,7 +339,11 @@ export const saveProposal = createServerFn({ method: 'POST' })
       '---',
       '',
     ].join('\n')
-    await fs.writeFile(nodePath.join(dir, fileName), header + data.content, 'utf8')
+    await fs.writeFile(
+      nodePath.join(dir, fileName),
+      header + data.content,
+      'utf8',
+    )
     return { path: `md/design/proposals/${fileName}` }
   })
 
@@ -374,14 +391,18 @@ export const resolveCapabilities = createServerFn({ method: 'POST' })
   })
   .handler(async ({ data }) => resolveCapabilitiesByToken(data.token))
 
-const callFlash: CallLLM = async ({ messages, temperature, response_format, max_tokens }) => {
+const callFlash: CallLLM = async ({
+  messages,
+  temperature,
+  response_format,
+  max_tokens,
+}) => {
   const apiKey = apiKeyFor('DEEPSEEK_API_KEY')
-  const reply = await callCompletions(
-    TIER_ENDPOINTS.medium,
-    apiKey,
-    messages,
-    { temperature, response_format, max_tokens },
-  )
+  const reply = await callCompletions(TIER_ENDPOINTS.medium, apiKey, messages, {
+    temperature,
+    response_format,
+    max_tokens,
+  })
   return {
     content: reply.content,
     usage: reply.usage,

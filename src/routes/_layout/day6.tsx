@@ -34,7 +34,9 @@ function Day6() {
   })
 
   const handlePickRole = (id: RoleId) => {
-    if (id === roleId || sendMutation.isPending) {return}
+    if (id === roleId || sendMutation.isPending) {
+      return
+    }
     sendMutation.reset()
     setMessages([])
     setDraft('')
@@ -43,8 +45,9 @@ function Day6() {
 
   const handleSend = () => {
     const text = draft.trim()
-    if (text.length === 0 || sendMutation.isPending || capsQuery.isLoading)
-      {return}
+    if (text.length === 0 || sendMutation.isPending || capsQuery.isLoading) {
+      return
+    }
     setDraft('')
     setMessages((prev) => [...prev, { role: 'user', content: text }])
     sendMutation.mutate(text, {

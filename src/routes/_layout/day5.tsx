@@ -39,9 +39,13 @@ function Day5() {
     const load = async () => {
       try {
         const text = await readBrief()
-        if (active) {setBrief({ status: 'ready', text })}
+        if (active) {
+          setBrief({ status: 'ready', text })
+        }
       } catch (err) {
-        if (active) {setBrief({ status: 'error', error: toError(err) })}
+        if (active) {
+          setBrief({ status: 'error', error: toError(err) })
+        }
       }
     }
     void load()
@@ -51,7 +55,9 @@ function Day5() {
   }, [])
 
   const handleRunAll = async () => {
-    if (running || brief.status !== 'ready') {return}
+    if (running || brief.status !== 'ready') {
+      return
+    }
     const runId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
     setRunning(true)
     setResults({})
@@ -103,11 +109,10 @@ function Day5() {
         <p className="island-kicker mb-2">AI Advent Challenge · Day 5</p>
         <h1 className="demo-title mb-2">Версии моделей</h1>
         <p className="demo-muted m-0 max-w-2xl text-sm">
-          Один и тот же запрос — продуктовое ТЗ интернет-магазина — уходит в
-          три модели разного уровня: слабую (Qwen 8B), среднюю
-          (deepseek-v4-flash) и сильную (deepseek-v4-pro). Каждая сама
-          предлагает архитектуру. Сравни качество, скорость, токены и
-          стоимость.
+          Один и тот же запрос — продуктовое ТЗ интернет-магазина — уходит в три
+          модели разного уровня: слабую (Qwen 8B), среднюю (deepseek-v4-flash) и
+          сильную (deepseek-v4-pro). Каждая сама предлагает архитектуру. Сравни
+          качество, скорость, токены и стоимость.
         </p>
       </header>
 
@@ -239,12 +244,20 @@ function CardBody({ state }: { state: CardState }) {
   }
 }
 
-function AnswerBlock({ answer, savedPath }: { answer: Answer; savedPath: string | null }) {
+function AnswerBlock({
+  answer,
+  savedPath,
+}: {
+  answer: Answer
+  savedPath: string | null
+}) {
   return (
     <div>
       {answer.content.trim().length === 0 ? (
         <div className="demo-alert">
-          <p className="m-0 text-sm">Модель вернула пустой ответ. Попробуй ещё раз.</p>
+          <p className="m-0 text-sm">
+            Модель вернула пустой ответ. Попробуй ещё раз.
+          </p>
         </div>
       ) : (
         <pre className="demo-code-block select-text whitespace-pre-wrap text-sm">
@@ -256,7 +269,9 @@ function AnswerBlock({ answer, savedPath }: { answer: Answer; savedPath: string 
         {answer.usage
           ? ` · prompt ${answer.usage.prompt_tokens} → completion ${answer.usage.completion_tokens} ток.`
           : ''}
-        {typeof answer.latencyMs === 'number' ? ` · ${answer.latencyMs} мс` : ''}
+        {typeof answer.latencyMs === 'number'
+          ? ` · ${answer.latencyMs} мс`
+          : ''}
       </p>
       {savedPath && (
         <p className="demo-muted m-0 mt-1 text-xs">Сохранено: {savedPath}</p>
