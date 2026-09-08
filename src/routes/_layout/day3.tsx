@@ -56,9 +56,8 @@ const IDLE_RESULTS = Object.fromEntries(
 
 function Day3() {
   const [selectedId, setSelectedId] = useState<string>(TASKS[0].id)
-  const [results, setResults] = useState<Record<StrategyId, ResultState>>(
-    IDLE_RESULTS,
-  )
+  const [results, setResults] =
+    useState<Record<StrategyId, ResultState>>(IDLE_RESULTS)
   const [verdict, setVerdict] = useState<VerdictState>({ status: 'idle' })
   const [running, setRunning] = useState(false)
   const resultsRef = useRef(results)
@@ -78,12 +77,17 @@ function Day3() {
   }
 
   const handleSelectTask = (id: string) => {
-    if (id === selectedId || running) return
+    if (id === selectedId || running) {
+      return
+    }
     setSelectedId(id)
     clearAll()
   }
 
-  const runJudge = async (task: Day3Task, answers: { id: StrategyId; content: string }[]) => {
+  const runJudge = async (
+    task: Day3Task,
+    answers: { id: StrategyId; content: string }[],
+  ) => {
     setVerdict({ status: 'loading' })
     try {
       const res = await ask({
@@ -98,7 +102,11 @@ function Day3() {
       })
       const parsed = parseVerdict(res.content)
       if (!parsed) {
-        setVerdict({ status: 'error', error: 'Судья вернул некорректный вердикт', raw: res.content })
+        setVerdict({
+          status: 'error',
+          error: 'Судья вернул некорректный вердикт',
+          raw: res.content,
+        })
         return
       }
       setVerdict({ status: 'done', verdict: parsed })
@@ -123,7 +131,9 @@ function Day3() {
   }
 
   const handleRunAll = async () => {
-    if (running) return
+    if (running) {
+      return
+    }
     setRunning(true)
     clearAll()
     const texts = await Promise.all(
@@ -145,7 +155,9 @@ function Day3() {
   }
 
   const handleRerun = async (id: StrategyId) => {
-    if (running) return
+    if (running) {
+      return
+    }
     setRunning(true)
     setVerdict({ status: 'idle' })
     await runStrategy(id, task)
@@ -170,9 +182,9 @@ function Day3() {
         <p className="island-kicker mb-2">AI Advent Challenge · Day 3</p>
         <h1 className="demo-title mb-2">Стратегии промптов</h1>
         <p className="demo-muted m-0 max-w-2xl text-sm">
-          Выбери задачу и реши её четырьмя способами: напрямую, пошагово,
-          через самостоятельно написанный промпт и группой экспертов. Когда все
-          четыре ответят, судья сравнивает их с эталонным ответом.
+          Выбери задачу и реши её четырьмя способами: напрямую, пошагово, через
+          самостоятельно написанный промпт и группой экспертов. Когда все четыре
+          ответят, судья сравнивает их с эталонным ответом.
         </p>
       </header>
 
@@ -205,7 +217,9 @@ function Day3() {
           >
             {running ? 'Выполняется…' : 'Запустить 4 стратегии'}
           </button>
-          {verdict.status === 'loading' && <TypingDots text="Судья оценивает ответы…" />}
+          {verdict.status === 'loading' && (
+            <TypingDots text="Судья оценивает ответы…" />
+          )}
         </div>
       </section>
 
@@ -241,7 +255,9 @@ function Day3() {
       <section className="grid gap-4 lg:grid-cols-2">
         <div className="demo-panel p-5">
           <h2 className="demo-section-title mb-3">Эталонный ответ</h2>
-          <div className="demo-code-block whitespace-pre-wrap text-sm">{task.reference}</div>
+          <div className="demo-code-block whitespace-pre-wrap text-sm">
+            {task.reference}
+          </div>
           <p className="demo-muted m-0 mt-2 text-xs">
             Ожидаемое решение, с которым судья сверяет четыре ответа.
           </p>
@@ -269,9 +285,13 @@ function StrategyCard({
       return (
         <div>
           <p className="demo-muted m-0 text-sm">
-            Пока не запущено. Нажми «Запустить 4 стратегии», чтобы решить задачу этим способом.
+            Пока не запущено. Нажми «Запустить 4 стратегии», чтобы решить задачу
+            этим способом.
           </p>
-          <PromptPreview title="Что будет отправлено в модель" blocks={previewBlocks(id, prompt)} />
+          <PromptPreview
+            title="Что будет отправлено в модель"
+            blocks={previewBlocks(id, prompt)}
+          />
         </div>
       )
     case 'loading':
@@ -298,13 +318,15 @@ function ResultBody({ result }: { result: StrategyResult }) {
     case 'promptcraft':
       return (
         <div className="flex flex-col gap-3">
-      <details className="demo-code-block">
-        <summary className="cursor-pointer select-none text-xs text-[var(--sea-ink-soft)]">
-          Сгенерированный промпт (им решается задача)
-        </summary>
-        <pre className="mt-2 whitespace-pre-wrap text-sm">{result.composed.content}</pre>
-        {usageLine(result.composed.usage, 'создание промпта')}
-      </details>
+          <details className="demo-code-block">
+            <summary className="cursor-pointer select-none text-xs text-[var(--sea-ink-soft)]">
+              Сгенерированный промпт (им решается задача)
+            </summary>
+            <pre className="mt-2 whitespace-pre-wrap text-sm">
+              {result.composed.content}
+            </pre>
+            {usageLine(result.composed.usage, 'создание промпта')}
+          </details>
           <AnswerBlock answer={result.final} blocks={sentBlocks(result)} />
         </div>
       )
@@ -322,15 +344,25 @@ function ResultBody({ result }: { result: StrategyResult }) {
   }
 }
 
-function AnswerBlock({ answer, blocks }: { answer: Answer; blocks: SentBlock[] }) {
+function AnswerBlock({
+  answer,
+  blocks,
+}: {
+  answer: Answer
+  blocks: SentBlock[]
+}) {
   return (
     <div>
       {answer.content.trim().length === 0 ? (
         <div className="demo-alert">
-          <p className="m-0 text-sm">Модель вернула пустой ответ. Попробуй ещё раз.</p>
+          <p className="m-0 text-sm">
+            Модель вернула пустой ответ. Попробуй ещё раз.
+          </p>
         </div>
       ) : (
-        <pre className="demo-code-block whitespace-pre-wrap text-sm">{answer.content}</pre>
+        <pre className="demo-code-block whitespace-pre-wrap text-sm">
+          {answer.content}
+        </pre>
       )}
       <p className="demo-muted mt-1.5 text-xs">
         {answer.chars ?? 0} симв. · {answer.words ?? 0} слов
@@ -341,7 +373,13 @@ function AnswerBlock({ answer, blocks }: { answer: Answer; blocks: SentBlock[] }
   )
 }
 
-function PromptPreview({ title, blocks }: { title: string; blocks: SentBlock[] }) {
+function PromptPreview({
+  title,
+  blocks,
+}: {
+  title: string
+  blocks: SentBlock[]
+}) {
   return (
     <details className="mt-1">
       <summary className="cursor-pointer select-none text-xs text-[var(--sea-ink-soft)]">
@@ -439,7 +477,11 @@ function VerdictCard({ verdict }: { verdict: VerdictState }) {
           <div className="demo-alert demo-alert-danger">
             <p className="m-0 text-sm">{verdict.error}</p>
           </div>
-          {verdict.raw && <pre className="demo-code-block whitespace-pre-wrap text-xs">{verdict.raw}</pre>}
+          {verdict.raw && (
+            <pre className="demo-code-block whitespace-pre-wrap text-xs">
+              {verdict.raw}
+            </pre>
+          )}
         </div>
       )
     case 'done':
@@ -452,7 +494,9 @@ function VerdictBody({ verdict }: { verdict: VerdictShape }) {
   const winnerMeta = STRATEGIES.find((s) => s.id === winner)
   return (
     <div className="flex flex-col gap-3">
-      {verdict.summary && <p className="demo-muted m-0 text-sm">{verdict.summary}</p>}
+      {verdict.summary && (
+        <p className="demo-muted m-0 text-sm">{verdict.summary}</p>
+      )}
       <div className="flex flex-wrap gap-2">
         {STRATEGIES.map(({ id, label }) => {
           const score = verdict.scores?.[id]
@@ -474,7 +518,9 @@ function VerdictBody({ verdict }: { verdict: VerdictShape }) {
       </div>
       {winnerMeta && verdict.why && (
         <div className="demo-code-block whitespace-pre-wrap text-sm">
-          <span className="island-kicker">Почему победила стратегия «{winnerMeta.label}»</span>
+          <span className="island-kicker">
+            Почему победила стратегия «{winnerMeta.label}»
+          </span>
           {'\n'}
           {verdict.why}
         </div>
@@ -500,22 +546,41 @@ function TypingDots({ text }: { text?: string }) {
   )
 }
 
-async function executeStrategy(id: StrategyId, task: Day3Task): Promise<StrategyResult> {
+async function executeStrategy(
+  id: StrategyId,
+  task: Day3Task,
+): Promise<StrategyResult> {
   switch (id) {
     case 'direct': {
-      const answer = await ask({ data: { system: HELPFUL_SYSTEM, user: task.prompt } })
+      const answer = await ask({
+        data: { system: HELPFUL_SYSTEM, user: task.prompt },
+      })
       guardNonEmpty(answer)
-      return { kind: 'answer', answer: decorate(answer), promptUsed: task.prompt }
+      return {
+        kind: 'answer',
+        answer: decorate(answer),
+        promptUsed: task.prompt,
+      }
     }
     case 'stepwise': {
-      const answer = await ask({ data: { system: STEPWISE_SYSTEM, user: task.prompt } })
+      const answer = await ask({
+        data: { system: STEPWISE_SYSTEM, user: task.prompt },
+      })
       guardNonEmpty(answer)
-      return { kind: 'answer', answer: decorate(answer), promptUsed: task.prompt }
+      return {
+        kind: 'answer',
+        answer: decorate(answer),
+        promptUsed: task.prompt,
+      }
     }
     case 'promptcraft': {
-      const composed = await ask({ data: { system: PROMPT_ENGINEER_SYSTEM, user: task.prompt } })
+      const composed = await ask({
+        data: { system: PROMPT_ENGINEER_SYSTEM, user: task.prompt },
+      })
       guardNonEmpty(composed)
-      const final = await ask({ data: { system: HELPFUL_SYSTEM, user: composed.content } })
+      const final = await ask({
+        data: { system: HELPFUL_SYSTEM, user: composed.content },
+      })
       guardNonEmpty(final)
       return {
         kind: 'promptcraft',
@@ -527,7 +592,9 @@ async function executeStrategy(id: StrategyId, task: Day3Task): Promise<Strategy
     case 'expert': {
       const settled = await Promise.all(
         EXPERT_ROLES.map(async (role) => {
-          const answer = await ask({ data: { system: role.system, user: task.prompt } })
+          const answer = await ask({
+            data: { system: role.system, user: task.prompt },
+          })
           guardNonEmpty(answer)
           return { id: role.id, label: role.label, answer: decorate(answer) }
         }),
@@ -568,10 +635,14 @@ function parseVerdict(content: string): VerdictShape | null {
     .trim()
   const start = stripped.indexOf('{')
   const end = stripped.lastIndexOf('}')
-  if (start === -1 || end === -1 || end < start) return null
+  if (start === -1 || end === -1 || end < start) {
+    return null
+  }
   try {
     const parsed = JSON.parse(stripped.slice(start, end + 1))
-    if (parsed && typeof parsed === 'object') return parsed as VerdictShape
+    if (parsed && typeof parsed === 'object') {
+      return parsed as VerdictShape
+    }
     return null
   } catch {
     return null
@@ -581,7 +652,10 @@ function parseVerdict(content: string): VerdictShape | null {
 function usageLine(usage: ChatResult['usage'], label: string): ReactNode {
   return (
     <p className="demo-muted mt-1.5 text-xs">
-      {label}: {usage ? `${usage.completion_tokens} ток.` : 'нет данных об использовании'}
+      {label}:{' '}
+      {usage
+        ? `${usage.completion_tokens} ток.`
+        : 'нет данных об использовании'}
     </p>
   )
 }

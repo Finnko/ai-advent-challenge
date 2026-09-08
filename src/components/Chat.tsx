@@ -16,14 +16,20 @@ type ChatProps = {
   placeholder?: string
 }
 
-export default function Chat({ onSend, renderAssistant, placeholder }: ChatProps) {
+export default function Chat({
+  onSend,
+  renderAssistant,
+  placeholder,
+}: ChatProps) {
   const [prompt, setPrompt] = useState('')
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const handleSubmit = async () => {
-    if (loading || prompt.trim().length === 0) return
+    if (loading || prompt.trim().length === 0) {
+      return
+    }
     const text = prompt.trim()
     setPrompt('')
     setError(null)
@@ -31,7 +37,10 @@ export default function Chat({ onSend, renderAssistant, placeholder }: ChatProps
     setMessages((prev) => [...prev, toMessage('user', text)])
     try {
       const result = await onSend(text)
-      setMessages((prev) => [...prev, toMessage('assistant', result.content, result.usage)])
+      setMessages((prev) => [
+        ...prev,
+        toMessage('assistant', result.content, result.usage),
+      ])
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -62,7 +71,9 @@ export default function Chat({ onSend, renderAssistant, placeholder }: ChatProps
                   )}
                   <p className="demo-muted mt-1.5 text-xs">
                     {message.chars} симв. · {message.words} слов
-                    {message.usage ? ` · ${message.usage.completion_tokens} ток.` : ''}
+                    {message.usage
+                      ? ` · ${message.usage.completion_tokens} ток.`
+                      : ''}
                   </p>
                 </div>
               </div>
@@ -76,7 +87,9 @@ export default function Chat({ onSend, renderAssistant, placeholder }: ChatProps
         </div>
       </div>
 
-      {error && <div className="demo-alert demo-alert-danger mb-3">{error}</div>}
+      {error && (
+        <div className="demo-alert demo-alert-danger mb-3">{error}</div>
+      )}
 
       <form
         onSubmit={(e) => {
@@ -118,7 +131,10 @@ function toMessage(
 
 function TypingDots() {
   return (
-    <div className="flex items-center gap-1.5 py-3" aria-label="Ожидание ответа">
+    <div
+      className="flex items-center gap-1.5 py-3"
+      aria-label="Ожидание ответа"
+    >
       {[0, 1, 2].map((i) => (
         <span
           key={i}

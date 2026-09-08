@@ -19,7 +19,8 @@ function Day2() {
             <h1 className="demo-title mb-2">Формат ответа</h1>
             <p className="demo-muted m-0 max-w-2xl text-sm">
               Отправь один и тот же промпт в обе вкладки: простой запрос против
-              явного формата + лимита длины + ограничения завершения. Сравни ответы.
+              явного формата + лимита длины + ограничения завершения. Сравни
+              ответы.
             </p>
           </header>
 
@@ -41,17 +42,25 @@ function Day2() {
           </div>
 
           <section className="demo-panel flex min-h-0 flex-1 flex-col p-5">
-            <div className={`min-h-0 flex-1 ${active === 'free' ? 'flex flex-col' : 'hidden'}`}>
+            <div
+              className={`min-h-0 flex-1 ${active === 'free' ? 'flex flex-col' : 'hidden'}`}
+            >
               <Chat
                 onSend={(prompt) => chat({ data: { prompt, mode: 'free' } })}
                 placeholder="Отправь один и тот же промпт сюда и во вкладку «С ограничениями»…"
               />
             </div>
-            <div className={`min-h-0 flex-1 ${active === 'constrained' ? 'flex flex-col' : 'hidden'}`}>
+            <div
+              className={`min-h-0 flex-1 ${active === 'constrained' ? 'flex flex-col' : 'hidden'}`}
+            >
               <Chat
-                onSend={(prompt) => chat({ data: { prompt, mode: 'constrained' } })}
+                onSend={(prompt) =>
+                  chat({ data: { prompt, mode: 'constrained' } })
+                }
                 placeholder="Отправь один и тот же промпт сюда и во вкладку «Свободная форма»…"
-                renderAssistant={(message) => <ConstrainedMessage message={message} />}
+                renderAssistant={(message) => (
+                  <ConstrainedMessage message={message} />
+                )}
               />
             </div>
           </section>
@@ -59,7 +68,9 @@ function Day2() {
 
         <aside className="demo-panel min-h-0 shrink-0 p-4 lg:w-[340px] lg:overflow-y-auto">
           <h2 className="demo-section-title mb-1">Что было отправлено</h2>
-          <p className="demo-muted m-0 mb-3 text-xs">Конфигурация запроса активной вкладки</p>
+          <p className="demo-muted m-0 mb-3 text-xs">
+            Конфигурация запроса активной вкладки
+          </p>
           <Inspector mode={active} />
         </aside>
       </div>
@@ -130,10 +141,14 @@ function ConstrainedMessage({ message }: { message: ChatMessage }) {
   return (
     <div className="demo-code-block max-w-full">
       {parsed.title && (
-        <p className="mb-2 text-base font-bold text-[var(--sea-ink)]">{parsed.title}</p>
+        <p className="mb-2 text-base font-bold text-[var(--sea-ink)]">
+          {parsed.title}
+        </p>
       )}
       {parsed.summary && (
-        <p className="mb-3 text-sm text-[var(--sea-ink-soft)]">{parsed.summary}</p>
+        <p className="mb-3 text-sm text-[var(--sea-ink-soft)]">
+          {parsed.summary}
+        </p>
       )}
       {Array.isArray(parsed.keywords) && parsed.keywords.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
@@ -164,7 +179,9 @@ function parseConstrained(content: string): ConstrainedShape | null {
   const jsonText = extractJsonObject(stripped)
   try {
     const parsed = JSON.parse(jsonText)
-    if (parsed && typeof parsed === 'object') return parsed as ConstrainedShape
+    if (parsed && typeof parsed === 'object') {
+      return parsed as ConstrainedShape
+    }
     return null
   } catch {
     return null
@@ -174,6 +191,8 @@ function parseConstrained(content: string): ConstrainedShape | null {
 function extractJsonObject(text: string): string {
   const start = text.indexOf('{')
   const end = text.lastIndexOf('}')
-  if (start === -1 || end === -1 || end < start) return text
+  if (start === -1 || end === -1 || end < start) {
+    return text
+  }
   return text.slice(start, end + 1)
 }
