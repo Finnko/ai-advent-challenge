@@ -1,6 +1,18 @@
 import { createServerFn } from '@tanstack/react-start'
-import { AGENT_JUDGES, AGENT_TOOLS, Agent } from './agent'
-import type { AgentCapabilities, AgentRole, CallLLM } from './agent'
+import { AGENT_JUDGES, Agent, createAgentTools } from './agent'
+import type { AgentCapabilities, AgentRole, CallLLM, LlmMessage } from './agent'
+import {
+  appendMessage as appendMessageToStore,
+  createAgentStore,
+  createSession as createSessionFromStore,
+  deleteSession as deleteSessionFromStore,
+  getPersonByToken,
+  listPeople,
+  listSessions as listSessionsFromStore,
+  listSubordinates,
+  loadMessages as loadMessagesFromStore,
+} from './store'
+import type { StoredMessage } from './store'
 
 export type ChatMode = 'free' | 'constrained'
 
@@ -86,7 +98,7 @@ function apiKeyFor(name: string): string {
 async function callCompletions(
   endpoint: CompletionEndpoint,
   apiKey: string,
-  messages: { role: 'system' | 'user'; content: string }[],
+  messages: { role: 'system' | 'user' | 'assistant'; content: string }[],
   params: DeepSeekParams = {},
 ): Promise<ChatResult> {
   const startedAt = Date.now()
@@ -347,37 +359,50 @@ export const saveProposal = createServerFn({ method: 'POST' })
     return { path: `md/design/proposals/${fileName}` }
   })
 
-export const MOCK_TOKENS = {
-  employee: 'tok-employee-demo',
-  manager: 'tok-manager-demo',
-} as const
-
-type MockUser = {
-  token: string
-  identity: { name: string; role: AgentRole; title: string }
-  allowedTools: string[]
+const TOOLS_BY_ROLE: Record<AgentRole, string[]> = {
+  employee: ['bookMeetingRoom', 'requestVacation'],
+  manager: ['bookMeetingRoom', 'requestVacation', 'approveVacation', 'listVacations'],
 }
 
-const MOCK_USERS: Record<AgentRole, MockUser> = {
-  employee: {
-    token: MOCK_TOKENS.employee,
-    identity: { name: 'Пётр', role: 'employee', title: 'Линейный сотрудник' },
-    allowedTools: ['bookMeetingRoom', 'requestVacation'],
-  },
-  manager: {
-    token: MOCK_TOKENS.manager,
-    identity: { name: 'Анна', role: 'manager', title: 'Руководитель команды' },
-    allowedTools: ['bookMeetingRoom', 'requestVacation', 'approveVacation'],
-  },
-}
-
-function resolveCapabilitiesByToken(token: string): AgentCapabilities {
-  const user = Object.values(MOCK_USERS).find((u) => u.token === token)
-  if (!user) {
+async function resolveCapabilitiesByToken(
+  token: string,
+): Promise<AgentCapabilities> {
+  const person = await getPersonByToken(token)
+  if (!person) {
     throw new Error('Неизвестный токен: профиль способностей не найден.')
   }
-  return { identity: user.identity, allowedTools: user.allowedTools }
+  const subordinates = await listSubordinates(token)
+  return {
+    identity: {
+      name: person.name,
+      role: person.role,
+      title: person.title,
+      subordinates: subordinates.map((s) => s.name),
+    },
+    allowedTools: TOOLS_BY_ROLE[person.role] ?? [],
+  }
 }
+
+export type OrgPerson = {
+  token: string
+  name: string
+  role: AgentRole
+  title: string
+  managerToken: string | null
+}
+
+export const listOrg = createServerFn({ method: 'GET' }).handler(async () => {
+  const rows = await listPeople()
+  return rows.map(
+    (row): OrgPerson => ({
+      token: row.token,
+      name: row.name,
+      role: row.role as AgentRole,
+      title: row.title,
+      managerToken: row.manager_token,
+    }),
+  )
+})
 
 export const resolveCapabilities = createServerFn({ method: 'POST' })
   .validator((input: { token: string }) => {
@@ -410,30 +435,138 @@ const callFlash: CallLLM = async ({
   }
 }
 
-export const runAgent = createServerFn({ method: 'POST' })
-  .validator((input: { token: string; user: string }) => {
+export type SessionSummary = {
+  id: number
+  title: string
+  createdAt: string
+  lastMessage: string
+  messageCount: number
+}
+
+export const listSessions = createServerFn({ method: 'POST' })
+  .validator((input: { token: string }) => {
     if (typeof input !== 'object' || input === null) {
       throw new Error('Некорректный запрос')
     }
     if (typeof input.token !== 'string' || input.token.trim().length === 0) {
       throw new Error('Токен обязателен')
     }
-    if (typeof input.user !== 'string' || input.user.trim().length === 0) {
-      throw new Error('Сообщение обязательно')
-    }
-    return { token: input.token.trim(), user: input.user.trim() }
+    return { token: input.token.trim() }
   })
   .handler(async ({ data }) => {
-    const capabilities = resolveCapabilitiesByToken(data.token)
+    const rows = await listSessionsFromStore(data.token)
+    return rows.map(
+      (row): SessionSummary => ({
+        id: row.id,
+        title: row.title,
+        createdAt: row.createdAt,
+        lastMessage: row.lastMessage,
+        messageCount: row.messageCount,
+      }),
+    )
+  })
+
+export const loadSession = createServerFn({ method: 'POST' })
+  .validator((input: { sessionId: number }) => {
+    if (typeof input !== 'object' || input === null) {
+      throw new Error('Некорректный запрос')
+    }
+    if (!Number.isFinite(input.sessionId) || input.sessionId <= 0) {
+      throw new Error('Некорректный sessionId')
+    }
+    return { sessionId: input.sessionId }
+  })
+  .handler(async ({ data }) => loadMessagesFromStore(data.sessionId))
+
+export const deleteSession = createServerFn({ method: 'POST' })
+  .validator((input: { sessionId: number }) => {
+    if (typeof input !== 'object' || input === null) {
+      throw new Error('Некорректный запрос')
+    }
+    if (!Number.isFinite(input.sessionId) || input.sessionId <= 0) {
+      throw new Error('Некорректный sessionId')
+    }
+    return { sessionId: input.sessionId }
+  })
+  .handler(async ({ data }) => {
+    await deleteSessionFromStore(data.sessionId)
+    return { ok: true }
+  })
+
+const HISTORY_LIMIT = 16
+
+function historyToMessages(rows: StoredMessage[]): LlmMessage[] {
+  return rows
+    .filter((row) => row.role === 'user' || row.role === 'assistant')
+    .map((row) => ({
+      role: row.role === 'assistant' ? ('assistant' as const) : ('user' as const),
+      content: row.content,
+    }))
+}
+
+function sessionTitleFrom(text: string): string {
+  const compact = text.replace(/\s+/g, ' ').trim()
+  return compact.length > 40 ? `${compact.slice(0, 40)}…` : compact
+}
+
+export type RunAgentResult = {
+  run: import('./agent').AgentRunResult
+  sessionId: number
+}
+
+export const runAgent = createServerFn({ method: 'POST' })
+  .validator(
+    (input: { token: string; sessionId: number | null; user: string }) => {
+      if (typeof input !== 'object' || input === null) {
+        throw new Error('Некорректный запрос')
+      }
+      if (typeof input.token !== 'string' || input.token.trim().length === 0) {
+        throw new Error('Токен обязателен')
+      }
+      if (
+        input.sessionId !== null &&
+        (!Number.isFinite(input.sessionId) || input.sessionId <= 0)
+      ) {
+        throw new Error('Некорректный sessionId')
+      }
+      if (typeof input.user !== 'string' || input.user.trim().length === 0) {
+        throw new Error('Сообщение обязательно')
+      }
+      return {
+        token: input.token.trim(),
+        sessionId: input.sessionId,
+        user: input.user.trim(),
+      }
+    },
+  )
+  .handler(async ({ data }) => {
+    const capabilities = await resolveCapabilitiesByToken(data.token)
+
+    let sessionId = data.sessionId
+    if (sessionId === null) {
+      sessionId = await createSessionFromStore(
+        data.token,
+        sessionTitleFrom(data.user),
+      )
+    }
+
+    const rows = await loadMessagesFromStore(sessionId)
+    const history = historyToMessages(rows).slice(-HISTORY_LIMIT)
+
     const agent = new Agent({
       capabilities,
-      tools: AGENT_TOOLS,
+      tools: createAgentTools(createAgentStore()),
       judges: AGENT_JUDGES,
       callLLM: callFlash,
       model: TIER_ENDPOINTS.medium.model,
       today: todayIso(),
     })
-    return agent.run(data.user)
+    const run = await agent.run(data.user, history)
+
+    await appendMessageToStore(sessionId, 'user', data.user)
+    await appendMessageToStore(sessionId, 'assistant', run.answer, run)
+
+    return { run, sessionId } satisfies RunAgentResult
   })
 
 function todayIso(): string {

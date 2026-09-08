@@ -1,41 +1,41 @@
 export const DAYS = [
   {
     path: '/day1',
-    label: 'Day 1',
+    label: 'Base LLM API',
     title: 'Первый вызов LLM',
     description: 'Отправь промпт в DeepSeek и получи текстовый ответ.',
   },
   {
     path: '/day2',
-    label: 'Day 2',
+    label: 'Response format',
     title: 'Формат ответа',
     description: 'Сравни свободный и ограниченный (JSON) ответы.',
   },
   {
     path: '/day3',
-    label: 'Day 3',
+    label: 'Prompt strategies',
     title: 'Стратегии промптов',
     description: 'Одна задача решается четырьмя способами — сравни точность.',
   },
   {
     path: '/day4',
-    label: 'Day 4',
+    label: 'Temperature',
     title: 'Температура',
     description:
       'Один запрос с temperature 0 / 0.7 / 1.2 — сравни точность и креативность.',
   },
   {
     path: '/day5',
-    label: 'Day 5',
+    label: 'Model tiers',
     title: 'Версии моделей',
     description:
       'Один бриф у трёх моделей разного уровня — каждая сама предлагает архитектуру.',
   },
   {
-    path: '/day6',
-    label: 'Day 6',
-    title: 'Первый агент',
+    path: '/agent',
+    label: 'Agent',
+    title: 'Контекст и память',
     description:
-      'Агент как сущность: input/output policy, инструменты и судьи. Роль — из токена.',
+      'Агент с памятью: диалоги в SQLite, несколько сессий, бизнес-факты и подчинённые.',
   },
 ] as const

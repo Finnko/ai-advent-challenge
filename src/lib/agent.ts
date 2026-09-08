@@ -4,6 +4,7 @@ export type AgentIdentity = {
   name: string
   role: AgentRole
   title: string
+  subordinates: string[]
 }
 
 export type AgentCapabilities = {
@@ -13,7 +14,7 @@ export type AgentCapabilities = {
 
 export type ToolArgs = Record<string, string | number | boolean | null>
 
-export type LlmMessage = { role: 'system' | 'user'; content: string }
+export type LlmMessage = { role: 'system' | 'user' | 'assistant'; content: string }
 
 export type LlmUsage = { prompt_tokens: number; completion_tokens: number }
 
@@ -34,6 +35,34 @@ export type ToolOutcome = {
   ok: boolean
   text: string
   reference: string | null
+}
+
+export type VacationRecord = {
+  employeeName: string
+  approverName: string | null
+  start: string
+  end: string
+  reference: string
+  status: 'pending' | 'approved'
+  createdAt?: string
+}
+
+export type BookingRecord = {
+  room: string
+  date: string
+  time: string
+  capacity: number
+  reference: string
+  bookedBy: string
+}
+
+export type AgentStore = {
+  insertVacation: (record: VacationRecord) => void | Promise<void>
+  listVacations: (
+    approverName: string,
+    subordinateNames: string[],
+  ) => VacationRecord[] | Promise<VacationRecord[]>
+  insertBooking: (record: BookingRecord) => void | Promise<void>
 }
 
 export type AgentTool = {
@@ -155,16 +184,23 @@ function isInvalidTime(value: string): boolean {
   return !/^\d{2}:\d{2}$/.test(value)
 }
 
-function bookRoom(args: ToolArgs): ToolOutcome {
+type BookingPlan =
+  | {
+      ok: true
+      room: string
+      date: string
+      time: string
+      capacity: number
+      reference: string
+    }
+  | { ok: false; text: string; reference: null }
+
+function planBooking(args: ToolArgs): BookingPlan {
   const date = pickString(args, 'date')
   const time = pickString(args, 'time')
   const capacity = Math.max(1, Math.min(50, Number(args.capacity) || 4))
   if (!date || !time) {
-    return {
-      ok: false,
-      text: 'Не указаны дата и время бронирования.',
-      reference: null,
-    }
+    return { ok: false, text: 'Не указаны дата и время бронирования.', reference: null }
   }
   if (isInvalidDate(date)) {
     return {
@@ -180,16 +216,32 @@ function bookRoom(args: ToolArgs): ToolOutcome {
       reference: null,
     }
   }
-  const room = roomFor(date, time)
-  const reference = refCode('BOOK')
   return {
     ok: true,
-    text: `${room} забронирована на ${date} в ${time} на ${capacity} чел.`,
-    reference,
+    room: roomFor(date, time),
+    date,
+    time,
+    capacity,
+    reference: refCode('BOOK'),
   }
 }
 
-function requestVacation(args: ToolArgs): ToolOutcome {
+type VacationPlan =
+  | {
+      ok: true
+      employeeName: string
+      approverName: string | null
+      start: string
+      end: string
+      status: 'pending' | 'approved'
+      reference: string
+    }
+  | { ok: false; text: string; reference: null }
+
+function planVacationRequest(
+  args: ToolArgs,
+  identity: AgentIdentity,
+): VacationPlan {
   const start = pickString(args, 'start')
   const end = pickString(args, 'end')
   const invalid = validateRange(start, end)
@@ -203,15 +255,21 @@ function requestVacation(args: ToolArgs): ToolOutcome {
       reference: null,
     }
   }
-  const reference = refCode('VAC')
   return {
     ok: true,
-    text: `Заявка на отпуск с ${start} по ${end} создана, статус: ожидает согласования руководителя.`,
-    reference,
+    employeeName: identity.name,
+    approverName: null,
+    start,
+    end,
+    status: 'pending',
+    reference: refCode('VAC'),
   }
 }
 
-function approveVacation(args: ToolArgs, identity: AgentIdentity): ToolOutcome {
+function planVacationApproval(
+  args: ToolArgs,
+  identity: AgentIdentity,
+): VacationPlan {
   const employeeName = pickString(args, 'employeeName')
   const start = pickString(args, 'start')
   const end = pickString(args, 'end')
@@ -229,42 +287,152 @@ function approveVacation(args: ToolArgs, identity: AgentIdentity): ToolOutcome {
       reference: null,
     }
   }
+  const isSubordinate = identity.subordinates.some(
+    (name) => normalizeName(name) === normalizeName(employeeName),
+  )
+  if (!isSubordinate) {
+    return {
+      ok: false,
+      text: `${employeeName} не входит в команду руководителя ${identity.name} — согласовать отпуск нельзя.`,
+      reference: null,
+    }
+  }
   const invalid = validateRange(start, end)
   if (invalid) {
     return { ok: false, text: invalid, reference: null }
   }
-  const reference = refCode('APPR')
+  if (isInvalidDate(start) || isInvalidDate(end)) {
+    return {
+      ok: false,
+      text: 'Даты должны быть в формате YYYY-MM-DD.',
+      reference: null,
+    }
+  }
   return {
     ok: true,
-    text: `Отпуск сотрудника ${employeeName} с ${start} по ${end} согласован.`,
-    reference,
+    employeeName,
+    approverName: identity.name,
+    start,
+    end,
+    status: 'approved',
+    reference: refCode('APPR'),
   }
 }
 
-export const AGENT_TOOLS: AgentTool[] = [
-  {
-    name: 'bookMeetingRoom',
-    description: 'забронировать переговорку',
-    argsExample: '{ "date": "YYYY-MM-DD", "time": "HH:MM", "capacity": число }',
-    roles: ['employee', 'manager'],
-    run: bookRoom,
-  },
-  {
-    name: 'requestVacation',
-    description: 'подать заявку на отпуск',
-    argsExample: '{ "start": "YYYY-MM-DD", "end": "YYYY-MM-DD" }',
-    roles: ['employee', 'manager'],
-    run: requestVacation,
-  },
-  {
-    name: 'approveVacation',
-    description: 'согласовать отпуск сотрудника',
-    argsExample:
-      '{ "employeeName": "имя сотрудника", "start": "YYYY-MM-DD", "end": "YYYY-MM-DD" }',
-    roles: ['manager'],
-    run: approveVacation,
-  },
-]
+function bookingOutcome(plan: BookingPlan): ToolOutcome {
+  if (!plan.ok) {
+    return { ok: false, text: plan.text, reference: null }
+  }
+  return {
+    ok: true,
+    text: `${plan.room} забронирована на ${plan.date} в ${plan.time} на ${plan.capacity} чел.`,
+    reference: plan.reference,
+  }
+}
+
+function vacationOutcome(plan: VacationPlan): ToolOutcome {
+  if (!plan.ok) {
+    return { ok: false, text: plan.text, reference: null }
+  }
+  const text =
+    plan.status === 'approved'
+      ? `Отпуск сотрудника ${plan.employeeName} с ${plan.start} по ${plan.end} согласован.`
+      : `Заявка на отпуск с ${plan.start} по ${plan.end} создана, статус: ожидает согласования руководителя.`
+  return { ok: true, text, reference: plan.reference }
+}
+
+export function createAgentTools(store: AgentStore): AgentTool[] {
+  return [
+    {
+      name: 'bookMeetingRoom',
+      description: 'забронировать переговорку',
+      argsExample: '{ "date": "YYYY-MM-DD", "time": "HH:MM", "capacity": число }',
+      roles: ['employee', 'manager'],
+      run: async (args, identity) => {
+        const plan = planBooking(args)
+        if (plan.ok) {
+          await store.insertBooking({
+            room: plan.room,
+            date: plan.date,
+            time: plan.time,
+            capacity: plan.capacity,
+            reference: plan.reference,
+            bookedBy: identity.name,
+          })
+        }
+        return bookingOutcome(plan)
+      },
+    },
+    {
+      name: 'requestVacation',
+      description: 'подать заявку на отпуск',
+      argsExample: '{ "start": "YYYY-MM-DD", "end": "YYYY-MM-DD" }',
+      roles: ['employee', 'manager'],
+      run: async (args, identity) => {
+        const plan = planVacationRequest(args, identity)
+        if (plan.ok) {
+          await store.insertVacation({
+            employeeName: plan.employeeName,
+            approverName: null,
+            start: plan.start,
+            end: plan.end,
+            status: 'pending',
+            reference: plan.reference,
+          })
+        }
+        return vacationOutcome(plan)
+      },
+    },
+    {
+      name: 'approveVacation',
+      description: 'согласовать отпуск сотрудника из своей команды',
+      argsExample:
+        '{ "employeeName": "имя сотрудника", "start": "YYYY-MM-DD", "end": "YYYY-MM-DD" }',
+      roles: ['manager'],
+      run: async (args, identity) => {
+        const plan = planVacationApproval(args, identity)
+        if (plan.ok) {
+          await store.insertVacation({
+            employeeName: plan.employeeName,
+            approverName: plan.approverName,
+            start: plan.start,
+            end: plan.end,
+            status: 'approved',
+            reference: plan.reference,
+          })
+        }
+        return vacationOutcome(plan)
+      },
+    },
+    {
+      name: 'listVacations',
+      description: 'показать отпуска команды: согласованные и ожидающие',
+      argsExample: '{}',
+      roles: ['manager'],
+      run: async (_args, identity) => {
+        const records = await store.listVacations(
+          identity.name,
+          identity.subordinates,
+        )
+        if (records.length === 0) {
+          return {
+            ok: true,
+            text: 'Согласованных отпусков и ожидающих заявок нет.',
+            reference: null,
+          }
+        }
+        const lines = records.map((record) => {
+          const state =
+            record.status === 'approved'
+              ? 'согласован'
+              : 'ожидает согласования'
+          return `- ${record.employeeName}: с ${record.start} по ${record.end} — ${state} (${record.reference})`
+        })
+        return { ok: true, text: lines.join('\n'), reference: null }
+      },
+    },
+  ]
+}
 
 const OUTPUT_POLICY_JUDGE: AgentJudge = {
   name: 'output-policy',
@@ -312,6 +480,18 @@ const BUSINESS_RULES_JUDGE: AgentJudge = {
           message: `Руководитель ${identity.name} не может согласовать отпуск самому себе.`,
         }
       }
+      if (
+        employeeName &&
+        !identity.subordinates.some(
+          (name) => normalizeName(name) === normalizeName(employeeName),
+        )
+      ) {
+        return {
+          judge: 'business-rules',
+          status: 'fail',
+          message: `Инструмент approveVacation доступен только для подчинённых руководителя ${identity.name}.`,
+        }
+      }
     }
     if (toolRequested && !allowedTools.includes(toolRequested)) {
       return {
@@ -350,6 +530,9 @@ function buildDecideSystem(
     'Ты — планировщик корпоративного агента. Пользователь просит о действии или задаёт вопрос.',
     `Сегодня: ${today}.`,
     `Пользователь: ${caps.identity.title} ${caps.identity.name} (роль: ${caps.identity.role}).`,
+    ...(caps.identity.subordinates.length > 0
+      ? [`Подчинённые пользователя: ${caps.identity.subordinates.join(', ')}.`]
+      : []),
     HARDENING_LINE,
     'Если запрос требует действия из списка доступных инструментов — выбери ровно один. Если инструмент не нужен или нужного нет в списке — верни tool: null.',
     'Доступные инструменты:',
@@ -367,6 +550,7 @@ function buildFinalizeSystem(caps: AgentCapabilities): string {
     HARDENING_LINE,
     'Отвечай по фактам из отчёта инструмента. Если в отчёте есть «Код подтверждения: …» — включи этот код в ответ дословно. Не выдумывай выполненные действия, которых нет в отчёте.',
     'Если инструмент не вызывался — просто ответь на запрос.',
+    'Вопросы вроде «кому я согласовал отпуск?» решаются через listVacations — не отвечай по памяти модели, используй данные отчёта.',
     'Отвечай кратко, по-русски, обычным текстом без markdown-разметки.',
   ]
   return lines.join('\n')
@@ -430,7 +614,7 @@ function isPermitted(caps: AgentCapabilities, tool: AgentTool): boolean {
 export class Agent {
   constructor(private readonly config: AgentConfig) {}
 
-  async run(userInput: string): Promise<AgentRunResult> {
+  async run(userInput: string, history: LlmMessage[] = []): Promise<AgentRunResult> {
     const trace: AgentTraceStep[] = []
     const { capabilities, tools, judges, callLLM, model } = this.config
     const request = userInput.trim()
@@ -463,6 +647,7 @@ export class Agent {
     const decideReply = await callLLM({
       messages: [
         { role: 'system', content: decideSystem },
+        ...history,
         { role: 'user', content: request },
       ],
       temperature: DECIDE_TEMPERATURE,
@@ -521,6 +706,7 @@ export class Agent {
       const finalizeReply = await callLLM({
         messages: [
           { role: 'system', content: finalizeSystem },
+          ...history,
           { role: 'user', content: finalizeUser },
         ],
         temperature: FINALIZE_TEMPERATURE,
