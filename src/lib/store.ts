@@ -1,4 +1,9 @@
-import type { AgentRunResult, AgentStore, BookingRecord, VacationRecord } from './agent'
+import type {
+  AgentRunResult,
+  AgentStore,
+  BookingRecord,
+  VacationRecord,
+} from './agent'
 
 export type PersonRow = {
   id: number
@@ -119,12 +124,36 @@ CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, id);
 `
 
 const PEOPLE_SEED: Array<
-  [token: string, name: string, role: string, title: string, managerToken: string | null]
+  [
+    token: string,
+    name: string,
+    role: string,
+    title: string,
+    managerToken: string | null,
+  ]
 > = [
   ['tok-manager-demo', 'Анна', 'manager', 'Руководитель команды', null],
-  ['tok-employee-demo', 'Пётр', 'employee', 'Линейный сотрудник', 'tok-manager-demo'],
-  ['tok-employee-maria', 'Мария', 'employee', 'Линейный сотрудник', 'tok-manager-demo'],
-  ['tok-employee-ivan', 'Иван', 'employee', 'Линейный сотрудник', 'tok-manager-demo'],
+  [
+    'tok-employee-demo',
+    'Пётр',
+    'employee',
+    'Линейный сотрудник',
+    'tok-manager-demo',
+  ],
+  [
+    'tok-employee-maria',
+    'Мария',
+    'employee',
+    'Линейный сотрудник',
+    'tok-manager-demo',
+  ],
+  [
+    'tok-employee-ivan',
+    'Иван',
+    'employee',
+    'Линейный сотрудник',
+    'tok-manager-demo',
+  ],
 ]
 
 function seedPeople(db: SqliteDatabase): void {
@@ -151,7 +180,9 @@ export async function listPeople(): Promise<PersonRow[]> {
     .all() as PersonRow[]
 }
 
-export async function getPersonByToken(token: string): Promise<PersonRow | null> {
+export async function getPersonByToken(
+  token: string,
+): Promise<PersonRow | null> {
   const db = await getDb()
   const row = db
     .prepare(
@@ -170,7 +201,10 @@ export async function listSubordinates(token: string): Promise<PersonRow[]> {
     .all(token) as PersonRow[]
 }
 
-export async function createSession(token: string, title: string): Promise<number> {
+export async function createSession(
+  token: string,
+  title: string,
+): Promise<number> {
   const db = await getDb()
   const result = db
     .prepare('INSERT INTO sessions (token, title, created_at) VALUES (?, ?, ?)')
@@ -221,13 +255,19 @@ export async function listSessions(token: string): Promise<SessionListItem[]> {
   }))
 }
 
-export async function loadMessages(sessionId: number): Promise<StoredMessage[]> {
+export async function loadMessages(
+  sessionId: number,
+): Promise<StoredMessage[]> {
   const db = await getDb()
   const rows = db
     .prepare(
       'SELECT role, content, run_json FROM messages WHERE session_id = ? ORDER BY id',
     )
-    .all(sessionId) as Array<{ role: string; content: string; run_json: string | null }>
+    .all(sessionId) as Array<{
+    role: string
+    content: string
+    run_json: string | null
+  }>
   return rows.map((row) => ({
     role: row.role === 'assistant' ? 'assistant' : 'user',
     content: row.content,
@@ -244,7 +284,13 @@ export async function appendMessage(
   const db = await getDb()
   db.prepare(
     'INSERT INTO messages (session_id, role, content, run_json, created_at) VALUES (?, ?, ?, ?, ?)',
-  ).run(sessionId, role, content, runJson ? JSON.stringify(runJson) : null, nowIso())
+  ).run(
+    sessionId,
+    role,
+    content,
+    runJson ? JSON.stringify(runJson) : null,
+    nowIso(),
+  )
 }
 
 function safeParse(value: string): unknown {
@@ -252,6 +298,29 @@ function safeParse(value: string): unknown {
     return JSON.parse(value)
   } catch {
     return null
+  }
+}
+
+type VacationRow = {
+  employee_name: string
+  approver_name: string | null
+  start_date: string
+  end_date: string
+  reference: string
+  status: string
+  created_at: string
+}
+
+function vacationFromRow(row: VacationRow): VacationRecord {
+  return {
+    employeeName: row.employee_name,
+    approverName: row.approver_name,
+    start: row.start_date,
+    end: row.end_date,
+    reference: row.reference,
+    status:
+      row.status === 'approved' ? ('approved' as const) : ('pending' as const),
+    createdAt: row.created_at,
   }
 }
 
@@ -282,24 +351,31 @@ export function createAgentStore(): AgentStore {
              OR (status = 'pending' AND employee_name IN (${placeholders}))
           ORDER BY id DESC`,
         )
-        .all(approverName, ...subordinateNames) as Array<{
-        employee_name: string
-        approver_name: string | null
-        start_date: string
-        end_date: string
-        reference: string
-        status: string
-        created_at: string
-      }>
-      return rows.map((row) => ({
-        employeeName: row.employee_name,
-        approverName: row.approver_name,
-        start: row.start_date,
-        end: row.end_date,
-        reference: row.reference,
-        status: row.status === 'approved' ? ('approved' as const) : ('pending' as const),
-        createdAt: row.created_at,
-      }))
+        .all(approverName, ...subordinateNames) as VacationRow[]
+      return rows.map(vacationFromRow)
+    },
+    async findPendingVacation(
+      employeeName: string,
+      start: string,
+      end: string,
+    ) {
+      const db = await getDb()
+      const rows = db
+        .prepare(
+          `SELECT employee_name, approver_name, start_date, end_date, reference, status, created_at
+          FROM vacations
+          WHERE employee_name = ? AND start_date = ? AND end_date = ? AND status = 'pending'
+          ORDER BY id DESC
+          LIMIT 1`,
+        )
+        .all(employeeName, start, end) as VacationRow[]
+      return rows.length > 0 ? vacationFromRow(rows[0]) : null
+    },
+    async markVacationApproved(reference: string, approverName: string) {
+      const db = await getDb()
+      db.prepare(
+        "UPDATE vacations SET status = 'approved', approver_name = ? WHERE reference = ? AND status = 'pending'",
+      ).run(approverName, reference)
     },
     async insertBooking(record: BookingRecord) {
       const db = await getDb()
