@@ -15,7 +15,7 @@ function Day2() {
       <div className="flex min-h-0 flex-1 flex-col gap-4 lg:flex-row">
         <div className="flex min-h-0 flex-1 flex-col">
           <header className="mb-4">
-            <p className="island-kicker mb-2">AI Advent Challenge · Day 2</p>
+            <p className="island-kicker mb-2">Response format</p>
             <h1 className="demo-title mb-2">Формат ответа</h1>
             <p className="demo-muted m-0 max-w-2xl text-sm">
               Отправь один и тот же промпт в обе вкладки: простой запрос против

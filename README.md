@@ -100,69 +100,102 @@ OpenAI-совместимый `chat/completions`, получить обычны�
 
 ## Day 6 — первый агент
 
-Страница `/day6`: агент как **отдельная сущность**, а не один вызов API. Пользователь пишет
-запрос свободным текстом; агент проходит стадии `input policy → decide (JSON-роутинг инструмента)
-→ act (исполнение мок-инструмента) → finalize (ответ) → судьи`.
+Агент как **отдельная сущность**, а не один вызов API. Пользователь пишет запрос свободным
+текстом; агент проходит стадии `input policy → decide (JSON-роутинг инструмента) → act →
+finalize → судьи`. В Day 6 демо живёт без памяти на `/day6`; в Day 7 тот же агент переезжает
+на единую страницу `/agent` и получает память (см. ниже).
 
-- Две роли задаются **мок-токеном**: сотрудник `tok-employee-demo` (Пётр) и руководитель
-  `tok-manager-demo` (Анна). Токен уходит на серверную `resolveCapabilities`, которая возвращает
-  профиль способностей — права агент получает из токена, а не из слов пользователя.
-- Мок-инструменты: `bookMeetingRoom` (обе роли), `requestVacation` (обе), `approveVacation`
-  (только руководитель). Запрос сотрудника «согласуй мне отпуск» отклоняется capability-gating
-  ещё на стадии act.
-- Два сменных судьи: `output-policy` (ответ непустой и подтверждает результат инструмента кодом —
-  защита от галлюцинаций) и `business-rules` (нельзя согласовать отпуск самому себе; инструмент
-  вне прав роли отклоняется).
-- Модель агента — `deepseek-v4-flash`, `thinking: disabled`; температура decide 0.2 (детерминизм
-  роутинга) и finalize 0.7 (баланс).
-- В UI — трасса стадий под каждым ответом: что приняла input policy, сырой JSON decide, выбранный
-  инструмент и его результат, вердикты судей. Каждый запуск — новый экземпляр агента в одном
-  процессе приложения (для будущего «1 приложение спаунит N агентов»).
+- Права роли задаются **мок-токеном** и резолвятся серверной `resolveCapabilities` — агент
+  берёт права из токена, а не из слов пользователя («согласуй мне отпуск» отклоняется).
+- Инструменты: `bookMeetingRoom`, `requestVacation`, `approveVacation` (только руководитель).
+- Судьи: `output-policy` (непустой ответ + код подтверждения инструмента) и `business-rules`
+  (нельзя согласовать себе; инструмент вне прав роли отклоняется).
+- Модель `deepseek-v4-flash`, `thinking: disabled`; decide 0.2, finalize 0.7.
+- В UI — трасса стадий под каждым ответом; каждый запуск — новый экземпляр агента.
 
 ### Как это устроено (Day 6)
 
 - `src/lib/agent.ts` — портативная библиотека: класс `Agent` + типы `Capabilities`/`Tool`/`Judge`,
-  стадии `run()`, мок-инструменты и судьи. **Не знает про env и `fetch`** — LLM-транспорт
-  инжектится (`callLLM`), поэтому та же «коробка» потом сможет работать и в конфиге opencode.
-- `src/lib/chat.ts` — server fns: `resolveCapabilities({ token })` (мок-маппинг токен → профиль,
-  в проде заменится реальным вызовом бэкенда) и `runAgent({ token, user })` — собирает агента с
-  адаптером на flash и возвращает `{ answer, trace, verdicts, usage, latencyMs }`.
-- `src/lib/day6.ts` — client-safe данные: пресеты ролей/токенов, описания инструментов, примеры
-  запросов (включая «попытки уговорить» агента), выводы и ссылки.
-- `src/routes/_layout/day6.tsx` — свободный чат + панель способностей роли + трасса стадий агента.
+  стадии `run()`, инструменты и судьи. **Не знает про env и `fetch`** — LLM-транспорт инжектится
+  (`callLLM`), поэтому та же «коробка» потом сможет работать и в конфиге opencode.
+- `src/lib/chat.ts` — server fns: `resolveCapabilities({ token })` и `runAgent(...)` на адаптере flash.
+
+## Day 7 — сохранение контекста
+
+Тот же агент на роуте `/agent` (бывший `/day6`), но теперь с памятью: история и бизнес-факты
+переживают перезапуск приложения. Проверка — начать диалог, перезапустить, продолжить.
+
+- **Хранилище** — SQLite через встроенный `node:sqlite` (`src/lib/store.ts`, файл
+  `data/agent.sqlite`, gitignored): таблицы `people`, `sessions`, `messages`, `vacations`,
+  `bookings`. Никаких новых зависимостей.
+- **Два слоя памяти.** История диалога: assistant-сообщения хранят и голый текст (реплей в
+  `decide`/`finalize` — ролям `LlmMessage` добавлен `assistant`), и полный `AgentRunResult`
+  (`run_json` для трассы в UI после рестарта). Бизнес-состояние: инструменты пишут эффекты в БД —
+  бронирования в `bookings`, отпуска в `vacations`.
+- **Оргструктура из данных.** Люди — не константа, а таблица `people`, засеянная моком:
+  руководитель Анна + линейные Пётр, Мария, Иван (`manager_token`). `resolveCapabilities`
+  читает человека и его подчинённых; список грузится server fn `listOrg`. Замена на реальный
+  бэкенд = подмена источника за этим швом.
+- **Несколько сессий на персону.** `sessions` + `messages.session_id`; серверные
+  `listSessions`/`loadSession`/`deleteSession`. В UI слева — список сессий текущей персоны
+  (заголовок из первого сообщения, создание/удаление), справа — чат.
+- **Правило подчинённых.** `approveVacation` согласует только прямых подчинённых (самому себе
+  и «не своим» — отказ: проверяется и инструментом, и судьёй `business-rules`). Новый инструмент
+  `listVacations` (менеджер) отвечает «кому я согласовал отпуск» из записей БД, а не по памяти модели.
+- `runAgent({ token, sessionId, user })`: грузит историю сессии, прогоняет агента, сохраняет
+  сообщения; при пустом `sessionId` сессия создаётся автоматически.
+- Вкладки сайдбара переименованы в смысловые (`Base LLM API`, `Prompt format`,
+  `Prompt strategies`, `Temperature`, `Model tiers`, `Agent`); роут `/agent` шире, глобальный
+  сайдбар уже. Нумерация дней остаётся только в этом README.
+
+### Как это устроено (Day 7)
+
+- `src/lib/agent.ts` — `LlmMessage` теперь с `assistant`, `AgentIdentity.subordinates`,
+  `Agent.run(user, history?)` (история реплеится в decide/finalize), `createAgentTools(store)`
+  (инструменты персистят через инжектированный `AgentStore`) и `listVacations`.
+- `src/lib/store.ts` — ленивый `node:sqlite`-синглтон: схема, сид `people`, CRUD сессий/сообщений,
+  фабрика `createAgentStore()` под интерфейс `AgentStore`.
+- `src/lib/chat.ts` — `resolveCapabilities`/`listOrg` читают `people`; сессии через
+  `listSessions`/`loadSession`/`deleteSession`; `runAgent({ token, sessionId, user })`
+  (автосоздание сессии + реплей истории + сохранение сообщений).
+- `src/lib/day6.ts` — client-safe данные UI агента: `TOOL_INFO`, примеры запросов.
+- `src/components/agent/` — `PersonaPicker` (орг-чарт: руководитель слева, сотрудники справа),
+  `SessionList`, `ChatThread`, `TraceAccordion` и др.
+- `src/routes/_layout/agent.tsx` — орг-чарт из `listOrg`, панель сессий слева, чат с трассой справа.
 
 ### Структура
 
 ```
 src/
-├── lib/chat.ts          # LLM-слой: callCompletions + server fn chat/ask/askModel/readBrief/saveProposal/resolveCapabilities/runAgent
-├── lib/agent.ts         # портативная библиотека агента: Agent, инструменты, судьи (без env и fetch)
-├── lib/days.ts          # массив дней для хаба и сайдбара
+├── lib/chat.ts          # LLM-слой: callCompletions + server fn chat/ask/askModel/readBrief/saveProposal/resolveCapabilities/listOrg/listSessions/loadSession/deleteSession/runAgent
+├── lib/agent.ts         # портативный агент: Agent, LlmMessage(+assistant), createAgentTools(store), судьи (без env/fetch)
+├── lib/store.ts         # SQLite (node:sqlite): people/sessions/messages/vacations/bookings + createAgentStore
+├── lib/days.ts          # навигация: смысловые лейблы для сайдбара и хаба
 ├── lib/day3.ts          # задания, промпты и судья для Day 3
 ├── lib/day4.ts          # задания, температуры и выводы для Day 4
 ├── lib/day5.ts          # ступени моделей, system и ссылки для Day 5
-├── lib/day6.ts          # роли/мок-токены, инструменты, примеры для Day 6
-├── components/          # Header, ThemeToggle, Sidebar, Chat
+├── lib/day6.ts          # данные UI агента: TOOL_INFO, примеры запросов
+├── components/          # Header, ThemeToggle, Sidebar, agent/ (PersonaPicker, SessionList, ChatThread, …)
 └── routes/
     ├── __root.tsx       # корневой layout
-    └── _layout/         # каркас приложения (сайдбар + страницы дней)
-        ├── index.tsx    # хаб с карточками дней
+    └── _layout/         # сайдбар + страницы
+        ├── index.tsx    # хаб с карточками
         ├── day1.tsx     # свободный чат
         ├── day2.tsx     # сравнение free vs constrained
         ├── day3.tsx     # 4 стратегии промпта + вердикт
         ├── day4.tsx     # один запрос при temperature 0 / 0.7 / 1.2
         ├── day5.tsx     # один бриф на трёх моделях + предложения архитектуры
-        └── day6.tsx     # первый агент: чат + трасса стадий (decide → act → finalize → судьи)
+        └── agent.tsx    # агент с памятью: орг-чарт, сессии, чат + трасса стадий
 ```
 
 ### Про деплой
 
-Для разработки отдельный сервер не нужен — всё локально в одном процессе (`npm run dev`).
-Прод (`npm run build`) — это SSR-приложение на Node, ему нужен Node-рантайм (VPS или серверлесс-платформа).
-Деплой вне scope.
+Для разработки отдельный сервер не нужен — всё локально в одном процессе (`npm run dev`),
+данные — в `data/agent.sqlite` (gitignored). Прод (`npm run build`) — это SSR-приложение на Node;
+деплой вне scope.
 
 ### Вне scope (следующие шаги)
 
 - Потоковая выдача ответа (streaming / SSE)
-- История сообщений
-- Сохранение и деплой
+- Настоящий бэкенд для `people`/токенов (сейчас — мок-сид в SQLite за швом `resolveCapabilities`)
+- Многопоточность сессий и деплой

@@ -179,7 +179,7 @@ function Day3() {
   return (
     <div className="mx-auto flex h-full min-h-0 max-w-6xl flex-col gap-4 overflow-y-auto px-4 py-6">
       <header className="mb-2">
-        <p className="island-kicker mb-2">AI Advent Challenge · Day 3</p>
+        <p className="island-kicker mb-2">Prompt strategies</p>
         <h1 className="demo-title mb-2">Стратегии промптов</h1>
         <p className="demo-muted m-0 max-w-2xl text-sm">
           Выбери задачу и реши её четырьмя способами: напрямую, пошагово, через

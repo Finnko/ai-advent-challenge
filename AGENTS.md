@@ -1,6 +1,6 @@
 # Project: AI Advent Challenge
 
-Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 5 (`feature/day5`).
+Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 7 (`feature/day7`).
 
 ## Stack
 
@@ -30,8 +30,25 @@ Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 
   - `readBrief` (reads `md/design/brief.md` from `process.cwd()`) and `saveProposal`
     (writes responses to `md/design/proposals/`) — Day 5's brief/proposals are a **local, gitignored**
     `md/` folder, not part of the repo, so these only work in local dev where that folder exists.
+  - Agent (Day 6/7) server fns: `resolveCapabilities({ token })`, `listOrg()`, and the persistence
+    set `listSessions({ token })` / `loadSession({ sessionId })` / `deleteSession({ sessionId })`
+    and `runAgent({ token, sessionId: number | null, user })` (auto-creates a session when
+    `sessionId` is null, replays stored history into the LLM, and persists both new messages).
+- **Day 7 persistence** lives in `src/lib/store.ts`, a server-only `node:sqlite` singleton (raw
+  `DatabaseSync`, no npm dependency; emits an `ExperimentalWarning`, fine). DB file:
+  `data/agent.sqlite` (gitignored `data/`). Tables: `people` (org seeded mock: Анна + Пётр/Мария/Иван
+  via `manager_token`), `sessions`, `messages` (`run_json` holds the full `AgentRunResult`),
+  `vacations`, `bookings`. **Never import `node:sqlite` statically in client-reachable code** —
+  always `await import('node:sqlite')` inside server functions (same pattern as `node:fs/promises`).
+  Client-facing UI for the agent lives in `src/lib/day6.ts` (safe data only).
+- The agent demo is a **single live route `/agent`** (renamed from `/day6`) — Day 7 added memory to
+  it rather than a second page. Sidebar labels in `src/lib/days.ts` are semantic
+  (`Base LLM API`, …, `Agent`), not `Day N`. In `src/lib/agent.ts`: `LlmMessage.role` includes
+  `'assistant'`, `AgentIdentity.subordinates: string[]`, `Agent.run(user, history?)` replays history
+  into `decide`/`finalize`, tools are built via `createAgentTools(store: AgentStore)` (effects are
+  persisted through the injected store; `listVacations` answers memory questions from DB).
 - Client-safe prompt/task text (no env) belongs in `src/lib/day3.ts` / `src/lib/day4.ts` /
-  `src/lib/day5.ts`, never in `chat.ts`.
+  `src/lib/day5.ts` / `src/lib/day6.ts`, never in `chat.ts`.
 
 ## Commands
 
@@ -45,7 +62,7 @@ npm run generate-routes # regenerate route tree after adding routes
 
 - No comments in code unless asked.
 - Respond one chunk at a time (no streaming yet); the UI shows a 3-dots animation while waiting.
-- Out of scope for now: streaming, chat history, persistence, deployment.
+- Out of scope for now: streaming, deployment, a real auth/backend for `people` (today a seeded mock).
 - Work happens on `feature/dayN` branches; commit only when asked.
 
 <!-- intent-skills:start -->

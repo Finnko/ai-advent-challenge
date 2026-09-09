@@ -95,7 +95,7 @@ function Day4() {
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 pb-6 pt-6">
       <header className="mb-2">
-        <p className="island-kicker mb-2">AI Advent Challenge · Day 4</p>
+        <p className="island-kicker mb-2">Temperature</p>
         <h1 className="demo-title mb-2">Температура</h1>
         <p className="demo-muted m-0 max-w-2xl text-sm">
           Один и тот же запрос отправляется с тремя значениями temperature — 0,
