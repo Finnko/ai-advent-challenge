@@ -22,8 +22,16 @@ export const ROOMS = [
   'Комната «Метеор»',
 ]
 
+export const ROOM_CAPACITY = 5
+
 function roomKey(name: string): string {
-  return normalizeName(name).replace(/[«»]/g, '')
+  return normalizeName(name)
+    .replace(/[«»]/g, '')
+    .replace(/^(переговорка|лаундж|комната)\s+/i, '')
+}
+
+function roomStem(name: string): string {
+  return roomKey(name).replace(/[аеёиоуыэюя]$/u, '')
 }
 
 function resolveRoom(arg: string): string | null {
@@ -31,12 +39,15 @@ function resolveRoom(arg: string): string | null {
     return null
   }
   const key = roomKey(arg)
-  return ROOMS.find((room) => roomKey(room) === key) ?? null
-}
-
-function roomFor(date: string, time: string): string {
-  const seed = date.length + time.length + (date.charCodeAt(0) || 0)
-  return ROOMS[seed % ROOMS.length] ?? ROOMS[0]
+  const exact = ROOMS.find((room) => roomKey(room) === key)
+  if (exact) {
+    return exact
+  }
+  const stem = roomStem(arg)
+  if (stem.length < 4) {
+    return null
+  }
+  return ROOMS.find((room) => roomStem(room) === stem) ?? null
 }
 
 function timeToMinutes(time: string): number {
@@ -49,6 +60,18 @@ function formatMeetingTime(startMin: number, durationMin: number): string {
   const fmt = (min: number) =>
     `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`
   return `${fmt(startMin)}–${fmt(endMin)}`
+}
+
+function overlaps(
+  time: string,
+  durationMin: number,
+  row: { time: string; durationMin: number },
+): boolean {
+  const start = timeToMinutes(time)
+  const end = start + durationMin
+  const rowStart = timeToMinutes(row.time)
+  const rowEnd = rowStart + row.durationMin
+  return start < rowEnd && end > rowStart
 }
 
 export function pickString(args: ToolArgs, key: string): string {
@@ -80,7 +103,7 @@ function isInvalidTime(value: string): boolean {
 type BookingPlan =
   | {
       ok: true
-      room: string
+      room: string | null
       date: string
       time: string
       durationMin: number
@@ -93,7 +116,7 @@ type BookingPlan =
 function planBooking(args: ToolArgs): BookingPlan {
   const date = pickString(args, 'date')
   const time = pickString(args, 'time')
-  const capacity = Math.max(1, Math.min(50, Number(args.capacity) || 4))
+  const capacity = ROOM_CAPACITY
   const durationMin = Math.max(
     15,
     Math.min(480, Math.round(Number(args.duration) || 60)),
@@ -121,7 +144,7 @@ function planBooking(args: ToolArgs): BookingPlan {
       reference: null,
     }
   }
-  let room = null
+  let room: string | null = null
   if (requestedRoom.length > 0) {
     room = resolveRoom(requestedRoom)
     if (!room) {
@@ -134,7 +157,7 @@ function planBooking(args: ToolArgs): BookingPlan {
   }
   return {
     ok: true,
-    room: room ?? roomFor(date, time),
+    room,
     date,
     time,
     durationMin,
@@ -142,6 +165,62 @@ function planBooking(args: ToolArgs): BookingPlan {
     title: title || 'Встреча',
     reference: refCode('BOOK'),
   }
+}
+
+function toNameList(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.filter((entry): entry is string => typeof entry === 'string')
+  }
+  if (typeof value === 'string') {
+    return value.split(/[,;]| и /i)
+  }
+  return []
+}
+
+type ParticipantPlan =
+  | { ok: true; names: string[] }
+  | { ok: false; text: string }
+
+function resolveParticipants(
+  args: ToolArgs,
+  identity: AgentIdentity,
+): ParticipantPlan {
+  const requested = toNameList(args.participants)
+    .map((name) => name.trim())
+    .filter((name) => name.length > 0)
+  if (requested.length === 0) {
+    return {
+      ok: false,
+      text: 'Не указаны участники, которых нужно пригласить.',
+    }
+  }
+  const names: string[] = []
+  for (const candidate of requested) {
+    const canonical = identity.colleagues.find(
+      (name) => normalizeName(name) === normalizeName(candidate),
+    )
+    if (!canonical) {
+      return {
+        ok: false,
+        text: `Неизвестный сотрудник: «${candidate}». Доступные: ${identity.colleagues.join(', ')}.`,
+      }
+    }
+    if (normalizeName(canonical) === normalizeName(identity.name)) {
+      continue
+    }
+    if (
+      !names.some((name) => normalizeName(name) === normalizeName(canonical))
+    ) {
+      names.push(canonical)
+    }
+  }
+  if (names.length === 0) {
+    return {
+      ok: false,
+      text: 'Среди приглашённых нет других сотрудников, кроме вас.',
+    }
+  }
+  return { ok: true, names }
 }
 
 type VacationPlan =
@@ -229,13 +308,13 @@ function planVacationApproval(
   return { ok: true, employeeName, start, end }
 }
 
-function bookingOutcome(plan: BookingPlan): ToolOutcome {
+function bookingOutcome(plan: BookingPlan, room: string): ToolOutcome {
   if (!plan.ok) {
     return { ok: false, text: plan.text, reference: null }
   }
   return {
     ok: true,
-    text: `${plan.room} забронирована на ${plan.date} ${plan.time} на ${plan.durationMin} мин (${plan.capacity} чел.) — ${plan.title}`,
+    text: `${room} забронирована на ${plan.date} ${plan.time} на ${plan.durationMin} мин (${plan.capacity} чел.) — ${plan.title}`,
     reference: plan.reference,
   }
 }
@@ -258,6 +337,8 @@ function vacationOutcome(plan: VacationPlan): ToolOutcome {
 type AgentToolName =
   | 'bookMeetingRoom'
   | 'listBookings'
+  | 'listAvailableRooms'
+  | 'inviteToMeeting'
   | 'cancelBooking'
   | 'requestVacation'
   | 'approveVacation'
@@ -276,13 +357,30 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     description:
       'забронировать переговорку под встречу (с проверкой пересечений)',
     argsExample:
-      '{ "room": "название комнаты", "date": "YYYY-MM-DD", "time": "HH:MM", "duration": минуты, "capacity": число, "title": "тема" }',
+      '{ "room": "название комнаты", "date": "YYYY-MM-DD", "time": "HH:MM", "duration": минуты, "title": "тема" }',
     roles: ['employee', 'manager'],
   },
   {
     name: 'listBookings',
-    description: 'показать встречи: свои, а для руководителя — ещё и команды',
+    description:
+      'показать встречи: свои, встречи, куда вас пригласили, а для руководителя — ещё и команды',
     argsExample: '{}',
+    roles: ['employee', 'manager'],
+  },
+  {
+    name: 'listAvailableRooms',
+    description:
+      'показать, какие переговорки свободны на дату и время (и какие заняты)',
+    argsExample:
+      '{ "date": "YYYY-MM-DD", "time": "HH:MM", "duration": минуты }',
+    roles: ['employee', 'manager'],
+  },
+  {
+    name: 'inviteToMeeting',
+    description:
+      'пригласить сотрудников на существующую встречу (комната, дата, время)',
+    argsExample:
+      '{ "room": "название комнаты", "date": "YYYY-MM-DD", "time": "HH:MM", "participants": ["имя", "имя"] }',
     roles: ['employee', 'manager'],
   },
   {
@@ -331,24 +429,44 @@ const TOOL_RUNNERS: Record<
   bookMeetingRoom: (store) => async (args, identity) => {
     const plan = planBooking(args)
     if (!plan.ok) {
-      return bookingOutcome(plan)
+      return bookingOutcome(plan, '')
     }
-    const overlaps = await store.findOverlap(
-      plan.room,
+    let room = plan.room
+    if (!room) {
+      const dayBookings = await store.listBookingsOnDate(plan.date)
+      room =
+        ROOMS.find(
+          (candidate) =>
+            !dayBookings.some(
+              (booking) =>
+                booking.room === candidate &&
+                overlaps(plan.time, plan.durationMin, booking),
+            ),
+        ) ?? null
+      if (!room) {
+        return {
+          ok: false,
+          text: `Все переговорки заняты на ${plan.date} ${plan.time} (${plan.durationMin} мин). Выбери другое время или сократи встречу.`,
+          reference: null,
+        }
+      }
+    }
+    const conflicts = await store.findOverlap(
+      room,
       plan.date,
       plan.time,
       plan.durationMin,
     )
-    if (overlaps.length > 0) {
-      const busy = overlaps[0]
+    if (conflicts.length > 0) {
+      const busy = conflicts[0]
       return {
         ok: false,
-        text: `${plan.room} занята на ${plan.date} с ${bookingTitle(busy)} (${busy.title}, бронь: ${busy.bookedBy}). Выбери другое время, комнату или сократи встречу.`,
+        text: `${room} занята на ${plan.date} с ${bookingTitle(busy)} (${busy.title}, бронь: ${busy.bookedBy}). Выбери другое время, комнату или сократи встречу.`,
         reference: null,
       }
     }
     await store.insertBooking({
-      room: plan.room,
+      room,
       date: plan.date,
       time: plan.time,
       durationMin: plan.durationMin,
@@ -356,8 +474,9 @@ const TOOL_RUNNERS: Record<
       title: plan.title,
       reference: plan.reference,
       bookedBy: identity.name,
+      participants: [],
     })
-    return bookingOutcome(plan)
+    return bookingOutcome(plan, room)
   },
   listBookings: (store) => async (_args, identity) => {
     const rows = await store.listBookings(identity.name, identity.subordinates)
@@ -369,7 +488,11 @@ const TOOL_RUNNERS: Record<
         normalizeName(row.bookedBy) === normalizeName(identity.name)
           ? 'моя'
           : row.bookedBy
-      return `- ${row.date} ${bookingTitle(row)} · ${row.room} — ${row.title} (${owner})`
+      const guests =
+        row.participants.length > 0
+          ? ` · участники: ${row.participants.join(', ')}`
+          : ''
+      return `- ${row.date} ${bookingTitle(row)} · ${row.room} — ${row.title} (${owner})${guests}`
     })
     return {
       ok: true,
@@ -377,10 +500,204 @@ const TOOL_RUNNERS: Record<
       reference: null,
     }
   },
-  cancelBooking: (store) => async (args, identity) => {
-    const room = resolveRoom(pickString(args, 'room'))
+  listAvailableRooms: (store) => async (args) => {
     const date = pickString(args, 'date')
     const time = pickString(args, 'time')
+    const durationMin = Math.max(
+      15,
+      Math.min(480, Math.round(Number(args.duration) || 60)),
+    )
+    if (!date || !time) {
+      return {
+        ok: false,
+        text: 'Укажи дату и время, чтобы проверить доступность переговорок.',
+        reference: null,
+      }
+    }
+    if (isInvalidDate(date)) {
+      return {
+        ok: false,
+        text: `Дата «${date}» не в формате YYYY-MM-DD.`,
+        reference: null,
+      }
+    }
+    if (isInvalidTime(time)) {
+      return {
+        ok: false,
+        text: `Время «${time}» не в формате HH:MM.`,
+        reference: null,
+      }
+    }
+    const dayBookings = await store.listBookingsOnDate(date)
+    const free: string[] = []
+    const busy: string[] = []
+    for (const room of ROOMS) {
+      const conflict = dayBookings.find(
+        (booking) =>
+          booking.room === room &&
+          overlaps(time, durationMin, booking),
+      )
+      if (conflict) {
+        busy.push(
+          `${room} — занята ${bookingTitle(conflict)} (${conflict.title})`,
+        )
+      } else {
+        free.push(room)
+      }
+    }
+    if (free.length === 0) {
+      return {
+        ok: true,
+        text: `Свободных переговорок на ${date} ${time} (${durationMin} мин) нет.\nЗанято:\n${busy
+          .map((line) => `- ${line}`)
+          .join('\n')}`,
+        reference: null,
+      }
+    }
+    const lines = [
+      `Свободны на ${date} ${time} (${durationMin} мин):`,
+      ...free.map((room) => `- ${room}`),
+    ]
+    if (busy.length > 0) {
+      lines.push('', 'Занято:', ...busy.map((line) => `- ${line}`))
+    }
+    return { ok: true, text: lines.join('\n'), reference: null }
+  },
+  inviteToMeeting: (store) => async (args, identity) => {
+    const requestedRoom = pickString(args, 'room')
+    let room: string | null = null
+    if (requestedRoom.length > 0) {
+      room = resolveRoom(requestedRoom)
+      if (!room) {
+        return {
+          ok: false,
+          text: `Нет такой переговорки: «${requestedRoom}». Доступны: ${ROOMS.join(', ')}.`,
+          reference: null,
+        }
+      }
+    }
+    let date = pickString(args, 'date')
+    let time = pickString(args, 'time')
+    if (!room || !date || !time) {
+      const latest = await store.latestManagedBookingFor(
+        identity.name,
+        identity.subordinates,
+      )
+      if (latest) {
+        room = room ?? latest.room
+        date = date || latest.date
+        time = time || latest.time
+      }
+    }
+    if (!room) {
+      return {
+        ok: false,
+        text: 'Укажи комнату из доступных, чтобы пригласить участников.',
+        reference: null,
+      }
+    }
+    if (!date || !time) {
+      return {
+        ok: false,
+        text: 'Укажи дату и время встречи, чтобы пригласить участников.',
+        reference: null,
+      }
+    }
+    if (isInvalidDate(date)) {
+      return {
+        ok: false,
+        text: `Дата «${date}» не в формате YYYY-MM-DD.`,
+        reference: null,
+      }
+    }
+    if (isInvalidTime(time)) {
+      return {
+        ok: false,
+        text: `Время «${time}» не в формате HH:MM.`,
+        reference: null,
+      }
+    }
+    const participants = resolveParticipants(args, identity)
+    if (!participants.ok) {
+      return { ok: false, text: participants.text, reference: null }
+    }
+    const booking = await store.findBooking(room, date, time)
+    if (!booking) {
+      return {
+        ok: false,
+        text: `Встреча не найдена: ${room}, ${date} ${time}. Сначала забронируй переговорку.`,
+        reference: null,
+      }
+    }
+    const isOwn =
+      normalizeName(booking.bookedBy) === normalizeName(identity.name)
+    const canManage = identity.subordinates.some(
+      (name) => normalizeName(name) === normalizeName(booking.bookedBy),
+    )
+    if (!isOwn && !canManage) {
+      return {
+        ok: false,
+        text: `Эту встречу организовал(а) ${booking.bookedBy} — приглашать можно только в свою или во встречу подчинённого.`,
+        reference: null,
+      }
+    }
+    const merged = [...booking.participants]
+    const added: string[] = []
+    for (const name of participants.names) {
+      if (
+        !merged.some((existing) => normalizeName(existing) === normalizeName(name))
+      ) {
+        merged.push(name)
+        added.push(name)
+      }
+    }
+    if (added.length === 0) {
+      return {
+        ok: true,
+        text: `Все указанные участники уже приглашены на ${room}, ${date} ${time}. Участники: ${merged.join(', ')}.`,
+        reference: booking.reference,
+      }
+    }
+    if (merged.length + 1 > ROOM_CAPACITY) {
+      return {
+        ok: false,
+        text: `Участников (${merged.length + 1} вместе с организатором) больше вместимости комнаты (${ROOM_CAPACITY} чел.). Сократи список.`,
+        reference: null,
+      }
+    }
+    await store.updateBookingParticipants(room, date, time, merged)
+    return {
+      ok: true,
+      text: `Встреча ${room}, ${date} ${time} — приглашены: ${added.join(', ')}. Всего участников: ${merged.length + 1} вместе с организатором.`,
+      reference: booking.reference,
+    }
+  },
+  cancelBooking: (store) => async (args, identity) => {
+    const requestedRoom = pickString(args, 'room')
+    let room: string | null = null
+    if (requestedRoom.length > 0) {
+      room = resolveRoom(requestedRoom)
+      if (!room) {
+        return {
+          ok: false,
+          text: `Нет такой переговорки: «${requestedRoom}». Доступны: ${ROOMS.join(', ')}.`,
+          reference: null,
+        }
+      }
+    }
+    let date = pickString(args, 'date')
+    let time = pickString(args, 'time')
+    if (!room || !date || !time) {
+      const latest = await store.latestManagedBookingFor(
+        identity.name,
+        identity.subordinates,
+      )
+      if (latest) {
+        room = room ?? latest.room
+        date = date || latest.date
+        time = time || latest.time
+      }
+    }
     if (!room) {
       return {
         ok: false,
@@ -451,7 +768,21 @@ const TOOL_RUNNERS: Record<
     return vacationOutcome(plan)
   },
   approveVacation: (store) => async (args, identity) => {
-    const plan = planVacationApproval(args, identity)
+    let employeeName = pickString(args, 'employeeName')
+    let start = pickString(args, 'start')
+    let end = pickString(args, 'end')
+    if (!employeeName || !start || !end) {
+      const latest = await store.latestPendingVacation(identity.subordinates)
+      if (latest) {
+        employeeName = employeeName || latest.employeeName
+        start = start || latest.start
+        end = end || latest.end
+      }
+    }
+    const plan = planVacationApproval(
+      { ...args, employeeName, start, end },
+      identity,
+    )
     if (!plan.ok) {
       return { ok: false, text: plan.text, reference: null }
     }

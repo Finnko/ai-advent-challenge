@@ -375,12 +375,14 @@ async function resolveCapabilitiesByToken(
     throw new Error('Неизвестный токен: профиль способностей не найден.')
   }
   const subordinates = await listSubordinates(token)
+  const colleagues = await listPeople()
   return {
     identity: {
       name: person.name,
       role: person.role,
       title: person.title,
       subordinates: subordinates.map((s) => s.name),
+      colleagues: colleagues.map((c) => c.name),
     },
     allowedTools: TOOLS_BY_ROLE[person.role] ?? [],
   }
@@ -567,13 +569,36 @@ export const runAgent = createServerFn({ method: 'POST' })
     const rows = await loadMessagesFromStore(sessionId)
     const history = historyToMessages(rows)
 
+    const store = createAgentStore()
+    const contextLines: string[] = []
+    const latestBooking = await store.latestManagedBookingFor(
+      capabilities.identity.name,
+      capabilities.identity.subordinates,
+    )
+    if (latestBooking) {
+      contextLines.push(
+        `Последняя доступная встреча (пользователя или команды): ${latestBooking.room}, ${latestBooking.date} ${latestBooking.time} (${latestBooking.durationMin} мин), организатор ${latestBooking.bookedBy}, тема: ${latestBooking.title}.`,
+      )
+    }
+    const pendingVacation = await store.latestPendingVacation(
+      capabilities.identity.subordinates,
+    )
+    if (pendingVacation) {
+      contextLines.push(
+        `Последняя заявка на отпуск от подчинённых: ${pendingVacation.employeeName}, с ${pendingVacation.start} по ${pendingVacation.end} (ожидает согласования).`,
+      )
+    }
+    const context =
+      contextLines.length > 0 ? contextLines.join('\n') : undefined
+
     const agent = new Agent({
       capabilities,
-      tools: createAgentTools(createAgentStore()),
+      tools: createAgentTools(store),
       judges: AGENT_JUDGES,
       callLLM: callFlash,
       model: TIER_ENDPOINTS.medium.model,
       today: todayIso(),
+      context,
       enforceContextBudget: data.enforceContextBudget,
     })
 

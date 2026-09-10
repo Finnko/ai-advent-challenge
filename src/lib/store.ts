@@ -4,6 +4,7 @@ import type {
   BookingRecord,
   VacationRecord,
 } from './agent'
+import { normalizeName } from './agent-tools'
 
 export type PersonRow = {
   id: number
@@ -199,6 +200,7 @@ CREATE TABLE IF NOT EXISTS bookings (
   title TEXT NOT NULL DEFAULT 'Встреча',
   reference TEXT NOT NULL,
   booked_by TEXT NOT NULL,
+  participants TEXT NOT NULL DEFAULT '[]',
   created_at TEXT NOT NULL
 );
 
@@ -266,6 +268,11 @@ function migrateBookings(db: SqliteDatabase): void {
   if (!columns.includes('duration_min')) {
     db.exec(
       'ALTER TABLE bookings ADD COLUMN duration_min INTEGER NOT NULL DEFAULT 60',
+    )
+  }
+  if (!columns.includes('participants')) {
+    db.exec(
+      "ALTER TABLE bookings ADD COLUMN participants TEXT NOT NULL DEFAULT '[]'",
     )
   }
 }
@@ -520,7 +527,23 @@ type BookingRow = {
   title: string
   reference: string
   booked_by: string
+  participants: string
   created_at: string
+}
+
+function parseParticipants(value: string | null): string[] {
+  if (!value) {
+    return []
+  }
+  try {
+    const parsed = JSON.parse(value) as unknown
+    if (Array.isArray(parsed)) {
+      return parsed.filter((name): name is string => typeof name === 'string')
+    }
+  } catch {
+    return []
+  }
+  return []
 }
 
 function bookingFromRow(row: BookingRow): BookingRecord {
@@ -533,6 +556,7 @@ function bookingFromRow(row: BookingRow): BookingRecord {
     title: row.title,
     reference: row.reference,
     bookedBy: row.booked_by,
+    participants: parseParticipants(row.participants),
     createdAt: row.created_at,
   }
 }
@@ -589,6 +613,23 @@ export function createAgentStore(): AgentStore {
         .all(employeeName, start, end) as VacationRow[]
       return rows.length > 0 ? vacationFromRow(rows[0]) : null
     },
+    async latestPendingVacation(subordinateNames: string[]) {
+      if (subordinateNames.length === 0) {
+        return null
+      }
+      const db = await getDb()
+      const placeholders = subordinateNames.map(() => '?').join(', ')
+      const rows = db
+        .prepare(
+          `SELECT employee_name, approver_name, start_date, end_date, reference, status, created_at
+          FROM vacations
+          WHERE status = 'pending' AND employee_name IN (${placeholders})
+          ORDER BY id DESC
+          LIMIT 1`,
+        )
+        .all(...subordinateNames) as VacationRow[]
+      return rows.length > 0 ? vacationFromRow(rows[0]) : null
+    },
     async markVacationApproved(reference: string, approverName: string) {
       const db = await getDb()
       db.prepare(
@@ -598,8 +639,8 @@ export function createAgentStore(): AgentStore {
     async insertBooking(record: BookingRecord) {
       const db = await getDb()
       db.prepare(
-        `INSERT INTO bookings (room, date, time, duration_min, capacity, title, reference, booked_by, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO bookings (room, date, time, duration_min, capacity, title, reference, booked_by, participants, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(
         record.room,
         record.date,
@@ -609,34 +650,85 @@ export function createAgentStore(): AgentStore {
         record.title,
         record.reference,
         record.bookedBy,
+        JSON.stringify(record.participants ?? []),
         nowIso(),
       )
     },
     async listBookings(bookedBy: string, subordinateNames: string[]) {
       const db = await getDb()
+      const owners = new Set(
+        [bookedBy, ...subordinateNames].map((name) => normalizeName(name)),
+      )
+      const self = normalizeName(bookedBy)
+      const rows = db
+        .prepare(
+          `SELECT room, date, time, duration_min, capacity, title, reference, booked_by, participants, created_at
+          FROM bookings
+          ORDER BY date, time, id`,
+        )
+        .all() as BookingRow[]
+      return rows
+        .map(bookingFromRow)
+        .filter(
+          (booking) =>
+            owners.has(normalizeName(booking.bookedBy)) ||
+            booking.participants.some(
+              (name) => normalizeName(name) === self,
+            ),
+        )
+    },
+    async listBookingsOnDate(date: string) {
+      const db = await getDb()
+      const rows = db
+        .prepare(
+          `SELECT room, date, time, duration_min, capacity, title, reference, booked_by, participants, created_at
+          FROM bookings
+          WHERE date = ?
+          ORDER BY time, id`,
+        )
+        .all(date) as BookingRow[]
+      return rows.map(bookingFromRow)
+    },
+    async latestManagedBookingFor(
+      bookedBy: string,
+      subordinateNames: string[],
+    ) {
+      const db = await getDb()
       const names = [bookedBy, ...subordinateNames]
       const placeholders = names.map(() => '?').join(', ')
       const rows = db
         .prepare(
-          `SELECT room, date, time, duration_min, capacity, title, reference, booked_by, created_at
+          `SELECT room, date, time, duration_min, capacity, title, reference, booked_by, participants, created_at
           FROM bookings
           WHERE booked_by IN (${placeholders})
-          ORDER BY date, time, id`,
+          ORDER BY date DESC, time DESC, id DESC
+          LIMIT 1`,
         )
         .all(...names) as BookingRow[]
-      return rows.map(bookingFromRow)
+      return rows.length > 0 ? bookingFromRow(rows[0]) : null
     },
     async findBooking(room: string, date: string, time: string) {
       const db = await getDb()
       const rows = db
         .prepare(
-          `SELECT room, date, time, duration_min, capacity, title, reference, booked_by, created_at
+          `SELECT room, date, time, duration_min, capacity, title, reference, booked_by, participants, created_at
           FROM bookings
           WHERE room = ? AND date = ? AND time = ?
           LIMIT 1`,
         )
         .all(room, date, time) as BookingRow[]
       return rows.length > 0 ? bookingFromRow(rows[0]) : null
+    },
+    async updateBookingParticipants(
+      room: string,
+      date: string,
+      time: string,
+      participants: string[],
+    ) {
+      const db = await getDb()
+      db.prepare(
+        'UPDATE bookings SET participants = ? WHERE room = ? AND date = ? AND time = ?',
+      ).run(JSON.stringify(participants), room, date, time)
     },
     async deleteBooking(room: string, date: string, time: string) {
       const db = await getDb()

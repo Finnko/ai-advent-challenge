@@ -13,6 +13,7 @@ export type AgentIdentity = {
   role: AgentRole
   title: string
   subordinates: string[]
+  colleagues: string[]
 }
 
 export type AgentCapabilities = {
@@ -20,7 +21,10 @@ export type AgentCapabilities = {
   allowedTools: string[]
 }
 
-export type ToolArgs = Record<string, string | number | boolean | null>
+export type ToolArgs = Record<
+  string,
+  string | number | boolean | null | string[]
+>
 
 export type LlmMessage = {
   role: 'system' | 'user' | 'assistant'
@@ -77,6 +81,7 @@ export type BookingRecord = {
   title: string
   reference: string
   bookedBy: string
+  participants: string[]
   createdAt?: string
 }
 
@@ -91,6 +96,9 @@ export type AgentStore = {
     start: string,
     end: string,
   ) => VacationRecord | null | Promise<VacationRecord | null>
+  latestPendingVacation: (
+    subordinateNames: string[],
+  ) => VacationRecord | null | Promise<VacationRecord | null>
   markVacationApproved: (
     reference: string,
     approverName: string,
@@ -100,11 +108,24 @@ export type AgentStore = {
     bookedBy: string,
     subordinateNames: string[],
   ) => BookingRecord[] | Promise<BookingRecord[]>
+  listBookingsOnDate: (
+    date: string,
+  ) => BookingRecord[] | Promise<BookingRecord[]>
+  latestManagedBookingFor: (
+    bookedBy: string,
+    subordinateNames: string[],
+  ) => BookingRecord | null | Promise<BookingRecord | null>
   findBooking: (
     room: string,
     date: string,
     time: string,
   ) => BookingRecord | null | Promise<BookingRecord | null>
+  updateBookingParticipants: (
+    room: string,
+    date: string,
+    time: string,
+    participants: string[],
+  ) => void | Promise<void>
   deleteBooking: (
     room: string,
     date: string,
@@ -189,6 +210,7 @@ export type AgentConfig = {
   callLLM: CallLLM
   model: string
   today: string
+  context?: string
   contextBudgetTokens?: number
   enforceContextBudget?: boolean
 }
@@ -198,6 +220,33 @@ const FINALIZE_TEMPERATURE = 0.7
 const MAX_INPUT_CHARS = 30_000
 const DECIDE_MAX_TOKENS = 300
 const FINALIZE_MAX_TOKENS = 700
+
+const ACTION_HINTS = [
+  'забронир',
+  'перебронир',
+  'отмен',
+  'позов',
+  'приглас',
+  'зови',
+  'согласу',
+  'подтверд',
+  'одобр',
+  'оформ',
+  'заплан',
+  'подай',
+  'созда',
+  'перенес',
+  'освобод',
+  'назнач',
+]
+
+const DECIDE_NUDGE =
+  'Напоминание: пользователь просит выполнить действие. Выбери ровно один подходящий инструмент из списка и заполни его аргументы из сообщения или контекста. Если данные есть в контексте — не переспрашивай. Если ни один инструмент не подходит, верни {"tool": null, "args": {}}.'
+
+function looksLikeAction(text: string): boolean {
+  const lower = text.toLowerCase()
+  return ACTION_HINTS.some((hint) => lower.includes(hint))
+}
 
 const OUTPUT_POLICY_JUDGE: AgentJudge = {
   name: 'output-policy',
@@ -287,6 +336,7 @@ function buildDecideSystem(
   caps: AgentCapabilities,
   tools: AgentTool[],
   today: string,
+  context?: string,
 ): string {
   const available = caps.allowedTools
     .map((name) => tools.find((t) => t.name === name))
@@ -298,7 +348,12 @@ function buildDecideSystem(
     ...(caps.identity.subordinates.length > 0
       ? [`Подчинённые пользователя: ${caps.identity.subordinates.join(', ')}.`]
       : []),
+    ...(caps.identity.colleagues.length > 0
+      ? [`Сотрудники компании: ${caps.identity.colleagues.join(', ')}.`]
+      : []),
+    ...(context ? [context] : []),
     HARDENING_LINE,
+    'Если пользователь ссылается на «эту встречу», «эту заявку», «её/его» или «последнюю», подставь данные из контекста и вызови соответствующий инструмент — не переспрашивай.',
     'Если запрос требует действия из списка доступных инструментов — выбери ровно один. Если инструмент не нужен или нужного нет в списке — верни tool: null.',
     'Доступные инструменты:',
     ...available.map(
@@ -306,6 +361,28 @@ function buildDecideSystem(
     ),
     ...(available.some((t) => t.name === 'bookMeetingRoom')
       ? [`Доступные комнаты (для bookMeetingRoom): ${ROOMS.join(', ')}.`]
+      : []),
+    ...(available.some((t) => t.name === 'listAvailableRooms')
+      ? [
+          'Вопросы о том, какие переговорки свободны/доступны на дату и время, решай через listAvailableRooms, а не по памяти.',
+        ]
+      : []),
+    ...(available.some((t) => t.name === 'inviteToMeeting')
+      ? [
+          'Просьбу позвать/пригласить сотрудников на встречу решай через inviteToMeeting. Комнату, дату и время бери из сообщения или из контекста (последняя бронь пользователя). Если они известны из контекста — обязательно вызывай инструмент, не переспрашивай.',
+          'Если просят позвать «всех моих сотрудников» или «всю команду», передай в participants всех подчинённых пользователя.',
+          'Структура аргументов inviteToMeeting: {"room": "<название комнаты>", "date": "YYYY-MM-DD", "time": "HH:MM", "participants": ["<имя>", "<имя>"]}.',
+        ]
+      : []),
+    ...(available.some((t) => t.name === 'approveVacation')
+      ? [
+          'Просьбу «подтверди/согласуй эту заявку» (на отпуск) решай через approveVacation. Сотрудника и даты бери из сообщения или из контекста (последняя заявка от подчинённых). Если они известны из контекста — обязательно вызывай инструмент, не переспрашивай.',
+        ]
+      : []),
+    ...(available.some((t) => t.name === 'cancelBooking')
+      ? [
+          'Просьбу «отмени эту встречу» решай через cancelBooking. Комнату, дату и время бери из сообщения или из контекста (последняя доступная встреча). Если они известны из контекста — обязательно вызывай инструмент, не переспрашивай.',
+        ]
       : []),
     'Ответь ровно одним json-объектом вида {"tool": "имя_инструмента" | null, "args": { ... }}. Без текста до "{" и после "}", без markdown.',
   ]
@@ -319,6 +396,7 @@ function buildFinalizeSystem(caps: AgentCapabilities): string {
     'Отвечай по фактам из отчёта инструмента. Если в отчёте есть «Код подтверждения: …» — включи этот код в ответ дословно. Не выдумывай выполненные действия, которых нет в отчёте.',
     'Если инструмент не вызывался — просто ответь на запрос.',
     'Вопросы вроде «кому я согласовал отпуск?» решаются через listVacations — не отвечай по памяти модели, используй данные отчёта.',
+    'Список участников встречи бери из отчёта инструмента — не выдумывай приглашённых.',
     'Отвечай кратко, по-русски, обычным текстом без markdown-разметки.',
   ]
   return lines.join('\n')
@@ -431,6 +509,7 @@ export class Agent {
       capabilities,
       tools,
       this.config.today,
+      this.config.context,
     )
     const enforceBudget = this.config.enforceContextBudget !== false
     const budget = this.config.contextBudgetTokens ?? CONTEXT_BUDGET_TOKENS
@@ -484,25 +563,34 @@ export class Agent {
     let trimmedMessages = decideFit.trimmed
     let historyTokensSent = estimateMessagesTokens(decideFit.messages)
 
-    const decideReply = await callLLM({
-      messages: [
-        { role: 'system', content: decideSystem },
-        ...sendHistory,
-        { role: 'user', content: request },
-      ],
-      temperature: DECIDE_TEMPERATURE,
-      response_format: { type: 'json_object' },
-      max_tokens: DECIDE_MAX_TOKENS,
-    })
-    const decided = parseDecideJson(decideReply.content)
-    trace.push({
-      stage: 'decide',
-      raw: decideReply.content,
-      tool: decided.tool,
-      args: decided.args,
-      usage: decideReply.usage,
-      latencyMs: decideReply.latencyMs,
-    })
+    const runDecide = async (nudge?: string) => {
+      const reply = await callLLM({
+        messages: [
+          { role: 'system', content: decideSystem },
+          ...sendHistory,
+          { role: 'user', content: request },
+          ...(nudge ? [{ role: 'user' as const, content: nudge }] : []),
+        ],
+        temperature: DECIDE_TEMPERATURE,
+        response_format: { type: 'json_object' },
+        max_tokens: DECIDE_MAX_TOKENS,
+      })
+      const parsed = parseDecideJson(reply.content)
+      trace.push({
+        stage: 'decide',
+        raw: reply.content,
+        tool: parsed.tool,
+        args: parsed.args,
+        usage: reply.usage,
+        latencyMs: reply.latencyMs,
+      })
+      return parsed
+    }
+
+    let decided = await runDecide()
+    if (!decided.tool && looksLikeAction(request)) {
+      decided = await runDecide(DECIDE_NUDGE)
+    }
 
     let outcome: ToolOutcome | null = null
     let requestedTool: AgentTool | null = null

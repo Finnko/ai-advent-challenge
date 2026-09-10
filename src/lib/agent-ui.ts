@@ -18,14 +18,28 @@ export const TOOL_INFO: ToolInfo[] = [
     name: 'bookMeetingRoom',
     label: 'bookMeetingRoom',
     description:
-      'Забронировать переговорку под встречу: комната, дата, время, длительность, вместимость, тема. Проверяет пересечения.',
+      'Забронировать переговорку под встречу: комната, дата, время, длительность, тема (вместимость комнаты — 5). Проверяет пересечения.',
     roles: ['employee', 'manager'],
   },
   {
     name: 'listBookings',
     label: 'listBookings',
     description:
-      'Показать встречи: свои, а руководителю — ещё и встречи команды.',
+      'Показать встречи: свои, встречи, куда вас пригласили, а руководителю — ещё и встречи команды.',
+    roles: ['employee', 'manager'],
+  },
+  {
+    name: 'listAvailableRooms',
+    label: 'listAvailableRooms',
+    description:
+      'Показать, какие переговорки свободны на дату и время, а какие заняты (с временем брони).',
+    roles: ['employee', 'manager'],
+  },
+  {
+    name: 'inviteToMeeting',
+    label: 'inviteToMeeting',
+    description:
+      'Пригласить сотрудников на существующую встречу по комнате/дате/времени. Свою — любой; руководитель — и во встречу подчинённого.',
     roles: ['employee', 'manager'],
   },
   {
@@ -76,6 +90,16 @@ export const EXAMPLES: Example[] = [
   },
   {
     kind: 'employee',
+    text: 'Какие переговорки свободны сегодня в 16:00 на час?',
+    note: 'listAvailableRooms — свободные и занятые комнаты на дату/время',
+  },
+  {
+    kind: 'employee',
+    text: 'Позови Марию и Петра на встречу в «Иртыше» сегодня в 16:00',
+    note: 'inviteToMeeting — участники на существующую встречу',
+  },
+  {
+    kind: 'employee',
     text: 'Отмени мою встречу завтра в 15:00 в переговорке',
     note: 'cancelBooking по комнате/дате/времени',
   },
@@ -108,6 +132,11 @@ export const EXAMPLES: Example[] = [
     kind: 'manager',
     text: 'Кому я согласовал отпуск?',
     note: 'listVacations — ответ из сохранённых записей',
+  },
+  {
+    kind: 'manager',
+    text: 'Подтверди эту заявку',
+    note: 'approveVacation по последней заявке из контекста',
   },
   {
     kind: 'manager',

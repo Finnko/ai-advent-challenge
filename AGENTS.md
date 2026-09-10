@@ -51,13 +51,30 @@ Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 
   `responseTokens` = real API completion summed over decide+finalize; `promptTokensActual` is the
   real API prompt, which counts history twice because it's replayed into both calls;
   `trimmedMessages` = max dropped across the two calls, `historyTokensSent` = min actually sent).
-- **Meeting domain (bookings).** `bookings` stores `title`/`duration_min` (default 60) — migration via
-  `PRAGMA table_info` + `ALTER TABLE`; mock meetings are seeded at startup (`BOOKINGS_SEED`). 8 rooms
-  (`ROOMS`) are listed in the `decide` prompt. Tools: `bookMeetingRoom` (room/date/time/duration/
-  capacity/title, refuses on interval overlap via `store.findOverlap`), `listBookings` (own + team for
-  managers), `cancelBooking` (natural key room/date/time; managers may cancel subordinates'). `BookingRecord`
-  carries `title`/`durationMin`. `listVacations` output does NOT include reference codes (avoids a bogus
-  «Код подтверждения» line on list answers).
+- **Meeting domain (bookings).** `bookings` stores `title`/`duration_min` (default 60) and
+  `participants` (JSON array, default `[]`) — migration via `PRAGMA table_info` + `ALTER TABLE`; mock
+  meetings are seeded at startup (`BOOKINGS_SEED`). 8 rooms (`ROOMS`) are listed in the `decide` prompt;
+  every room has a fixed capacity `ROOM_CAPACITY = 5` (no per-booking capacity arg).
+  Tools: `bookMeetingRoom` (room/date/time/duration/title, refuses on interval overlap via
+  `store.findOverlap`), `listBookings` (own + team for managers, plus meetings where the user is a
+  participant; prints participants), `listAvailableRooms`
+  (free/busy rooms for a date/time/duration via `store.listBookingsOnDate`), `inviteToMeeting` (adds
+  participants to an existing booking by room/date/time; organizer or their manager; validates names
+  against `identity.colleagues` = seeded `people`; refuses when the group exceeds `ROOM_CAPACITY`), `cancelBooking`
+  (natural key room/date/time; managers may cancel subordinates'). `BookingRecord` carries
+  `title`/`durationMin`/`participants`. The agent runs **one tool per message** (`decide → act → finalize`),
+  so booking and inviting are two separate messages. To keep tool selection reliable, `runAgent` builds a
+  `context` string (last meeting the user can manage via `store.latestManagedBookingFor`; last pending vacation for a manager via
+  `store.latestPendingVacation`) and passes it as `AgentConfig.context`; the decide prompt tells the model
+  to take room/date/time (or employee/dates) from it instead of asking again. `inviteToMeeting` falls back
+  to the user's latest managed booking when room/date/time are omitted; `cancelBooking` falls back to it too;
+  `approveVacation` falls back to the latest
+  pending subordinate request. As a safety net, when `decide` returns `tool: null` for an action-like
+  request (`looksLikeAction` keyword check), the agent retries `decide` once with a nudge — so a follow-up
+  like «отмени эту встречу» / «позови Ивана» / «подтверди эту заявку» resolves from context instead of
+  falling through. Room names match case/prefix-insensitively (`resolveRoom` strips the
+  «Переговорка/Лаундж/Комната» prefix and a trailing Russian vowel, so «Ладогу» resolves). `listVacations`
+  output does NOT include reference codes (avoids a bogus «Код подтверждения» line on list answers).
 - **Day 7 persistence** lives in `src/lib/store.ts`, a server-only `node:sqlite` singleton (raw
   `DatabaseSync`, no npm dependency; emits an `ExperimentalWarning`, fine). DB file:
   `~/.ai-advent-challenge/agent.sqlite` (override via `AGENT_DB_PATH`), so it survives `git clean`,
@@ -85,6 +102,7 @@ Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 
 ```bash
 npm run dev             # dev server, http://localhost:3000
 npm run build           # production build (vite build)
+npm run test            # vitest run (offline: tools + agent pipeline)
 npm run generate-routes # regenerate route tree after adding routes
 ```
 
@@ -92,6 +110,8 @@ npm run generate-routes # regenerate route tree after adding routes
 
 - No comments in code unless asked.
 - Respond one chunk at a time (no streaming yet); the UI shows a 3-dots animation while waiting.
+- Offline tests live in `src/lib/*.test.ts` (Vitest, node env; `agent-testkit.ts` is an in-memory
+  `AgentStore`). `npm run test` must stay green; no network/API calls in tests.
 - Out of scope for now: streaming, deployment, a real auth/backend for `people` (today a seeded mock).
 - Work happens on `feature/dayN` branches; commit only when asked.
 
