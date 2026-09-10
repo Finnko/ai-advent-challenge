@@ -18,7 +18,7 @@ npm run dev            # http://localhost:3000
 | Переменная           | Обязательна | Описание                                   |
 | -------------------- | ----------- | ------------------------------------------ |
 | `DEEPSEEK_API_KEY`   | да          | Ключ API DeepSeek                          |
-| `DEEPSEEK_MODEL`     | нет         | Модель (по умолчанию `deepseek-v4-flash`)  |
+| `DEEPSEEK_MODEL`     | нет         | Модель (по умолчанию `deepseek-flash`)     |
 | `HUGGING_FACE_TOKEN` | для Day 5   | Ключ Hugging Face (weak-модель через роутер) |
 
 `.env` в gitignore — ключ никогда не коммитится.
@@ -83,7 +83,7 @@ OpenAI-совместимый `chat/completions`, получить обычны�
 ## Day 5 — версии моделей
 
 Страница `/day5`: **один и тот же запрос — продуктовое ТЗ интернет-магазина — уходит в три модели
-разного уровня**: слабую (`Qwen/Qwen3-8B` через Hugging Face-роутер), среднюю (`deepseek-v4-flash`)
+разного уровня**: слабую (`Qwen/Qwen3-8B` через Hugging Face-роутер), среднюю (`deepseek-flash`)
 и сильную (`deepseek-v4-pro`). Каждая модель сама предлагает техническую архитектуру. Кнопка
 блокируется, пока все три не ответят; на карточках — время ответа (замер на сервере), токены и текст.
 Успешные ответы автосохраняются в `md/design/proposals/`.
@@ -110,7 +110,7 @@ finalize → судьи`. В Day 6 демо живёт без памяти на 
 - Инструменты: `bookMeetingRoom`, `requestVacation`, `approveVacation` (только руководитель).
 - Судьи: `output-policy` (непустой ответ + код подтверждения инструмента) и `business-rules`
   (нельзя согласовать себе; инструмент вне прав роли отклоняется).
-- Модель `deepseek-v4-flash`, `thinking: disabled`; decide 0.2, finalize 0.7.
+- Модель `deepseek-flash`, `thinking: disabled`; decide 0.2, finalize 0.7.
 - В UI — трасса стадий под каждым ответом; каждый запуск — новый экземпляр агента.
 
 ### Как это устроено (Day 6)
@@ -126,7 +126,8 @@ finalize → судьи`. В Day 6 демо живёт без памяти на 
 переживают перезапуск приложения. Проверка — начать диалог, перезапустить, продолжить.
 
 - **Хранилище** — SQLite через встроенный `node:sqlite` (`src/lib/store.ts`, файл
-  `data/agent.sqlite`, gitignored): таблицы `people`, `sessions`, `messages`, `vacations`,
+  `~/.ai-advent-challenge/agent.sqlite`, переопределяется `AGENT_DB_PATH`; старая `data/agent.sqlite`
+  переносится автоматически, перед изменениями делается бэкап): таблицы `people`, `sessions`, `messages`, `vacations`,
   `bookings`. Никаких новых зависимостей.
 - **Два слоя памяти.** История диалога: assistant-сообщения хранят и голый текст (реплей в
   `decide`/`finalize` — ролям `LlmMessage` добавлен `assistant`), и полный `AgentRunResult`
@@ -151,31 +152,112 @@ finalize → судьи`. В Day 6 демо живёт без памяти на 
 ### Как это устроено (Day 7)
 
 - `src/lib/agent.ts` — `LlmMessage` теперь с `assistant`, `AgentIdentity.subordinates`,
-  `Agent.run(user, history?)` (история реплеится в decide/finalize), `createAgentTools(store)`
-  (инструменты персистят через инжектированный `AgentStore`) и `listVacations`.
+  `Agent.run(user, history?)` (история реплеится в decide/finalize) и судьи.
+- `src/lib/agent-tools.ts` — определения и раннеры инструментов, а также `TOOLS_BY_ROLE`
+  (выводится из `roles` каждого инструмента — единый источник прав): `createAgentTools(store)`
+  персистит эффекты через инжектированный `AgentStore`.
 - `src/lib/store.ts` — ленивый `node:sqlite`-синглтон: схема, сид `people`, CRUD сессий/сообщений,
   фабрика `createAgentStore()` под интерфейс `AgentStore`.
 - `src/lib/chat.ts` — `resolveCapabilities`/`listOrg` читают `people`; сессии через
   `listSessions`/`loadSession`/`deleteSession`; `runAgent({ token, sessionId, user })`
   (автосоздание сессии + реплей истории + сохранение сообщений).
-- `src/lib/day6.ts` — client-safe данные UI агента: `TOOL_INFO`, примеры запросов.
+- `src/lib/agent-ui.ts` — client-safe данные UI агента: `TOOL_INFO`, примеры запросов.
 - `src/components/agent/` — `PersonaPicker` (орг-чарт: руководитель слева, сотрудники справа),
   `SessionList`, `ChatThread`, `TraceAccordion` и др.
 - `src/routes/_layout/agent.tsx` — орг-чарт из `listOrg`, панель сессий слева, чат с трассой справа.
+
+## Day 8 — работа с токенами
+
+Тот же агент на `/agent`, но теперь он **считает и контролирует токены**: видно, как растут
+запрос, история и ответ, как дорожает каждый ход и что происходит, когда диалог переполняет
+бюджет контекста.
+
+- **Что считаем.** На каждый запуск `AgentRunResult` несёт `tokens: TokenBreakdown`:
+  `requestTokens` и `historyTokens` — локальная **оценка** (`gpt-tokenizer`, помечена «≈»),
+  потому что API отдаёт весь промпт одним числом и только после вызова; `responseTokens` —
+  реальный `completion_tokens` из API, **сумма decide + finalize** (токены тратятся на оба
+  вызова); `promptTokensActual` — реальный промпт из API. Из него видно следствие реплея:
+  **история уходит в API дважды** (в decide и в finalize), поэтому реальный промпт дороже
+  «голой» истории.
+- **Стоимость.** Цены off-peak DeepSeek V4.1 Flash за 1M токенов: input `$0.15`, output `$0.60`
+  (cache-hit и peak опущены ради простоты). Под каждым ответом и в шапке сессии — оценка `~$X`.
+- **Бюджет контекста.** Реальный контекст `deepseek-flash` — **1M токенов**, вручную не
+  переполнить. Поэтому агент навязывает себе маленький `CONTEXT_BUDGET_TOKENS = 4096` и метром
+  показывает, как история приближается к нему. Тумблер **«защита бюджета»**: включён — агент
+  **усекает** старые сообщения, чтобы влезть (бейдж «история усечена: −N сообщ.»), а запрос,
+  который не влезает один, **отклоняет** с объяснением; выключен — шлёт всё как есть, и при
+  реальном переполнении API вернул бы 400 — такой сбой `runAgent` превращает в **аккуратный
+  блокированный ответ**, а не в падение сессии.
+- **Сценарии.** Три кнопки под метром: «Короткий диалог», «Длинный диалог» (шлём несколько раз —
+  история растёт и начинает усекаться) и «Переполнение» (один запрос больше бюджета).
+
+### Как это устроено (Day 8)
+
+- `src/lib/tokens.ts` — изоморфный счётчик (без env/fetch): `estimateTokens` на `gpt-tokenizer`
+  (единственная новая зависимость; чистый TS, считает офлайн и на клиенте, и на сервере),
+  константы `CONTEXT_BUDGET_TOKENS`/`MODEL_CONTEXT_TOKENS`, цены off-peak и хелперы
+  `costUsd`/`formatUsd`.
+- `src/lib/agent.ts` — `Agent.run` до вызова оценивает `system + история + запрос` и при включённом
+  `enforceContextBudget` усекает самые старые ходы до `contextBudgetTokens` **для обоих вызовов**
+  (`decide` и `finalize` — у каждого свой system, а у finalize ещё и отчёт инструмента);
+  `trimmedMessages` = максимум отброшенного за ход, `historyTokensSent` = минимум реально
+  отправленного. Запрос, который не влезает один, возвращает `blocked`-результат. Input-policy
+  `MAX_INPUT_CHARS = 30 000`, поэтому бюджетный отказ достижим кнопкой «Переполнение», а не
+  перехватывается проверкой длины. В `AgentRunResult` — `tokens: TokenBreakdown`.
+- `src/lib/chat.ts` — `runAgent` принимает `enforceContextBudget` и прокидывает в `Agent`;
+  реплеит **всю** сохранённую историю сессии (раньше — только последние 16 сообщений), режет её
+  только токен-бюджет; оборачивает `agent.run` в try/catch — ошибка API (сырой 400 без защиты)
+  становится `blocked: true` результатом с текстом ошибки, сообщение всё равно сохраняется.
+- `src/lib/agent-ui.ts` — `TOKEN_SCENARIOS`: готовые тексты «короткий/длинный/переполнение»,
+  реальные примеры встреч и отпусков.
+- `src/components/agent/` — `TokenMeter` (полоса «история+запрос vs бюджет», факт о 1M),
+  расширенный `AssistantMessage` (строки токенов и цены, бейдж усечения, маркер источника ответа).
+- `src/routes/_layout/agent.tsx` — живой счётчик ввода, суммарные токены/цена сессии (пересчёт
+  на лету из `run_json`), тумблер защиты, кнопки сценариев.
+
+### Домен встреч (переговорки)
+
+Чтобы переполнение наступало на **реальных** задачах (а не на филлере), домен встреч расширен:
+
+- **8 комнат** (не 3), список виден агенту в системном промпте `decide`.
+- `bookMeetingRoom({ room?, date, time, duration?, capacity, title? })` — длительность (по умолчанию
+  60 мин) и **проверка пересечений**: если интервал `[start, start+duration)` уже занят, инструмент
+  возвращает отказ с описанием конфликтующей встречи.
+- `listBookings` — встречи: свои, руководителю — свои + команды (длинный реальный список быстро
+  «раздувает» историю).
+- `cancelBooking({ room, date, time })` — отмена по естественному ключу; руководитель может отменить
+  встречу подчинённого, сотрудник — только свою.
+- `bookings` в SQLite: +`title`, `duration_min` (миграция через `ALTER TABLE`), мок-встречи сеются
+  при старте.
+
+### Тест-кейсы
+
+- **TC-1 «Амнезия» (влияние на поведение).** В новой сессии: «Забронируй „Ладогу" на дату X —
+  встреча с инвесторами» → накопи реальные ходы (несколько броней + `listBookings`), пока не
+  появится бейдж «история усечена» → спроси «Что я просил в самом начале диалога?». Маркер
+  «из контекста» покажет, что агент забыл начало; рядом «Какие встречи?» отвечает маркером
+  «из БД» — бизнес-факты в SQLite переживают усечение, разговорная память — нет.
+- **TC-2 «Отказ на большом запросе».** Запрос больше бюджета: при защите — `blocked` и `$0`;
+  без защиты — уходит как есть и стоит денег.
+- **TC-3 «Сырой 400».** С защитой выключенной история, превышающая реальный контекст модели
+  (1M), вернула бы `400 context length exceeded`; `runAgent` ловит ошибку в try/catch и отдаёт
+  аккуратный `blocked`-ответ, сессия не падает. Кнопки-стресса нет — путь описан в `chat.ts`.
 
 ### Структура
 
 ```
 src/
 ├── lib/chat.ts          # LLM-слой: callCompletions + server fn chat/ask/askModel/readBrief/saveProposal/resolveCapabilities/listOrg/listSessions/loadSession/deleteSession/runAgent
-├── lib/agent.ts         # портативный агент: Agent, LlmMessage(+assistant), createAgentTools(store), судьи (без env/fetch)
+├── lib/agent.ts         # портативный агент: Agent, LlmMessage(+assistant), судьи (без env/fetch)
+├── lib/agent-tools.ts   # инструменты агента: TOOL_DEFINITIONS, TOOLS_BY_ROLE, createAgentTools(store)
+├── lib/tokens.ts        # оценка токенов (gpt-tokenizer), бюджет, цены, costUsd/formatUsd
 ├── lib/store.ts         # SQLite (node:sqlite): people/sessions/messages/vacations/bookings + createAgentStore
 ├── lib/days.ts          # навигация: смысловые лейблы для сайдбара и хаба
 ├── lib/day3.ts          # задания, промпты и судья для Day 3
 ├── lib/day4.ts          # задания, температуры и выводы для Day 4
 ├── lib/day5.ts          # ступени моделей, system и ссылки для Day 5
-├── lib/day6.ts          # данные UI агента: TOOL_INFO, примеры запросов
-├── components/          # Header, ThemeToggle, Sidebar, agent/ (PersonaPicker, SessionList, ChatThread, …)
+├── lib/agent-ui.ts      # данные UI агента: TOOL_INFO, примеры запросов, токен-сценарии
+├── components/          # Header, ThemeToggle, Sidebar, agent/ (PersonaPicker, SessionList, ChatThread, TokenMeter, …)
 └── routes/
     ├── __root.tsx       # корневой layout
     └── _layout/         # сайдбар + страницы
@@ -191,7 +273,8 @@ src/
 ### Про деплой
 
 Для разработки отдельный сервер не нужен — всё локально в одном процессе (`npm run dev`),
-данные — в `data/agent.sqlite` (gitignored). Прод (`npm run build`) — это SSR-приложение на Node;
+данные — в `~/.ai-advent-challenge/agent.sqlite` (вне репозитория, чтобы не терялись при `git clean`;
+путь переопределяется `AGENT_DB_PATH`). Прод (`npm run build`) — это SSR-приложение на Node;
 деплой вне scope.
 
 ### Вне scope (следующие шаги)

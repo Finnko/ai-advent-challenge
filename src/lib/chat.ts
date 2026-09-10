@@ -1,6 +1,14 @@
 import { createServerFn } from '@tanstack/react-start'
-import { AGENT_JUDGES, Agent, createAgentTools } from './agent'
-import type { AgentCapabilities, AgentRole, CallLLM, LlmMessage } from './agent'
+import { AGENT_JUDGES, Agent } from './agent'
+import { TOOLS_BY_ROLE, createAgentTools } from './agent-tools'
+import type {
+  AgentCapabilities,
+  AgentRole,
+  AgentRunResult,
+  CallLLM,
+  LlmMessage,
+} from './agent'
+import { estimateMessagesTokens, estimateTokens } from './tokens'
 import {
   appendMessage as appendMessageToStore,
   createAgentStore,
@@ -69,7 +77,7 @@ export const TIER_ENDPOINTS: Record<Tier, CompletionEndpoint> = {
   },
   medium: {
     ...DEEPSEEK_ENDPOINT,
-    model: 'deepseek-v4-flash',
+    model: 'deepseek-flash',
   },
   strong: {
     ...DEEPSEEK_ENDPOINT,
@@ -359,11 +367,6 @@ export const saveProposal = createServerFn({ method: 'POST' })
     return { path: `md/design/proposals/${fileName}` }
   })
 
-const TOOLS_BY_ROLE: Record<AgentRole, string[]> = {
-  employee: ['bookMeetingRoom', 'requestVacation'],
-  manager: ['bookMeetingRoom', 'requestVacation', 'approveVacation', 'listVacations'],
-}
-
 async function resolveCapabilitiesByToken(
   token: string,
 ): Promise<AgentCapabilities> {
@@ -393,15 +396,13 @@ export type OrgPerson = {
 
 export const listOrg = createServerFn({ method: 'GET' }).handler(async () => {
   const rows = await listPeople()
-  return rows.map(
-    (row): OrgPerson => ({
-      token: row.token,
-      name: row.name,
-      role: row.role as AgentRole,
-      title: row.title,
-      managerToken: row.manager_token,
-    }),
-  )
+  return rows.map((row): OrgPerson => ({
+    token: row.token,
+    name: row.name,
+    role: row.role as AgentRole,
+    title: row.title,
+    managerToken: row.manager_token,
+  }))
 })
 
 export const resolveCapabilities = createServerFn({ method: 'POST' })
@@ -455,15 +456,13 @@ export const listSessions = createServerFn({ method: 'POST' })
   })
   .handler(async ({ data }) => {
     const rows = await listSessionsFromStore(data.token)
-    return rows.map(
-      (row): SessionSummary => ({
-        id: row.id,
-        title: row.title,
-        createdAt: row.createdAt,
-        lastMessage: row.lastMessage,
-        messageCount: row.messageCount,
-      }),
-    )
+    return rows.map((row): SessionSummary => ({
+      id: row.id,
+      title: row.title,
+      createdAt: row.createdAt,
+      lastMessage: row.lastMessage,
+      messageCount: row.messageCount,
+    }))
   })
 
 export const loadSession = createServerFn({ method: 'POST' })
@@ -493,13 +492,12 @@ export const deleteSession = createServerFn({ method: 'POST' })
     return { ok: true }
   })
 
-const HISTORY_LIMIT = 16
-
 function historyToMessages(rows: StoredMessage[]): LlmMessage[] {
   return rows
     .filter((row) => row.role === 'user' || row.role === 'assistant')
     .map((row) => ({
-      role: row.role === 'assistant' ? ('assistant' as const) : ('user' as const),
+      role:
+        row.role === 'assistant' ? ('assistant' as const) : ('user' as const),
       content: row.content,
     }))
 }
@@ -510,13 +508,22 @@ function sessionTitleFrom(text: string): string {
 }
 
 export type RunAgentResult = {
-  run: import('./agent').AgentRunResult
+  run: AgentRunResult
   sessionId: number
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }
 
 export const runAgent = createServerFn({ method: 'POST' })
   .validator(
-    (input: { token: string; sessionId: number | null; user: string }) => {
+    (input: {
+      token: string
+      sessionId: number | null
+      user: string
+      enforceContextBudget?: boolean
+    }) => {
       if (typeof input !== 'object' || input === null) {
         throw new Error('Некорректный запрос')
       }
@@ -532,10 +539,17 @@ export const runAgent = createServerFn({ method: 'POST' })
       if (typeof input.user !== 'string' || input.user.trim().length === 0) {
         throw new Error('Сообщение обязательно')
       }
+      if (
+        input.enforceContextBudget !== undefined &&
+        typeof input.enforceContextBudget !== 'boolean'
+      ) {
+        throw new Error('Некорректный enforceContextBudget')
+      }
       return {
         token: input.token.trim(),
         sessionId: input.sessionId,
         user: input.user.trim(),
+        enforceContextBudget: input.enforceContextBudget ?? true,
       }
     },
   )
@@ -551,7 +565,7 @@ export const runAgent = createServerFn({ method: 'POST' })
     }
 
     const rows = await loadMessagesFromStore(sessionId)
-    const history = historyToMessages(rows).slice(-HISTORY_LIMIT)
+    const history = historyToMessages(rows)
 
     const agent = new Agent({
       capabilities,
@@ -560,8 +574,37 @@ export const runAgent = createServerFn({ method: 'POST' })
       callLLM: callFlash,
       model: TIER_ENDPOINTS.medium.model,
       today: todayIso(),
+      enforceContextBudget: data.enforceContextBudget,
     })
-    const run = await agent.run(data.user, history)
+
+    let run: AgentRunResult
+    try {
+      run = await agent.run(data.user, history)
+    } catch (error) {
+      const message = errorMessage(error)
+      const requestTokens = estimateTokens(data.user)
+      const historyTokens = estimateMessagesTokens(history)
+      run = {
+        ok: false,
+        blocked: true,
+        reason: message,
+        answer: `Агент не смог обработать запрос: ${message}`,
+        trace: [],
+        verdicts: [],
+        usage: null,
+        latencyMs: 0,
+        model: TIER_ENDPOINTS.medium.model,
+        tokens: {
+          requestTokens,
+          historyTokens,
+          historyTokensSent: historyTokens,
+          trimmedMessages: 0,
+          responseTokens: 0,
+          promptTokensActual: 0,
+          costUsd: 0,
+        },
+      }
+    }
 
     await appendMessageToStore(sessionId, 'user', data.user)
     await appendMessageToStore(sessionId, 'assistant', run.answer, run)

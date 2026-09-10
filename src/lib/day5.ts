@@ -20,9 +20,10 @@ export const TIERS: TierMeta[] = [
   {
     id: 'medium',
     label: 'Средняя',
-    model: 'deepseek-v4-flash',
+    model: 'deepseek-flash',
     provider: 'DeepSeek',
-    description: 'Быстрая модель DeepSeek: хороший баланс скорости и качества.',
+    description:
+      'Быстрая модель DeepSeek V4.1 Flash: хороший баланс скорости и качества.',
   },
   {
     id: 'strong',

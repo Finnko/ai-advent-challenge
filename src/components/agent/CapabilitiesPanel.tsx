@@ -1,4 +1,4 @@
-import { TOOL_INFO } from '../../lib/day6'
+import { TOOL_INFO } from '../../lib/agent-ui'
 import type { AgentCapabilities } from '../../lib/agent'
 import TypingDots from '../TypingDots'
 

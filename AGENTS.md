@@ -1,12 +1,12 @@
 # Project: AI Advent Challenge
 
-Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 7 (`feature/day7`).
+Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 8 (`feature/day8`).
 
 ## Stack
 
 - **TanStack Start** (Vite + React 19 + TypeScript), file-based routing (`src/routes`).
 - **Tailwind v4** via `@tailwindcss/vite`. App-wide tokens and `data-theme` (light/dark) live in `src/styles.css`.
-- Styling: bare Tailwind utility classes + existing CSS variables (`--sea-ink`, `--surface`, `--line`, `--lagoon`, ...). Do not pull in component libraries unless asked.
+- Styling: bare Tailwind utility classes + semantic CSS variables in `src/styles.css` (`.demo-*`/`.island-*` kit + tokens). Palette: slate (near-white `Slate-50` bg, `Slate-900` headings, `Slate-700` body, `Slate-500` secondary) with indigo accents; `Emerald`/`Red` reserved for meaning (positive/error). Tokens: text `--ink`/`--ink-soft`/`--ink-muted`; accents `--accent`/`--accent-strong`/`--accent-soft`; surfaces `--surface`/`--surface-strong`/`--surface-tint`; lines `--line`/`--line-strong`; status `--positive`/`--info`/`--danger`/`--warn`; shell `--bg-base`/`--header-bg`/`--label`. Do not pull in component libraries unless asked.
 
 ## LLM layer (Day 1)
 
@@ -25,30 +25,60 @@ Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 
     (validated 0–2, sent only when given). `ChatResult` returns `model` and server-measured `latencyMs`.
   - `askModel({ tier, system, user })` for Day 5: client sends only `tier: 'weak' | 'medium' | 'strong'`;
     the tier→endpoint/model/key mapping (`TIER_ENDPOINTS`) lives server-side in `chat.ts`
-    (weak = `Qwen/Qwen3-8B` via HF, medium = `deepseek-v4-flash`, strong = `deepseek-v4-pro`).
+    (weak = `Qwen/Qwen3-8B` via HF, medium = `deepseek-flash`, strong = `deepseek-v4-pro`).
     Client can never pass arbitrary model strings.
   - `readBrief` (reads `md/design/brief.md` from `process.cwd()`) and `saveProposal`
     (writes responses to `md/design/proposals/`) — Day 5's brief/proposals are a **local, gitignored**
     `md/` folder, not part of the repo, so these only work in local dev where that folder exists.
   - Agent (Day 6/7) server fns: `resolveCapabilities({ token })`, `listOrg()`, and the persistence
     set `listSessions({ token })` / `loadSession({ sessionId })` / `deleteSession({ sessionId })`
-    and `runAgent({ token, sessionId: number | null, user })` (auto-creates a session when
-    `sessionId` is null, replays stored history into the LLM, and persists both new messages).
+    and `runAgent({ token, sessionId: number | null, user, enforceContextBudget? })` (auto-creates a
+    session when `sessionId` is null, replays stored history into the LLM, and persists both new
+    messages). `runAgent` wraps `agent.run` in try/catch: an API failure (e.g. raw 400 on a huge
+    prompt when the guard is off) becomes a graceful blocked `AgentRunResult`, never a thrown error.
+- **Day 8 token accounting** lives in `src/lib/tokens.ts` (isomorphic, no env): `estimateTokens`
+  uses `gpt-tokenizer` (pure TS — the only new npm dep; counts offline, runs client + server).
+  Constants: `CONTEXT_BUDGET_TOKENS = 4096` (a deliberately small budget the agent **enforces on
+  itself** to demo overflow — the real `deepseek-flash` context is 1M, see `MODEL_CONTEXT_TOKENS`),
+  off-peak DeepSeek prices `PRICE_INPUT_PER_1M = 0.15`, `PRICE_OUTPUT_PER_1M = 0.6` (+`costUsd`,
+  `formatUsd`). In `src/lib/agent.ts`: `Agent.run` estimates the prompt before calling, and when
+  `AgentConfig.enforceContextBudget !== false` trims oldest history turns to fit `contextBudgetTokens`
+  for **both** the `decide` and `finalize` calls (each has its own system/report size), or refuses a
+  single over-budget request. Input policy cap is `MAX_INPUT_CHARS = 30_000` — high enough that the
+  budget refusal (not input policy) is what the demo hits. `chat.ts` `runAgent` replays the full
+  stored history (no message-count cap); only the token budget trims it. `AgentRunResult` carries
+  `tokens: TokenBreakdown` (`requestTokens`/`historyTokens` are local estimates — labels «оценка»; 
+  `responseTokens` = real API completion summed over decide+finalize; `promptTokensActual` is the
+  real API prompt, which counts history twice because it's replayed into both calls;
+  `trimmedMessages` = max dropped across the two calls, `historyTokensSent` = min actually sent).
+- **Meeting domain (bookings).** `bookings` stores `title`/`duration_min` (default 60) — migration via
+  `PRAGMA table_info` + `ALTER TABLE`; mock meetings are seeded at startup (`BOOKINGS_SEED`). 8 rooms
+  (`ROOMS`) are listed in the `decide` prompt. Tools: `bookMeetingRoom` (room/date/time/duration/
+  capacity/title, refuses on interval overlap via `store.findOverlap`), `listBookings` (own + team for
+  managers), `cancelBooking` (natural key room/date/time; managers may cancel subordinates'). `BookingRecord`
+  carries `title`/`durationMin`. `listVacations` output does NOT include reference codes (avoids a bogus
+  «Код подтверждения» line on list answers).
 - **Day 7 persistence** lives in `src/lib/store.ts`, a server-only `node:sqlite` singleton (raw
   `DatabaseSync`, no npm dependency; emits an `ExperimentalWarning`, fine). DB file:
-  `data/agent.sqlite` (gitignored `data/`). Tables: `people` (org seeded mock: Анна + Пётр/Мария/Иван
+  `~/.ai-advent-challenge/agent.sqlite` (override via `AGENT_DB_PATH`), so it survives `git clean`,
+  branch switches and deleting the repo-local `data/`. On first open the legacy `data/agent.sqlite`
+  is migrated to the new path if present; before touching an existing DB it is snapshotted to
+  `<db>.backups/agent-<timestamp>.sqlite` (last 5 kept). Tables: `people` (org seeded mock: Анна + Пётр/Мария/Иван
   via `manager_token`), `sessions`, `messages` (`run_json` holds the full `AgentRunResult`),
   `vacations`, `bookings`. **Never import `node:sqlite` statically in client-reachable code** —
   always `await import('node:sqlite')` inside server functions (same pattern as `node:fs/promises`).
-  Client-facing UI for the agent lives in `src/lib/day6.ts` (safe data only).
+  Client-facing UI for the agent lives in `src/lib/agent-ui.ts` (safe data only).
 - The agent demo is a **single live route `/agent`** (renamed from `/day6`) — Day 7 added memory to
   it rather than a second page. Sidebar labels in `src/lib/days.ts` are semantic
   (`Base LLM API`, …, `Agent`), not `Day N`. In `src/lib/agent.ts`: `LlmMessage.role` includes
   `'assistant'`, `AgentIdentity.subordinates: string[]`, `Agent.run(user, history?)` replays history
-  into `decide`/`finalize`, tools are built via `createAgentTools(store: AgentStore)` (effects are
-  persisted through the injected store; `listVacations` answers memory questions from DB).
+  into `decide`/`finalize`. Tool definitions/runners and the role→tool map live in
+  `src/lib/agent-tools.ts` (`TOOL_DEFINITIONS`, `TOOLS_BY_ROLE`, `createAgentTools(store: AgentStore)`);
+  `TOOLS_BY_ROLE` is derived from each tool's `roles`, so `resolveCapabilities`, the `decide` prompt
+  and `isPermitted` can never drift from the actual tools. Effects are persisted through the injected
+  store; `listVacations` answers memory questions from DB.
 - Client-safe prompt/task text (no env) belongs in `src/lib/day3.ts` / `src/lib/day4.ts` /
-  `src/lib/day5.ts` / `src/lib/day6.ts`, never in `chat.ts`.
+  `src/lib/day5.ts` / `src/lib/agent-ui.ts`, never in `chat.ts`.
 
 ## Commands
 
