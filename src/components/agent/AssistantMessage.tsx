@@ -1,8 +1,10 @@
 import type { AgentRunResult } from '../../lib/agent'
 import type { JudgeVerdict } from '../../lib/agent'
+import { formatUsd } from '../../lib/tokens'
 import TraceAccordion from './TraceAccordion'
 
 export default function AssistantMessage({ run }: { run: AgentRunResult }) {
+  const t = run.tokens
   return (
     <div className="flex flex-col gap-2">
       {run.blocked && (
@@ -20,16 +22,56 @@ export default function AssistantMessage({ run }: { run: AgentRunResult }) {
           <VerdictPill key={verdict.judge} verdict={verdict} />
         ))}
         {run.model && <span className="demo-pill">модель: {run.model}</span>}
+        <SourcePill run={run} />
+        {t && t.trimmedMessages > 0 && (
+          <span className="demo-pill !border-[color-mix(in_oklab,var(--warn)_40%,var(--line))] !bg-[color-mix(in_oklab,var(--warn)_12%,var(--surface))] !text-[var(--warn)]">
+            история усечена: −{t.trimmedMessages} сообщ.
+          </span>
+        )}
+      </div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <TokenChip label="запрос" value={`≈${t.requestTokens}`} />
+        <TokenChip
+          label="история"
+          value={`≈${t.historyTokens}`}
+          note={
+            t.historyTokensSent !== t.historyTokens
+              ? `отправлено ≈${t.historyTokensSent}`
+              : undefined
+          }
+        />
+        <TokenChip label="ответ" value={`${t.responseTokens}`} />
+        {t.promptTokensActual > 0 && (
+          <TokenChip label="prompt API" value={`${t.promptTokensActual}`} />
+        )}
+        <TokenChip label="цена" value={`~${formatUsd(t.costUsd)}`} />
       </div>
       <p className="demo-muted m-0 text-xs">
-        {run.blocked ? 'отклонено полиси' : 'ок'}
-        {run.usage
-          ? ` · prompt ${run.usage.prompt_tokens} → completion ${run.usage.completion_tokens} ток.`
-          : ''}
-        {` · ${run.latencyMs} мс`}
+        {run.blocked ? 'отклонено полиси' : 'ок'} · {run.latencyMs} мс
       </p>
       <TraceAccordion trace={run.trace} />
     </div>
+  )
+}
+
+function TokenChip({
+  label,
+  value,
+  note,
+}: {
+  label: string
+  value: string
+  note?: string
+}) {
+  return (
+    <span
+      className="demo-pill"
+      title={note ? `${label}: ${value} · ${note}` : `${label}: ${value}`}
+    >
+      <span className="text-[var(--ink-muted)]">{label}</span>{' '}
+      <span className="font-bold text-[var(--ink)]">{value}</span>
+      {note && <span className="text-[var(--ink-muted)]"> · {note}</span>}
+    </span>
   )
 }
 
@@ -40,12 +82,49 @@ function VerdictPill({ verdict }: { verdict: JudgeVerdict }) {
     <span
       className={`demo-pill ${
         failed
-          ? '!border-[rgba(196,71,71,0.4)] !bg-[rgba(196,71,71,0.14)] !text-[#9f3030]'
+          ? '!border-[color-mix(in_oklab,var(--danger)_40%,var(--line))] !bg-[color-mix(in_oklab,var(--danger)_12%,var(--surface))] !text-[var(--danger)]'
           : ''
       }`}
       title={verdict.message}
     >
       {verdict.judge}: {verdict.status === 'pass' ? 'ок' : 'нарушение'}
+    </span>
+  )
+}
+
+function SourcePill({ run }: { run: AgentRunResult }) {
+  const decide = run.trace.find(
+    (
+      step,
+    ): step is Extract<typeof step, { stage: 'decide'; tool: string | null }> =>
+      step.stage === 'decide' && step.tool !== null,
+  )
+  if (!decide) {
+    return (
+      <span
+        className="demo-pill"
+        title="Инструмент не вызывался — ответ собран из контекста (история/память модели)"
+      >
+        из контекста
+      </span>
+    )
+  }
+  if (decide.tool === 'listBookings' || decide.tool === 'listVacations') {
+    return (
+      <span
+        className="demo-pill !border-[color-mix(in_oklab,var(--accent)_45%,var(--line))]"
+        title="Ответ построен по данным из SQLite через инструмент, а не по памяти модели"
+      >
+        из БД
+      </span>
+    )
+  }
+  return (
+    <span
+      className="demo-pill"
+      title={`Ответ построен по отчёту инструмента ${decide.tool}`}
+    >
+      из инструмента
     </span>
   )
 }

@@ -319,7 +319,7 @@ function ResultBody({ result }: { result: StrategyResult }) {
       return (
         <div className="flex flex-col gap-3">
           <details className="demo-code-block">
-            <summary className="cursor-pointer select-none text-xs text-[var(--sea-ink-soft)]">
+            <summary className="cursor-pointer select-none text-xs text-[var(--ink-muted)]">
               Сгенерированный промпт (им решается задача)
             </summary>
             <pre className="mt-2 whitespace-pre-wrap text-sm">
@@ -382,7 +382,7 @@ function PromptPreview({
 }) {
   return (
     <details className="mt-1">
-      <summary className="cursor-pointer select-none text-xs text-[var(--sea-ink-soft)]">
+      <summary className="cursor-pointer select-none text-xs text-[var(--ink-muted)]">
         {title}
       </summary>
       <div className="mt-2 space-y-2">
@@ -506,7 +506,7 @@ function VerdictBody({ verdict }: { verdict: VerdictShape }) {
               key={id}
               className={`demo-pill ${
                 isWinner
-                  ? '!border-[color-mix(in_oklab,var(--lagoon)_60%,var(--line))] !bg-[color-mix(in_oklab,var(--lagoon)_22%,var(--chip-bg))]'
+                  ? '!border-[color-mix(in_oklab,var(--accent)_60%,var(--line))] !bg-[color-mix(in_oklab,var(--accent)_22%,var(--surface-tint))]'
                   : ''
               }`}
             >
@@ -536,7 +536,7 @@ function TypingDots({ text }: { text?: string }) {
         {[0, 1, 2].map((i) => (
           <span
             key={i}
-            className="typing-dot h-2 w-2 rounded-full bg-[var(--lagoon)]"
+            className="typing-dot h-2 w-2 rounded-full bg-[var(--accent)]"
             style={{ animationDelay: `${i * 150}ms` }}
           />
         ))}

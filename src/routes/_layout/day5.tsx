@@ -110,7 +110,7 @@ function Day5() {
         <h1 className="demo-title mb-2">Версии моделей</h1>
         <p className="demo-muted m-0 max-w-2xl text-sm">
           Один и тот же запрос — продуктовое ТЗ интернет-магазина — уходит в три
-          модели разного уровня: слабую (Qwen 8B), среднюю (deepseek-v4-flash) и
+          модели разного уровня: слабую (Qwen 8B), среднюю (deepseek-flash) и
           сильную (deepseek-v4-pro). Каждая сама предлагает архитектуру. Сравни
           качество, скорость, токены и стоимость.
         </p>
@@ -186,7 +186,7 @@ function Day5() {
                   href={link.url}
                   target="_blank"
                   rel="noreferrer"
-                  className="underline decoration-[var(--line)] underline-offset-2 hover:text-[var(--lagoon)]"
+                  className="underline decoration-[var(--line)] underline-offset-2 hover:text-[var(--accent)]"
                 >
                   {link.title}
                 </a>
@@ -287,7 +287,7 @@ function TypingDots({ text }: { text?: string }) {
         {[0, 1, 2].map((i) => (
           <span
             key={i}
-            className="typing-dot h-2 w-2 rounded-full bg-[var(--lagoon)]"
+            className="typing-dot h-2 w-2 rounded-full bg-[var(--accent)]"
             style={{ animationDelay: `${i * 150}ms` }}
           />
         ))}

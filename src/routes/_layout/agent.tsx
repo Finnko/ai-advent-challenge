@@ -10,8 +10,19 @@ import {
   runAgent,
 } from '../../lib/chat'
 import type { AgentRunResult } from '../../lib/agent'
-import { EXAMPLES, TOOL_INFO } from '../../lib/day6'
-import type { Example, PersonaKind, ToolInfo } from '../../lib/day6'
+import { EXAMPLES, TOOL_INFO, TOKEN_SCENARIOS } from '../../lib/agent-ui'
+import type {
+  Example,
+  PersonaKind,
+  ToolInfo,
+  TokenScenarioId,
+} from '../../lib/agent-ui'
+import {
+  CONTEXT_BUDGET_TOKENS,
+  MODEL_CONTEXT_TOKENS,
+  estimateTokens,
+  formatUsd,
+} from '../../lib/tokens'
 import type { OrgPerson, SessionSummary } from '../../lib/chat'
 import PersonaPicker from '../../components/agent/PersonaPicker'
 import CapabilitiesPanel from '../../components/agent/CapabilitiesPanel'
@@ -19,6 +30,8 @@ import ExampleChips from '../../components/agent/ExampleChips'
 import ChatThread from '../../components/agent/ChatThread'
 import type { ThreadMessage } from '../../components/agent/ChatThread'
 import SessionList from '../../components/agent/SessionList'
+import TokenMeter from '../../components/agent/TokenMeter'
+import TokenReport from '../../components/agent/TokenReport'
 
 export const Route = createFileRoute('/_layout/agent')({ component: AgentPage })
 
@@ -28,6 +41,7 @@ function AgentPage() {
   const [sessionId, setSessionId] = useState<number | null>(null)
   const [messages, setMessages] = useState<ThreadMessage[]>([])
   const [draft, setDraft] = useState('')
+  const [enforceBudget, setEnforceBudget] = useState(true)
   const autoPickRef = useRef(false)
 
   const orgQuery = useQuery({
@@ -65,8 +79,12 @@ function AgentPage() {
   })
 
   const sendMutation = useMutation({
-    mutationFn: (input: { token: string; sessionId: number | null; user: string }) =>
-      runAgent({ data: input }),
+    mutationFn: (input: {
+      token: string
+      sessionId: number | null
+      user: string
+      enforceContextBudget: boolean
+    }) => runAgent({ data: input }),
   })
   const loadMutation = useMutation({
     mutationFn: (id: number) => loadSession({ data: { sessionId: id } }),
@@ -163,7 +181,7 @@ function AgentPage() {
     setDraft('')
     setMessages((prev) => [...prev, { role: 'user', content: text }])
     sendMutation.mutate(
-      { token: activeToken, sessionId, user: text },
+      { token: activeToken, sessionId, user: text, enforceContextBudget: enforceBudget },
       {
         onSuccess: (result) => {
           setSessionId(result.sessionId)
@@ -182,6 +200,34 @@ function AgentPage() {
   const pickExample = (text: string) => {
     setDraft(text)
   }
+
+  const pickScenario = (id: TokenScenarioId) => {
+    const scenario = TOKEN_SCENARIOS.find((s) => s.id === id)
+    if (scenario) {
+      setDraft(scenario.text)
+    }
+  }
+
+  const historyTokens = messages.reduce(
+    (sum, message) => sum + estimateTokens(message.content),
+    0,
+  )
+  const requestTokens = estimateTokens(draft)
+  const lastRun: AgentRunResult | null =
+    [...messages].reverse().find((message) => message.run)?.run ?? null
+  const sessionTotals = messages.reduce(
+    (acc, message) => {
+      if (message.role !== 'assistant' || !message.run?.usage) {
+        return acc
+      }
+      const usage = message.run.usage
+      acc.prompt += usage.prompt_tokens
+      acc.completion += usage.completion_tokens
+      acc.cost += message.run.tokens?.costUsd ?? 0
+      return acc
+    },
+    { prompt: 0, completion: 0, cost: 0 },
+  )
 
   const capsPanel: Parameters<typeof CapabilitiesPanel>[0] = capsQuery.data
     ? { status: 'ready', caps: capsQuery.data }
@@ -233,7 +279,7 @@ function AgentPage() {
           <aside className="demo-panel flex w-[300px] shrink-0 flex-col p-3">
             <div className="border-b border-[var(--line)] px-1 pb-2">
               <p className="island-kicker m-0">Сессии</p>
-              <p className="m-0 text-sm font-bold text-[var(--sea-ink)]">
+              <p className="m-0 text-sm font-bold text-[var(--ink)]">
                 {activePerson.name}
               </p>
             </div>
@@ -282,6 +328,63 @@ function AgentPage() {
               </div>
             )}
 
+            {sessionTotals.prompt + sessionTotals.completion > 0 && (
+              <p className="demo-muted m-0 text-xs">
+                Суммарно за сессию: prompt {sessionTotals.prompt} + completion{' '}
+                {sessionTotals.completion} ток. · ~{formatUsd(sessionTotals.cost)}
+              </p>
+            )}
+
+            <TokenReport
+              requestTokens={requestTokens}
+              historyTokens={historyTokens}
+              historyTokensSent={
+                lastRun ? lastRun.tokens.historyTokensSent : null
+              }
+              responseTokens={lastRun ? lastRun.tokens.responseTokens : null}
+            />
+
+            <TokenMeter
+              historyTokens={historyTokens}
+              requestTokens={requestTokens}
+              budget={CONTEXT_BUDGET_TOKENS}
+              modelContext={MODEL_CONTEXT_TOKENS}
+            />
+
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-3">
+              <div className="flex flex-wrap gap-2">
+                {TOKEN_SCENARIOS.map((scenario) => (
+                  <button
+                    key={scenario.id}
+                    type="button"
+                    onClick={() => pickScenario(scenario.id)}
+                    disabled={busy}
+                    className="demo-button demo-button-secondary px-3 py-1 text-xs"
+                    title={scenario.hint}
+                  >
+                    {scenario.label}
+                  </button>
+                ))}
+              </div>
+              <label
+                className="demo-muted flex cursor-pointer select-none items-center gap-1.5 text-xs"
+                title={
+                  enforceBudget
+                    ? 'Агент урежет историю и откажет запрос больше бюджета'
+                    : 'Агент шлёт всё как есть — история растёт без ограничений'
+                }
+              >
+                <input
+                  type="checkbox"
+                  checked={enforceBudget}
+                  onChange={(e) => setEnforceBudget(e.target.checked)}
+                  disabled={busy}
+                  className="accent-[var(--accent)]"
+                />
+                защита бюджета
+              </label>
+            </div>
+
             <ChatThread messages={messages} running={busy} />
 
             {sendError && (
@@ -300,7 +403,7 @@ function AgentPage() {
                 onChange={(e) => setDraft(e.target.value)}
                 placeholder="Например: забронируй переговорку на завтра на 15:00 на 6 человек…"
                 className="demo-textarea min-h-0"
-                rows={2}
+                rows={6}
                 disabled={busy}
               />
               <div className="flex justify-end">

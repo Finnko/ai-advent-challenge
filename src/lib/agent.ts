@@ -1,3 +1,11 @@
+import {
+  CONTEXT_BUDGET_TOKENS,
+  costUsd,
+  estimateMessagesTokens,
+  estimateTokens,
+} from './tokens'
+import { ROOMS, normalizeName, pickString } from './agent-tools'
+
 export type AgentRole = 'employee' | 'manager'
 
 export type AgentIdentity = {
@@ -5,6 +13,7 @@ export type AgentIdentity = {
   role: AgentRole
   title: string
   subordinates: string[]
+  colleagues: string[]
 }
 
 export type AgentCapabilities = {
@@ -12,7 +21,10 @@ export type AgentCapabilities = {
   allowedTools: string[]
 }
 
-export type ToolArgs = Record<string, string | number | boolean | null>
+export type ToolArgs = Record<
+  string,
+  string | number | boolean | null | string[]
+>
 
 export type LlmMessage = {
   role: 'system' | 'user' | 'assistant'
@@ -20,6 +32,16 @@ export type LlmMessage = {
 }
 
 export type LlmUsage = { prompt_tokens: number; completion_tokens: number }
+
+export type TokenBreakdown = {
+  requestTokens: number
+  historyTokens: number
+  historyTokensSent: number
+  trimmedMessages: number
+  responseTokens: number
+  promptTokensActual: number
+  costUsd: number
+}
 
 export type LlmReply = {
   content: string
@@ -54,9 +76,13 @@ export type BookingRecord = {
   room: string
   date: string
   time: string
+  durationMin: number
   capacity: number
+  title: string
   reference: string
   bookedBy: string
+  participants: string[]
+  createdAt?: string
 }
 
 export type AgentStore = {
@@ -70,11 +96,47 @@ export type AgentStore = {
     start: string,
     end: string,
   ) => VacationRecord | null | Promise<VacationRecord | null>
+  latestPendingVacation: (
+    subordinateNames: string[],
+  ) => VacationRecord | null | Promise<VacationRecord | null>
   markVacationApproved: (
     reference: string,
     approverName: string,
   ) => void | Promise<void>
   insertBooking: (record: BookingRecord) => void | Promise<void>
+  listBookings: (
+    bookedBy: string,
+    subordinateNames: string[],
+  ) => BookingRecord[] | Promise<BookingRecord[]>
+  listBookingsOnDate: (
+    date: string,
+  ) => BookingRecord[] | Promise<BookingRecord[]>
+  latestManagedBookingFor: (
+    bookedBy: string,
+    subordinateNames: string[],
+  ) => BookingRecord | null | Promise<BookingRecord | null>
+  findBooking: (
+    room: string,
+    date: string,
+    time: string,
+  ) => BookingRecord | null | Promise<BookingRecord | null>
+  updateBookingParticipants: (
+    room: string,
+    date: string,
+    time: string,
+    participants: string[],
+  ) => void | Promise<void>
+  deleteBooking: (
+    room: string,
+    date: string,
+    time: string,
+  ) => void | Promise<void>
+  findOverlap: (
+    room: string,
+    date: string,
+    time: string,
+    durationMin: number,
+  ) => BookingRecord[] | Promise<BookingRecord[]>
 }
 
 export type AgentTool = {
@@ -138,6 +200,7 @@ export type AgentRunResult = {
   usage: LlmUsage | null
   latencyMs: number
   model: string
+  tokens: TokenBreakdown
 }
 
 export type AgentConfig = {
@@ -147,309 +210,42 @@ export type AgentConfig = {
   callLLM: CallLLM
   model: string
   today: string
+  context?: string
+  contextBudgetTokens?: number
+  enforceContextBudget?: boolean
 }
 
 const DECIDE_TEMPERATURE = 0.2
 const FINALIZE_TEMPERATURE = 0.7
-const MAX_INPUT_CHARS = 2000
+const MAX_INPUT_CHARS = 30_000
 const DECIDE_MAX_TOKENS = 300
 const FINALIZE_MAX_TOKENS = 700
 
-function refCode(prefix: string): string {
-  return `${prefix}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`
-}
-
-const ROOMS = [
-  'Переговорка «Ладога»',
-  'Переговорка «Байкал»',
-  'Переговорка «Онега»',
+const ACTION_HINTS = [
+  'забронир',
+  'перебронир',
+  'отмен',
+  'позов',
+  'приглас',
+  'зови',
+  'согласу',
+  'подтверд',
+  'одобр',
+  'оформ',
+  'заплан',
+  'подай',
+  'созда',
+  'перенес',
+  'освобод',
+  'назнач',
 ]
 
-function roomFor(date: string, time: string): string {
-  const seed = date.length + time.length + (date.charCodeAt(0) || 0)
-  return ROOMS[seed % ROOMS.length] ?? ROOMS[0]
-}
+const DECIDE_NUDGE =
+  'Напоминание: пользователь просит выполнить действие. Выбери ровно один подходящий инструмент из списка и заполни его аргументы из сообщения или контекста. Если данные есть в контексте — не переспрашивай. Если ни один инструмент не подходит, верни {"tool": null, "args": {}}.'
 
-function pickString(args: ToolArgs, key: string): string {
-  return String(args[key] ?? '').trim()
-}
-
-function normalizeName(name: string): string {
-  return name.trim().toLowerCase().replace(/\s+/g, ' ')
-}
-
-function validateRange(start: string, end: string): string | null {
-  if (!start || !end) {
-    return 'Укажи даты начала и конца периода.'
-  }
-  if (end < start) {
-    return 'Дата конца раньше даты начала.'
-  }
-  return null
-}
-
-function isInvalidDate(value: string): boolean {
-  return !/^\d{4}-\d{2}-\d{2}$/.test(value)
-}
-
-function isInvalidTime(value: string): boolean {
-  return !/^\d{2}:\d{2}$/.test(value)
-}
-
-type BookingPlan =
-  | {
-      ok: true
-      room: string
-      date: string
-      time: string
-      capacity: number
-      reference: string
-    }
-  | { ok: false; text: string; reference: null }
-
-function planBooking(args: ToolArgs): BookingPlan {
-  const date = pickString(args, 'date')
-  const time = pickString(args, 'time')
-  const capacity = Math.max(1, Math.min(50, Number(args.capacity) || 4))
-  if (!date || !time) {
-    return {
-      ok: false,
-      text: 'Не указаны дата и время бронирования.',
-      reference: null,
-    }
-  }
-  if (isInvalidDate(date)) {
-    return {
-      ok: false,
-      text: `Дата «${date}» не в формате YYYY-MM-DD.`,
-      reference: null,
-    }
-  }
-  if (isInvalidTime(time)) {
-    return {
-      ok: false,
-      text: `Время «${time}» не в формате HH:MM.`,
-      reference: null,
-    }
-  }
-  return {
-    ok: true,
-    room: roomFor(date, time),
-    date,
-    time,
-    capacity,
-    reference: refCode('BOOK'),
-  }
-}
-
-type VacationPlan =
-  | {
-      ok: true
-      employeeName: string
-      start: string
-      end: string
-      reference: string
-    }
-  | { ok: false; text: string; reference: null }
-
-type ApprovalPlan =
-  | { ok: true; employeeName: string; start: string; end: string }
-  | { ok: false; text: string; reference: null }
-
-function planVacationRequest(
-  args: ToolArgs,
-  identity: AgentIdentity,
-): VacationPlan {
-  const start = pickString(args, 'start')
-  const end = pickString(args, 'end')
-  const invalid = validateRange(start, end)
-  if (invalid) {
-    return { ok: false, text: invalid, reference: null }
-  }
-  if (isInvalidDate(start) || isInvalidDate(end)) {
-    return {
-      ok: false,
-      text: 'Даты должны быть в формате YYYY-MM-DD.',
-      reference: null,
-    }
-  }
-  return {
-    ok: true,
-    employeeName: identity.name,
-    start,
-    end,
-    reference: refCode('VAC'),
-  }
-}
-
-function planVacationApproval(
-  args: ToolArgs,
-  identity: AgentIdentity,
-): ApprovalPlan {
-  const employeeName = pickString(args, 'employeeName')
-  const start = pickString(args, 'start')
-  const end = pickString(args, 'end')
-  if (!employeeName) {
-    return {
-      ok: false,
-      text: 'Не указан сотрудник, чей отпуск согласуется.',
-      reference: null,
-    }
-  }
-  if (normalizeName(employeeName) === normalizeName(identity.name)) {
-    return {
-      ok: false,
-      text: `Руководитель ${identity.name} не может согласовать отпуск самому себе.`,
-      reference: null,
-    }
-  }
-  const isSubordinate = identity.subordinates.some(
-    (name) => normalizeName(name) === normalizeName(employeeName),
-  )
-  if (!isSubordinate) {
-    return {
-      ok: false,
-      text: `${employeeName} не входит в команду руководителя ${identity.name} — согласовать отпуск нельзя.`,
-      reference: null,
-    }
-  }
-  const invalid = validateRange(start, end)
-  if (invalid) {
-    return { ok: false, text: invalid, reference: null }
-  }
-  if (isInvalidDate(start) || isInvalidDate(end)) {
-    return {
-      ok: false,
-      text: 'Даты должны быть в формате YYYY-MM-DD.',
-      reference: null,
-    }
-  }
-  return { ok: true, employeeName, start, end }
-}
-
-function bookingOutcome(plan: BookingPlan): ToolOutcome {
-  if (!plan.ok) {
-    return { ok: false, text: plan.text, reference: null }
-  }
-  return {
-    ok: true,
-    text: `${plan.room} забронирована на ${plan.date} в ${plan.time} на ${plan.capacity} чел.`,
-    reference: plan.reference,
-  }
-}
-
-function vacationOutcome(plan: VacationPlan): ToolOutcome {
-  if (!plan.ok) {
-    return { ok: false, text: plan.text, reference: null }
-  }
-  return {
-    ok: true,
-    text: `Заявка на отпуск с ${plan.start} по ${plan.end} создана, статус: ожидает согласования руководителя.`,
-    reference: plan.reference,
-  }
-}
-
-export function createAgentTools(store: AgentStore): AgentTool[] {
-  return [
-    {
-      name: 'bookMeetingRoom',
-      description: 'забронировать переговорку',
-      argsExample:
-        '{ "date": "YYYY-MM-DD", "time": "HH:MM", "capacity": число }',
-      roles: ['employee', 'manager'],
-      run: async (args, identity) => {
-        const plan = planBooking(args)
-        if (plan.ok) {
-          await store.insertBooking({
-            room: plan.room,
-            date: plan.date,
-            time: plan.time,
-            capacity: plan.capacity,
-            reference: plan.reference,
-            bookedBy: identity.name,
-          })
-        }
-        return bookingOutcome(plan)
-      },
-    },
-    {
-      name: 'requestVacation',
-      description: 'подать заявку на отпуск',
-      argsExample: '{ "start": "YYYY-MM-DD", "end": "YYYY-MM-DD" }',
-      roles: ['employee', 'manager'],
-      run: async (args, identity) => {
-        const plan = planVacationRequest(args, identity)
-        if (plan.ok) {
-          await store.insertVacation({
-            employeeName: plan.employeeName,
-            approverName: null,
-            start: plan.start,
-            end: plan.end,
-            status: 'pending',
-            reference: plan.reference,
-          })
-        }
-        return vacationOutcome(plan)
-      },
-    },
-    {
-      name: 'approveVacation',
-      description:
-        'согласовать существующую заявку на отпуск сотрудника из своей команды',
-      argsExample:
-        '{ "employeeName": "имя сотрудника", "start": "YYYY-MM-DD", "end": "YYYY-MM-DD" }',
-      roles: ['manager'],
-      run: async (args, identity) => {
-        const plan = planVacationApproval(args, identity)
-        if (!plan.ok) {
-          return { ok: false, text: plan.text, reference: null }
-        }
-        const pending = await store.findPendingVacation(
-          plan.employeeName,
-          plan.start,
-          plan.end,
-        )
-        if (!pending) {
-          return {
-            ok: false,
-            text: `Заявка на отпуск ${plan.employeeName} с ${plan.start} по ${plan.end} не найдена: сначала сотрудник должен подать заявку (requestVacation).`,
-            reference: null,
-          }
-        }
-        await store.markVacationApproved(pending.reference, identity.name)
-        return {
-          ok: true,
-          text: `Отпуск сотрудника ${plan.employeeName} с ${plan.start} по ${plan.end} согласован.`,
-          reference: pending.reference,
-        }
-      },
-    },
-    {
-      name: 'listVacations',
-      description: 'показать отпуска команды: согласованные и ожидающие',
-      argsExample: '{}',
-      roles: ['manager'],
-      run: async (_args, identity) => {
-        const records = await store.listVacations(
-          identity.name,
-          identity.subordinates,
-        )
-        if (records.length === 0) {
-          return {
-            ok: true,
-            text: 'Согласованных отпусков и ожидающих заявок нет.',
-            reference: null,
-          }
-        }
-        const lines = records.map((record) => {
-          const state =
-            record.status === 'approved' ? 'согласован' : 'ожидает согласования'
-          return `- ${record.employeeName}: с ${record.start} по ${record.end} — ${state} (${record.reference})`
-        })
-        return { ok: true, text: lines.join('\n'), reference: null }
-      },
-    },
-  ]
+function looksLikeAction(text: string): boolean {
+  const lower = text.toLowerCase()
+  return ACTION_HINTS.some((hint) => lower.includes(hint))
 }
 
 const OUTPUT_POLICY_JUDGE: AgentJudge = {
@@ -540,6 +336,7 @@ function buildDecideSystem(
   caps: AgentCapabilities,
   tools: AgentTool[],
   today: string,
+  context?: string,
 ): string {
   const available = caps.allowedTools
     .map((name) => tools.find((t) => t.name === name))
@@ -551,12 +348,42 @@ function buildDecideSystem(
     ...(caps.identity.subordinates.length > 0
       ? [`Подчинённые пользователя: ${caps.identity.subordinates.join(', ')}.`]
       : []),
+    ...(caps.identity.colleagues.length > 0
+      ? [`Сотрудники компании: ${caps.identity.colleagues.join(', ')}.`]
+      : []),
+    ...(context ? [context] : []),
     HARDENING_LINE,
+    'Если пользователь ссылается на «эту встречу», «эту заявку», «её/его» или «последнюю», подставь данные из контекста и вызови соответствующий инструмент — не переспрашивай.',
     'Если запрос требует действия из списка доступных инструментов — выбери ровно один. Если инструмент не нужен или нужного нет в списке — верни tool: null.',
     'Доступные инструменты:',
     ...available.map(
       (t) => `- ${t.name}: ${t.description}. Аргументы: ${t.argsExample}`,
     ),
+    ...(available.some((t) => t.name === 'bookMeetingRoom')
+      ? [`Доступные комнаты (для bookMeetingRoom): ${ROOMS.join(', ')}.`]
+      : []),
+    ...(available.some((t) => t.name === 'listAvailableRooms')
+      ? [
+          'Вопросы о том, какие переговорки свободны/доступны на дату и время, решай через listAvailableRooms, а не по памяти.',
+        ]
+      : []),
+    ...(available.some((t) => t.name === 'inviteToMeeting')
+      ? [
+          'Просьбу позвать/пригласить сотрудников на встречу решай через inviteToMeeting. Комнату, дату и время бери из сообщения или из контекста (последняя бронь пользователя). Если они известны из контекста — обязательно вызывай инструмент, не переспрашивай.',
+          'Если просят позвать «всех моих сотрудников» или «всю команду», передай в participants всех подчинённых пользователя.',
+          'Структура аргументов inviteToMeeting: {"room": "<название комнаты>", "date": "YYYY-MM-DD", "time": "HH:MM", "participants": ["<имя>", "<имя>"]}.',
+        ]
+      : []),
+    ...(available.some((t) => t.name === 'approveVacation')
+      ? [
+          'Просьбу «подтверди/согласуй эту заявку» (на отпуск) решай через approveVacation. Сотрудника и даты бери из сообщения или из контекста (последняя заявка от подчинённых). Если они известны из контекста — обязательно вызывай инструмент, не переспрашивай.',
+        ]
+      : []),
+    ...(available.some((t) => t.name === 'cancelBooking')
+      ? [
+          'Просьбу «отмени эту встречу» решай через cancelBooking. Комнату, дату и время бери из сообщения или из контекста (последняя доступная встреча). Если они известны из контекста — обязательно вызывай инструмент, не переспрашивай.',
+        ]
+      : []),
     'Ответь ровно одним json-объектом вида {"tool": "имя_инструмента" | null, "args": { ... }}. Без текста до "{" и после "}", без markdown.',
   ]
   return lines.join('\n')
@@ -569,6 +396,7 @@ function buildFinalizeSystem(caps: AgentCapabilities): string {
     'Отвечай по фактам из отчёта инструмента. Если в отчёте есть «Код подтверждения: …» — включи этот код в ответ дословно. Не выдумывай выполненные действия, которых нет в отчёте.',
     'Если инструмент не вызывался — просто ответь на запрос.',
     'Вопросы вроде «кому я согласовал отпуск?» решаются через listVacations — не отвечай по памяти модели, используй данные отчёта.',
+    'Список участников встречи бери из отчёта инструмента — не выдумывай приглашённых.',
     'Отвечай кратко, по-русски, обычным текстом без markdown-разметки.',
   ]
   return lines.join('\n')
@@ -642,6 +470,22 @@ export class Agent {
     const accepted = request.length > 0 && request.length <= MAX_INPUT_CHARS
     trace.push({ stage: 'input', accepted, charCount: request.length })
 
+    const requestTokens = estimateTokens(request)
+    const historyTokens = estimateMessagesTokens(history)
+
+    const emptyTokens = (
+      overrides: Partial<TokenBreakdown> = {},
+    ): TokenBreakdown => ({
+      requestTokens,
+      historyTokens,
+      historyTokensSent: historyTokens,
+      trimmedMessages: 0,
+      responseTokens: 0,
+      promptTokensActual: 0,
+      costUsd: 0,
+      ...overrides,
+    })
+
     if (!accepted) {
       const reason =
         request.length === 0
@@ -657,6 +501,7 @@ export class Agent {
         usage: null,
         latencyMs: 0,
         model,
+        tokens: emptyTokens(),
       }
     }
 
@@ -664,26 +509,88 @@ export class Agent {
       capabilities,
       tools,
       this.config.today,
+      this.config.context,
     )
-    const decideReply = await callLLM({
-      messages: [
-        { role: 'system', content: decideSystem },
-        ...history,
-        { role: 'user', content: request },
-      ],
-      temperature: DECIDE_TEMPERATURE,
-      response_format: { type: 'json_object' },
-      max_tokens: DECIDE_MAX_TOKENS,
-    })
-    const decided = parseDecideJson(decideReply.content)
-    trace.push({
-      stage: 'decide',
-      raw: decideReply.content,
-      tool: decided.tool,
-      args: decided.args,
-      usage: decideReply.usage,
-      latencyMs: decideReply.latencyMs,
-    })
+    const enforceBudget = this.config.enforceContextBudget !== false
+    const budget = this.config.contextBudgetTokens ?? CONTEXT_BUDGET_TOKENS
+    const systemTokens = estimateTokens(decideSystem)
+
+    const fitHistory = (
+      baseTokens: number,
+      extraTokens: number,
+      source: LlmMessage[],
+    ): { messages: LlmMessage[]; trimmed: number } => {
+      if (!enforceBudget) {
+        return { messages: source, trimmed: 0 }
+      }
+      let messages = source
+      let remaining = estimateMessagesTokens(source)
+      while (
+        messages.length > 0 &&
+        baseTokens + extraTokens + remaining > budget
+      ) {
+        const dropTurn =
+          messages.length >= 2 &&
+          messages[0].role === 'user' &&
+          messages[1].role === 'assistant'
+        const dropped = dropTurn ? 2 : 1
+        remaining -= estimateMessagesTokens(messages.slice(0, dropped))
+        messages = messages.slice(dropped)
+      }
+      return { messages, trimmed: source.length - messages.length }
+    }
+
+    if (enforceBudget && systemTokens + requestTokens > budget) {
+      const reason =
+        `Запрос (≈${requestTokens} ток.) вместе с системным промптом не влезает ` +
+        `в контекстный бюджет агента (${budget} ток.). Сократи сообщение или начни новую сессию.`
+      return {
+        ok: false,
+        blocked: true,
+        reason,
+        answer: `Сообщение отклонено контекстной политикой: ${reason}`,
+        trace,
+        verdicts: [],
+        usage: null,
+        latencyMs: 0,
+        model,
+        tokens: emptyTokens({ historyTokensSent: 0 }),
+      }
+    }
+
+    const decideFit = fitHistory(systemTokens, requestTokens, history)
+    let sendHistory = decideFit.messages
+    let trimmedMessages = decideFit.trimmed
+    let historyTokensSent = estimateMessagesTokens(decideFit.messages)
+
+    const runDecide = async (nudge?: string) => {
+      const reply = await callLLM({
+        messages: [
+          { role: 'system', content: decideSystem },
+          ...sendHistory,
+          { role: 'user', content: request },
+          ...(nudge ? [{ role: 'user' as const, content: nudge }] : []),
+        ],
+        temperature: DECIDE_TEMPERATURE,
+        response_format: { type: 'json_object' },
+        max_tokens: DECIDE_MAX_TOKENS,
+      })
+      const parsed = parseDecideJson(reply.content)
+      trace.push({
+        stage: 'decide',
+        raw: reply.content,
+        tool: parsed.tool,
+        args: parsed.args,
+        usage: reply.usage,
+        latencyMs: reply.latencyMs,
+      })
+      return parsed
+    }
+
+    let decided = await runDecide()
+    if (!decided.tool && looksLikeAction(request)) {
+      decided = await runDecide(DECIDE_NUDGE)
+    }
 
     let outcome: ToolOutcome | null = null
     let requestedTool: AgentTool | null = null
@@ -724,10 +631,21 @@ export class Agent {
           }`
         : '(инструменты не вызывались)'
       const finalizeUser = `Запрос пользователя:\n${request}\n\n${report}`
+      const finalizeFit = fitHistory(
+        estimateTokens(finalizeSystem),
+        estimateTokens(finalizeUser),
+        history,
+      )
+      sendHistory = finalizeFit.messages
+      trimmedMessages = Math.max(trimmedMessages, finalizeFit.trimmed)
+      historyTokensSent = Math.min(
+        historyTokensSent,
+        estimateMessagesTokens(finalizeFit.messages),
+      )
       const finalizeReply = await callLLM({
         messages: [
           { role: 'system', content: finalizeSystem },
-          ...history,
+          ...sendHistory,
           { role: 'user', content: finalizeUser },
         ],
         temperature: FINALIZE_TEMPERATURE,
@@ -764,6 +682,17 @@ export class Agent {
 
     const usage = sumUsage(trace)
     const latencyMs = sumLatency(trace)
+    const promptTokensActual = usage?.prompt_tokens ?? 0
+    const responseTokens = usage?.completion_tokens ?? 0
+    const tokens: TokenBreakdown = {
+      requestTokens,
+      historyTokens,
+      historyTokensSent,
+      trimmedMessages,
+      responseTokens,
+      promptTokensActual,
+      costUsd: costUsd(promptTokensActual, responseTokens),
+    }
     return {
       ok: !blocked,
       blocked,
@@ -774,6 +703,7 @@ export class Agent {
       usage,
       latencyMs,
       model,
+      tokens,
     }
   }
 }

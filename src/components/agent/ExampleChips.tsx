@@ -1,4 +1,4 @@
-import type { Example } from '../../lib/day6'
+import type { Example } from '../../lib/agent-ui'
 
 type ExampleChipsProps = {
   examples: Example[]

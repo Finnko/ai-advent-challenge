@@ -55,7 +55,7 @@ export default function Chat({
           {messages.map((message, i) =>
             message.role === 'user' ? (
               <div key={i} className="flex justify-end">
-                <div className="max-w-[85%] rounded-2xl border border-[var(--line)] bg-[color-mix(in_oklab,var(--lagoon)_18%,var(--surface-strong))] px-4 py-2.5 text-sm">
+                <div className="max-w-[85%] rounded-2xl border border-[var(--line)] bg-[color-mix(in_oklab,var(--accent)_18%,var(--surface-strong))] px-4 py-2.5 text-sm">
                   {message.content}
                 </div>
               </div>
@@ -138,7 +138,7 @@ function TypingDots() {
       {[0, 1, 2].map((i) => (
         <span
           key={i}
-          className="typing-dot h-2.5 w-2.5 rounded-full bg-[var(--lagoon)]"
+          className="typing-dot h-2.5 w-2.5 rounded-full bg-[var(--accent)]"
           style={{ animationDelay: `${i * 150}ms` }}
         />
       ))}

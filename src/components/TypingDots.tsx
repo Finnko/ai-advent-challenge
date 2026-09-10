@@ -5,7 +5,7 @@ export default function TypingDots({ text }: { text?: string }) {
         {[0, 1, 2].map((i) => (
           <span
             key={i}
-            className="typing-dot h-2 w-2 rounded-full bg-[var(--lagoon)]"
+            className="typing-dot h-2 w-2 rounded-full bg-[var(--accent)]"
             style={{ animationDelay: `${i * 150}ms` }}
           />
         ))}
