@@ -233,7 +233,7 @@ function AgentPage() {
           <aside className="demo-panel flex w-[300px] shrink-0 flex-col p-3">
             <div className="border-b border-[var(--line)] px-1 pb-2">
               <p className="island-kicker m-0">Сессии</p>
-              <p className="m-0 text-sm font-bold text-[var(--sea-ink)]">
+              <p className="m-0 text-sm font-bold text-[var(--ink)]">
                 {activePerson.name}
               </p>
             </div>

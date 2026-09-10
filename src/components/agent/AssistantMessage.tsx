@@ -40,7 +40,7 @@ function VerdictPill({ verdict }: { verdict: JudgeVerdict }) {
     <span
       className={`demo-pill ${
         failed
-          ? '!border-[rgba(196,71,71,0.4)] !bg-[rgba(196,71,71,0.14)] !text-[#9f3030]'
+          ? '!border-[color-mix(in_oklab,var(--danger)_40%,var(--line))] !bg-[color-mix(in_oklab,var(--danger)_12%,var(--surface))] !text-[var(--danger)]'
           : ''
       }`}
       title={verdict.message}

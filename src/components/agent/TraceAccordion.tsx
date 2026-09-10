@@ -11,7 +11,7 @@ const STAGE_LABELS: Record<string, string> = {
 export default function TraceAccordion({ trace }: { trace: AgentTraceStep[] }) {
   return (
     <details className="mt-1">
-      <summary className="cursor-pointer select-none text-xs text-[var(--sea-ink-soft)]">
+      <summary className="cursor-pointer select-none text-xs text-[var(--ink-muted)]">
         Как агент думал и действовал ({trace.length} шагов)
       </summary>
       <div className="mt-2 flex flex-col gap-3">
@@ -66,7 +66,7 @@ function StepBody({ step }: { step: AgentTraceStep }) {
             </pre>
           )}
           <details>
-            <summary className="cursor-pointer select-none text-xs text-[var(--sea-ink-soft)]">
+            <summary className="cursor-pointer select-none text-xs text-[var(--ink-muted)]">
               Сырой ответ LLM
             </summary>
             <pre className="demo-code-block mt-1 whitespace-pre-wrap text-xs">
@@ -107,12 +107,12 @@ function StepBody({ step }: { step: AgentTraceStep }) {
         <ul className="m-0 flex list-none flex-col gap-1 pl-0">
           {step.verdicts.map((v) => (
             <li key={v.judge} className="text-xs">
-              <span className="font-semibold text-[var(--sea-ink)]">
+              <span className="font-semibold text-[var(--ink)]">
                 {v.judge}:
               </span>{' '}
               <span
                 className={
-                  v.status === 'fail' ? 'text-[#9f3030]' : 'demo-muted'
+                  v.status === 'fail' ? 'text-[var(--danger)]' : 'demo-muted'
                 }
               >
                 {v.status === 'fail' ? 'нарушение — ' : 'ок — '}

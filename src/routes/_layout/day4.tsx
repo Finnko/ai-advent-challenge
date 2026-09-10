@@ -178,7 +178,7 @@ function Day4() {
                   onClick={() => setActiveTemp(t.value)}
                   className={`demo-panel flex min-h-0 flex-col p-5 text-left ${
                     isActive
-                      ? '!border-[color-mix(in_oklab,var(--lagoon)_60%,var(--line))]'
+                      ? '!border-[color-mix(in_oklab,var(--accent)_60%,var(--line))]'
                       : ''
                   }`}
                 >
@@ -229,10 +229,10 @@ function Day4() {
               <div className="space-y-3">
                 {CONCLUSIONS.map((c) => (
                   <div key={c.value}>
-                    <p className="mb-1 text-sm font-semibold text-[var(--sea-ink)]">
+                    <p className="mb-1 text-sm font-semibold text-[var(--ink)]">
                       {c.title}
                     </p>
-                    <p className="m-0 text-sm text-[var(--sea-ink-soft)]">
+                    <p className="m-0 text-sm text-[var(--ink-muted)]">
                       {c.text}
                     </p>
                   </div>
@@ -311,14 +311,14 @@ function AnswerBlock({ answer }: { answer: Answer }) {
 function CheckPill({ check }: { check: FinalCheck }) {
   if (check === 'correct') {
     return (
-      <span className="demo-pill !border-[color-mix(in_oklab,var(--lagoon)_60%,var(--line))] !bg-[color-mix(in_oklab,var(--lagoon)_22%,var(--chip-bg))]">
+      <span className="demo-pill !border-[color-mix(in_oklab,var(--accent)_60%,var(--line))] !bg-[color-mix(in_oklab,var(--accent)_22%,var(--surface-tint))]">
         Итог верный
       </span>
     )
   }
   if (check === 'wrong') {
     return (
-      <span className="demo-pill !border-[color-mix(in_oklab,#e5484d_55%,var(--line))] !bg-[color-mix(in_oklab,#e5484d_18%,var(--chip-bg))]">
+      <span className="demo-pill !border-[color-mix(in_oklab,#e5484d_55%,var(--line))] !bg-[color-mix(in_oklab,#e5484d_18%,var(--surface-tint))]">
         Не совпал
       </span>
     )
@@ -382,7 +382,7 @@ function TypingDots({ text }: { text?: string }) {
         {[0, 1, 2].map((i) => (
           <span
             key={i}
-            className="typing-dot h-2 w-2 rounded-full bg-[var(--lagoon)]"
+            className="typing-dot h-2 w-2 rounded-full bg-[var(--accent)]"
             style={{ animationDelay: `${i * 150}ms` }}
           />
         ))}

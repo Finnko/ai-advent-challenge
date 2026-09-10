@@ -141,12 +141,12 @@ function ConstrainedMessage({ message }: { message: ChatMessage }) {
   return (
     <div className="demo-code-block max-w-full">
       {parsed.title && (
-        <p className="mb-2 text-base font-bold text-[var(--sea-ink)]">
+        <p className="mb-2 text-base font-bold text-[var(--ink)]">
           {parsed.title}
         </p>
       )}
       {parsed.summary && (
-        <p className="mb-3 text-sm text-[var(--sea-ink-soft)]">
+        <p className="mb-3 text-sm text-[var(--ink-muted)]">
           {parsed.summary}
         </p>
       )}
@@ -160,10 +160,10 @@ function ConstrainedMessage({ message }: { message: ChatMessage }) {
         </div>
       )}
       <details className="mt-3">
-        <summary className="cursor-pointer select-none text-xs text-[var(--sea-ink-soft)]">
+        <summary className="cursor-pointer select-none text-xs text-[var(--ink-muted)]">
           Сырой ответ
         </summary>
-        <pre className="mt-2 max-h-64 overflow-y-auto whitespace-pre-wrap rounded-lg border border-[var(--line)] bg-[color-mix(in_oklab,var(--chip-bg)_85%,transparent)] p-2 text-xs">
+        <pre className="mt-2 max-h-64 overflow-y-auto whitespace-pre-wrap rounded-lg border border-[var(--line)] bg-[color-mix(in_oklab,var(--surface-tint)_85%,transparent)] p-2 text-xs">
           {message.content}
         </pre>
       </details>

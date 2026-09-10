@@ -41,8 +41,8 @@ export default function SessionList({
               key={session.id}
               className={`group rounded-xl border px-3 py-2 text-left transition-colors ${
                 active
-                  ? 'border-[color-mix(in_oklab,var(--lagoon)_60%,var(--line))] bg-[color-mix(in_oklab,var(--lagoon)_12%,var(--surface-strong))]'
-                  : 'border-[var(--line)] bg-[var(--surface)] hover:border-[var(--lagoon)]'
+                  ? 'border-[color-mix(in_oklab,var(--accent)_60%,var(--line))] bg-[color-mix(in_oklab,var(--accent)_12%,var(--surface-strong))]'
+                  : 'border-[var(--line)] bg-[var(--surface)] hover:border-[var(--accent)]'
               }`}
             >
               <button
@@ -51,7 +51,7 @@ export default function SessionList({
                 disabled={disabled || active}
                 className="block w-full text-left"
               >
-                <span className="block truncate text-sm font-semibold text-[var(--sea-ink)]">
+                <span className="block truncate text-sm font-semibold text-[var(--ink)]">
                   {session.title}
                 </span>
                 <span className="demo-muted mt-0.5 block text-[11px]">
