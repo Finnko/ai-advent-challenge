@@ -31,6 +31,7 @@ import ChatThread from '../../components/agent/ChatThread'
 import type { ThreadMessage } from '../../components/agent/ChatThread'
 import SessionList from '../../components/agent/SessionList'
 import TokenMeter from '../../components/agent/TokenMeter'
+import TokenReport from '../../components/agent/TokenReport'
 
 export const Route = createFileRoute('/_layout/agent')({ component: AgentPage })
 
@@ -212,6 +213,8 @@ function AgentPage() {
     0,
   )
   const requestTokens = estimateTokens(draft)
+  const lastRun: AgentRunResult | null =
+    [...messages].reverse().find((message) => message.run)?.run ?? null
   const sessionTotals = messages.reduce(
     (acc, message) => {
       if (message.role !== 'assistant' || !message.run?.usage) {
@@ -331,6 +334,15 @@ function AgentPage() {
                 {sessionTotals.completion} ток. · ~{formatUsd(sessionTotals.cost)}
               </p>
             )}
+
+            <TokenReport
+              requestTokens={requestTokens}
+              historyTokens={historyTokens}
+              historyTokensSent={
+                lastRun ? lastRun.tokens.historyTokensSent : null
+              }
+              responseTokens={lastRun ? lastRun.tokens.responseTokens : null}
+            />
 
             <TokenMeter
               historyTokens={historyTokens}

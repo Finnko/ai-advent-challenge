@@ -29,28 +29,49 @@ export default function AssistantMessage({ run }: { run: AgentRunResult }) {
           </span>
         )}
       </div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <TokenChip label="запрос" value={`≈${t.requestTokens}`} />
+        <TokenChip
+          label="история"
+          value={`≈${t.historyTokens}`}
+          note={
+            t.historyTokensSent !== t.historyTokens
+              ? `отправлено ≈${t.historyTokensSent}`
+              : undefined
+          }
+        />
+        <TokenChip label="ответ" value={`${t.responseTokens}`} />
+        {t.promptTokensActual > 0 && (
+          <TokenChip label="prompt API" value={`${t.promptTokensActual}`} />
+        )}
+        <TokenChip label="цена" value={`~${formatUsd(t.costUsd)}`} />
+      </div>
       <p className="demo-muted m-0 text-xs">
-        {run.blocked ? 'отклонено полиси' : 'ок'}
-        {run.usage
-          ? ` · prompt ${run.usage.prompt_tokens} → completion ${run.usage.completion_tokens} ток.`
-          : ''}
-        {` · ${run.latencyMs} мс`}
+        {run.blocked ? 'отклонено полиси' : 'ок'} · {run.latencyMs} мс
       </p>
-      {t && (
-        <p className="demo-muted m-0 text-xs">
-          запрос ≈{t.requestTokens} · история ≈{t.historyTokens}
-          {t.historyTokensSent !== t.historyTokens
-            ? ` (отправлено ≈${t.historyTokensSent})`
-            : ''}{' '}
-          · ответ {t.responseTokens} ток. ·{' '}
-          {t.promptTokensActual > 0
-            ? `в API prompt ${t.promptTokensActual} · `
-            : ''}
-          ~{formatUsd(t.costUsd)}
-        </p>
-      )}
       <TraceAccordion trace={run.trace} />
     </div>
+  )
+}
+
+function TokenChip({
+  label,
+  value,
+  note,
+}: {
+  label: string
+  value: string
+  note?: string
+}) {
+  return (
+    <span
+      className="demo-pill"
+      title={note ? `${label}: ${value} · ${note}` : `${label}: ${value}`}
+    >
+      <span className="text-[var(--ink-muted)]">{label}</span>{' '}
+      <span className="font-bold text-[var(--ink)]">{value}</span>
+      {note && <span className="text-[var(--ink-muted)]"> · {note}</span>}
+    </span>
   )
 }
 
