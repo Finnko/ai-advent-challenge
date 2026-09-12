@@ -15,11 +15,12 @@ export default function TokenMeter({
   const ratio = total / budget
   const over = ratio > 1
   const pct = Math.min(100, Math.round(ratio * 100))
-  const fillColor = over
-    ? 'var(--danger)'
-    : ratio > 0.8
-      ? 'var(--warn)'
-      : 'var(--accent)'
+  let fillColor = 'var(--accent)'
+  if (over) {
+    fillColor = 'var(--danger)'
+  } else if (ratio > 0.8) {
+    fillColor = 'var(--warn)'
+  }
 
   return (
     <div className="rounded-xl border border-[var(--line)] bg-[var(--surface)] p-3">

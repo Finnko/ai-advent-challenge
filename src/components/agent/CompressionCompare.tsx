@@ -1,5 +1,5 @@
 import type { AgentRunResult } from '../../lib/agent'
-import type { CompressionComparison } from '../../lib/chat'
+import type { CompressionComparison } from '../../lib/api'
 import { summaryCostUsd } from '../../lib/accounting'
 import { formatUsd } from '../../lib/tokens'
 
@@ -20,8 +20,8 @@ export default function CompressionCompare({
   error,
   onCompare,
 }: CompressionCompareProps) {
-  const summaryExpense = result?.summaryUsage
-    ? summaryCostUsd(result.summaryUsage)
+  const summaryExpense = result?.auxUsage
+    ? summaryCostUsd(result.auxUsage)
     : 0
   const compressedTotal =
     (result?.compressed.tokens.costUsd ?? 0) + summaryExpense
@@ -67,7 +67,7 @@ export default function CompressionCompare({
               run={result.compressed}
               extra={summaryExpense}
               extraNote={
-                result.summaryUsage
+                result.auxUsage
                   ? 'включая стоимость суммаризатора'
                   : 'сводка уже была'
               }
@@ -117,7 +117,9 @@ function ComparisonCard({
       <div className="mt-1 flex flex-col gap-0.5 text-[11px] text-[var(--ink-muted)]">
         <Line label="prompt API" value={t.promptTokensActual} />
         <Line label="история отправлена" value={t.historyTokensSent} />
-        {t.summaryTokens > 0 && <Line label="сводка" value={t.summaryTokens} />}
+        {t.contextTokens > 0 && (
+          <Line label="контекст" value={t.contextTokens} />
+        )}
         <Line label="ответ" value={t.responseTokens} />
         <Line
           label="cache hit / miss"

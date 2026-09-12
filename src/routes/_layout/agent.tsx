@@ -1,17 +1,20 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
-import {
-  compareCompression,
-  deleteSession,
-  listOrg,
-  listSessions,
-  loadSession,
-  resolveCapabilities,
-  runAgent,
-} from '../../lib/chat'
-import type { CompressionComparison } from '../../lib/chat'
-import type { AgentRunResult } from '../../lib/agent'
+import { compareCompression } from '../../lib/functions/compare-compression.functions'
+import { deleteSession } from '../../lib/functions/delete-session.functions'
+import { listOrg } from '../../lib/functions/list-org.functions'
+import { listSessions } from '../../lib/functions/list-sessions.functions'
+import { loadSession } from '../../lib/functions/load-session.functions'
+import { resolveCapabilities } from '../../lib/functions/resolve-capabilities.functions'
+import { runAgent } from '../../lib/functions/run-agent.functions'
+import type {
+  CompressionComparison,
+  OrgPerson,
+  SessionSummary,
+} from '../../lib/api'
+import type { AgentRunResult, ContextNote } from '../../lib/agent'
+import type { ContextStrategyId } from '../../lib/context/types'
 import { EXAMPLES, TOOL_INFO, TOKEN_SCENARIOS } from '../../lib/agent-ui'
 import type {
   Example,
@@ -21,7 +24,6 @@ import type {
 } from '../../lib/agent-ui'
 import { accountSession } from '../../lib/accounting'
 import { CONTEXT_BUDGET_TOKENS, MODEL_CONTEXT_TOKENS } from '../../lib/tokens'
-import type { OrgPerson, SessionSummary } from '../../lib/chat'
 import PersonaPicker from '../../components/agent/PersonaPicker'
 import CapabilitiesPanel from '../../components/agent/CapabilitiesPanel'
 import ExampleChips from '../../components/agent/ExampleChips'
@@ -30,7 +32,7 @@ import type { ThreadMessage } from '../../components/agent/ChatThread'
 import SessionList from '../../components/agent/SessionList'
 import TokenMeter from '../../components/agent/TokenMeter'
 import TokenReport from '../../components/agent/TokenReport'
-import SummaryPanel from '../../components/agent/SummaryPanel'
+import ContextPanel from '../../components/agent/ContextPanel'
 import SessionAccounting from '../../components/agent/SessionAccounting'
 import CompressionCompare from '../../components/agent/CompressionCompare'
 
@@ -42,12 +44,8 @@ function AgentPage() {
   const [sessionId, setSessionId] = useState<number | null>(null)
   const [messages, setMessages] = useState<ThreadMessage[]>([])
   const [draft, setDraft] = useState('')
-  const [compressHistory, setCompressHistory] = useState(true)
-  const [summaryState, setSummaryState] = useState<{
-    summary: string
-    summarizedMessages: number
-    throughMessageId: number | null
-  } | null>(null)
+  const [strategy, setStrategy] = useState<ContextStrategyId>('summary')
+  const [noteState, setNoteState] = useState<ContextNote | null>(null)
   const [comparison, setComparison] = useState<CompressionComparison | null>(
     null,
   )
@@ -92,7 +90,7 @@ function AgentPage() {
       token: string
       sessionId: number | null
       user: string
-      compressHistory: boolean
+      strategy: ContextStrategyId
     }) => runAgent({ data: input }),
   })
   const compareMutation = useMutation({
@@ -124,7 +122,7 @@ function AgentPage() {
     setSessionId(null)
     setMessages([])
     setDraft('')
-    setSummaryState(null)
+    setNoteState(null)
     setComparison(null)
     autoPickRef.current = true
   }
@@ -135,7 +133,7 @@ function AgentPage() {
     }
     setSessionId(id)
     setMessages([])
-    setSummaryState(null)
+    setNoteState(null)
     setComparison(null)
     compareMutation.reset()
     loadMutation.mutate(id, {
@@ -173,7 +171,7 @@ function AgentPage() {
     setSessionId(null)
     setMessages([])
     setDraft('')
-    setSummaryState(null)
+    setNoteState(null)
     setComparison(null)
   }
 
@@ -186,7 +184,7 @@ function AgentPage() {
         if (id === sessionId) {
           setSessionId(null)
           setMessages([])
-          setSummaryState(null)
+          setNoteState(null)
           setComparison(null)
         }
         queryClient.invalidateQueries({
@@ -204,7 +202,7 @@ function AgentPage() {
     setDraft('')
     setMessages((prev) => [...prev, { role: 'user', content: text }])
     sendMutation.mutate(
-      { token: activeToken, sessionId, user: text, compressHistory },
+      { token: activeToken, sessionId, user: text, strategy },
       {
         onSuccess: (result) => {
           setSessionId(result.sessionId)
@@ -212,15 +210,7 @@ function AgentPage() {
             ...prev,
             { role: 'assistant', content: result.run.answer, run: result.run },
           ])
-          setSummaryState(
-            result.summary
-              ? {
-                  summary: result.summary,
-                  summarizedMessages: result.summarizedMessages,
-                  throughMessageId: result.summaryThroughMessageId,
-                }
-              : null,
-          )
+          setNoteState(result.run.contextNote)
           queryClient.invalidateQueries({
             queryKey: ['agent-sessions', activeToken],
           })
@@ -263,11 +253,12 @@ function AgentPage() {
     ? toError(compareMutation.error)
     : null
 
-  const capsPanel: Parameters<typeof CapabilitiesPanel>[0] = capsQuery.data
-    ? { status: 'ready', caps: capsQuery.data }
-    : capsQuery.isError
-      ? { status: 'error', message: toError(capsQuery.error) }
-      : { status: 'loading' }
+  let capsPanel: Parameters<typeof CapabilitiesPanel>[0] = { status: 'loading' }
+  if (capsQuery.data) {
+    capsPanel = { status: 'ready', caps: capsQuery.data }
+  } else if (capsQuery.isError) {
+    capsPanel = { status: 'error', message: toError(capsQuery.error) }
+  }
 
   const sendError = sendMutation.isError ? toError(sendMutation.error) : null
   const orgError = orgQuery.isError ? toError(orgQuery.error) : null
@@ -275,16 +266,16 @@ function AgentPage() {
   return (
     <div className="mx-auto flex max-w-[1440px] flex-col gap-4 px-4 pb-6 pt-6">
       <header className="mb-1">
-        <p className="island-kicker mb-2">Agent · Context compression</p>
+        <p className="island-kicker mb-2">Agent · Context strategies</p>
         <h1 className="demo-title mb-2">
-          Корпоративный агент со сжатием истории
+          Корпоративный агент со стратегиями контекста
         </h1>
         <p className="demo-muted m-0 max-w-4xl text-sm">
-          Тот же агент, что в первый день, — теперь он управляет контекстом:
-          последние сообщения уходят как есть, а старая история сворачивается в
-          сводку, которая хранится отдельно в SQLite. Сводка вставляется
-          system-блоком в обе стадии, а общий префикс промпта кешируется. A/B
-          сравнение показывает экономию токенов и цены.
+          Тот же агент, что в первый день, — теперь контекст собирается подключаемой
+          стратегией. Сейчас активна «сжатие истории»: последние сообщения уходят
+          как есть, а старая история сворачивается в сводку, которая хранится
+          отдельно в SQLite. Шов стратегии готов принять другие режимы (окно,
+          facts, ветки). A/B сравнение показывает экономию токенов и цены.
         </p>
       </header>
 
@@ -378,15 +369,13 @@ function AgentPage() {
                 lastRun ? lastRun.tokens.historyTokensSent : null
               }
               responseTokens={lastRun ? lastRun.tokens.responseTokens : null}
-              summaryTokens={lastRun ? lastRun.tokens.summaryTokens : null}
+              contextTokens={lastRun ? lastRun.tokens.contextTokens : null}
             />
 
-            {summaryState && (
-              <SummaryPanel
-                summary={summaryState.summary}
-                summarizedMessages={summaryState.summarizedMessages}
-                throughMessageId={summaryState.throughMessageId}
-                onClear={() => setSummaryState(null)}
+            {noteState && (
+              <ContextPanel
+                note={noteState}
+                onClear={() => setNoteState(null)}
               />
             )}
 
@@ -415,15 +404,17 @@ function AgentPage() {
               <label
                 className="demo-muted flex cursor-pointer select-none items-center gap-1.5 text-xs"
                 title={
-                  compressHistory
+                  strategy === 'summary'
                     ? 'Агент шлёт последние N сообщений и сводку старой истории; одиночный запрос больше бюджета отклоняется'
                     : 'История уходит целиком, без сводки — база для сравнения'
                 }
               >
                 <input
                   type="checkbox"
-                  checked={compressHistory}
-                  onChange={(e) => setCompressHistory(e.target.checked)}
+                  checked={strategy === 'summary'}
+                  onChange={(e) =>
+                    setStrategy(e.target.checked ? 'summary' : 'none')
+                  }
                   disabled={busy}
                   className="accent-[var(--accent)]"
                 />

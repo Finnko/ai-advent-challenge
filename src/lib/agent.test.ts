@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { AGENT_JUDGES, Agent } from './agent'
-import type { AgentIdentity, CallLLM, LlmMessage, LlmReply } from './agent'
+import type {
+  AgentIdentity,
+  CallLLM,
+  LlmMessage,
+  LlmReply,
+  PreparedContext,
+} from './agent'
 import { TOOLS_BY_ROLE, createAgentTools } from './agent-tools'
 import {
   createBooking,
@@ -41,14 +47,16 @@ function scriptedLLM(script: {
   return { callLLM, calls }
 }
 
+function prepared(history: LlmMessage[] = []): PreparedContext {
+  return { history, blocks: [], note: null }
+}
+
 function buildAgent(options: {
   callLLM: CallLLM
   identity?: AgentIdentity
   allowedTools?: string[]
   store?: FakeStore
   context?: string
-  summary?: string
-  summarizedMessages?: number
   contextBudgetTokens?: number
 }): Agent {
   const identity = options.identity ?? createIdentity()
@@ -63,8 +71,6 @@ function buildAgent(options: {
     model: 'test-model',
     today: '2026-09-10',
     context: options.context,
-    summary: options.summary,
-    summarizedMessages: options.summarizedMessages,
     contextBudgetTokens: options.contextBudgetTokens,
   })
 }
@@ -230,7 +236,7 @@ describe('Agent pipeline', () => {
     expect(decide?.messages[0].role).toBe('system')
   })
 
-  it('вставляет сводку отдельным system-сообщением в decide и finalize', async () => {
+  it('вставляет context-блок отдельным system-сообщением в decide и finalize', async () => {
     const store = createFakeStore({ bookings: [createBooking()] })
     const { callLLM, calls } = scriptedLLM({
       decide: JSON.stringify({
@@ -239,12 +245,27 @@ describe('Agent pipeline', () => {
       }),
       finalize: 'Иван приглашён. Код подтверждения: BOOK-TEST01',
     })
-    const run = await buildAgent({
-      store,
-      callLLM,
-      summary: 'Ранее обсуждали планёрку и отпуск.',
-      summarizedMessages: 4,
-    }).run('Позови Ивана')
+    const theContext: PreparedContext = {
+      history: [],
+      blocks: [
+        {
+          kind: 'summary',
+          content:
+            'СВОДКА ПРЕДЫДУЩЕГО ДИАЛОГА:\nРанее обсуждали планёрку и отпуск.',
+        },
+      ],
+      note: {
+        kind: 'summary',
+        label: 'Сводка истории',
+        text: 'Ранее обсуждали планёрку и отпуск.',
+        messages: 4,
+        throughMessageId: 4,
+      },
+    }
+    const run = await buildAgent({ store, callLLM }).run(
+      'Позови Ивана',
+      theContext,
+    )
 
     expect(calls.length).toBeGreaterThanOrEqual(2)
     for (const call of calls) {
@@ -255,8 +276,9 @@ describe('Agent pipeline', () => {
       )
       expect(summary?.content).toContain('планёрку')
     }
-    expect(run.tokens.summarizedMessages).toBe(4)
-    expect(run.tokens.summaryTokens).toBeGreaterThan(0)
+    expect(run.tokens.contextMessages).toBe(4)
+    expect(run.tokens.contextTokens).toBeGreaterThan(0)
+    expect(run.contextNote?.text).toContain('планёрку')
   })
 
   it('не отправляет сырую историю в finalize при отчёте инструмента', async () => {
@@ -268,10 +290,13 @@ describe('Agent pipeline', () => {
       }),
       finalize: 'Иван приглашён. Код подтверждения: BOOK-TEST01',
     })
-    await buildAgent({ store, callLLM }).run('Позови Ивана', [
-      { role: 'user', content: 'старая реплика пользователя' },
-      { role: 'assistant', content: 'старый ответ ассистента' },
-    ])
+    await buildAgent({ store, callLLM }).run(
+      'Позови Ивана',
+      prepared([
+        { role: 'user', content: 'старая реплика пользователя' },
+        { role: 'assistant', content: 'старый ответ ассистента' },
+      ]),
+    )
 
     const finalize = calls.find((call) => !call.isDecide)
     const joined = finalize?.messages.map((m) => m.content).join('\n') ?? ''
@@ -285,10 +310,13 @@ describe('Agent pipeline', () => {
       decide: '{"tool": null, "args": {}}',
       finalize: 'Всё хорошо!',
     })
-    await buildAgent({ callLLM }).run('Как у тебя дела?', [
-      { role: 'user', content: 'старая реплика пользователя' },
-      { role: 'assistant', content: 'старый ответ ассистента' },
-    ])
+    await buildAgent({ callLLM }).run(
+      'Как у тебя дела?',
+      prepared([
+        { role: 'user', content: 'старая реплика пользователя' },
+        { role: 'assistant', content: 'старый ответ ассистента' },
+      ]),
+    )
 
     const finalize = calls.find((call) => !call.isDecide)
     const joined = finalize?.messages.map((m) => m.content).join('\n') ?? ''

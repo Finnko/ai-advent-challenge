@@ -40,8 +40,19 @@ export function savedUsd(before: number, after: number): number {
   return Math.max(0, before - after)
 }
 
+function decimalsFor(value: number): number {
+  if (value < 0.01) {
+    return 5
+  }
+  if (value < 0.1) {
+    return 4
+  }
+  return 3
+}
+
 export function formatUsd(value: number): string {
-  return value < 0.0001
-    ? '$0.0000'
-    : `$${value.toFixed(value < 0.01 ? 5 : value < 0.1 ? 4 : 3)}`
+  if (value < 0.0001) {
+    return '$0.0000'
+  }
+  return `$${value.toFixed(decimalsFor(value))}`
 }

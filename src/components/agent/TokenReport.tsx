@@ -3,7 +3,7 @@ type TokenReportProps = {
   historyTokens: number
   historyTokensSent: number | null
   responseTokens: number | null
-  summaryTokens: number | null
+  contextTokens: number | null
 }
 
 export default function TokenReport({
@@ -11,7 +11,7 @@ export default function TokenReport({
   historyTokens,
   historyTokensSent,
   responseTokens,
-  summaryTokens,
+  contextTokens,
 }: TokenReportProps) {
   const historyNote =
     historyTokensSent === null
@@ -30,12 +30,12 @@ export default function TokenReport({
       />
       <Tile label="История диалога" value={historyTokens} note={historyNote} />
       <Tile
-        label="Сводка"
-        value={summaryTokens ?? 0}
+        label="Контекст"
+        value={contextTokens ?? 0}
         note={
-          summaryTokens && summaryTokens > 0
+          contextTokens && contextTokens > 0
             ? 'уходит вместо старой истории'
-            : 'сводки пока нет'
+            : 'контекст-блока пока нет'
         }
       />
       <Tile

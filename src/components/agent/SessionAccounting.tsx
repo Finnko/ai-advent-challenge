@@ -26,11 +26,11 @@ export default function SessionAccounting({
           ~{formatUsd(totals.costUsd)}
         </span>
       </span>
-      {totals.summarizedMessages > 0 && (
+      {totals.contextMessages > 0 && (
         <span className="text-[var(--ink-muted)]">
           сжатие{' '}
           <span className="font-bold text-[var(--ink)]">
-            {totals.summarizedMessages} сообщ.
+            {totals.contextMessages} сообщ.
           </span>
         </span>
       )}

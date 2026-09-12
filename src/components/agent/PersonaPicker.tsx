@@ -1,4 +1,4 @@
-import type { OrgPerson } from '../../lib/chat'
+import type { OrgPerson } from '../../lib/api'
 
 type PersonaPickerProps = {
   manager: OrgPerson

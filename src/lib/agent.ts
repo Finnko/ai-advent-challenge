@@ -5,7 +5,6 @@ import {
   estimateTokens,
 } from './tokens'
 import { ROOMS, normalizeName, pickString } from './agent-tools'
-import { summarySystemContent } from './compression'
 
 export type AgentRole = 'employee' | 'manager'
 
@@ -43,8 +42,8 @@ export type TokenBreakdown = {
   requestTokens: number
   historyTokens: number
   historyTokensSent: number
-  summaryTokens: number
-  summarizedMessages: number
+  contextTokens: number
+  contextMessages: number
   responseTokens: number
   promptTokensActual: number
   cacheHitTokens: number
@@ -64,6 +63,31 @@ export type CallLLM = (params: {
   response_format?: { type: 'json_object' }
   max_tokens?: number
 }) => Promise<LlmReply>
+
+export type SystemBlock = {
+  kind: 'summary' | 'facts'
+  content: string
+}
+
+export type ContextNote = {
+  kind: 'summary' | 'facts'
+  label: string
+  text: string
+  messages: number
+  throughMessageId: number | null
+}
+
+export type PreparedContext = {
+  history: LlmMessage[]
+  blocks: SystemBlock[]
+  note: ContextNote | null
+}
+
+export const EMPTY_CONTEXT: PreparedContext = {
+  history: [],
+  blocks: [],
+  note: null,
+}
 
 export type ToolOutcome = {
   ok: boolean
@@ -210,6 +234,7 @@ export type AgentRunResult = {
   latencyMs: number
   model: string
   tokens: TokenBreakdown
+  contextNote: ContextNote | null
 }
 
 export type AgentConfig = {
@@ -220,8 +245,6 @@ export type AgentConfig = {
   model: string
   today: string
   context?: string
-  summary?: string
-  summarizedMessages?: number
   contextBudgetTokens?: number
 }
 
@@ -479,7 +502,7 @@ export class Agent {
 
   async run(
     userInput: string,
-    history: LlmMessage[] = [],
+    prepared: PreparedContext = EMPTY_CONTEXT,
   ): Promise<AgentRunResult> {
     const trace: AgentTraceStep[] = []
     const { capabilities, tools, judges, callLLM, model } = this.config
@@ -487,14 +510,14 @@ export class Agent {
     const accepted = request.length > 0 && request.length <= MAX_INPUT_CHARS
     trace.push({ stage: 'input', accepted, charCount: request.length })
 
+    const history = prepared.history
+    const blocks = prepared.blocks
     const requestTokens = estimateTokens(request)
     const historyTokens = estimateMessagesTokens(history)
-    const summary = this.config.summary?.trim()
-    const summaryMessage: LlmMessage[] = summary
-      ? [{ role: 'system', content: summarySystemContent(summary) }]
-      : []
-    const summaryTokens = estimateMessagesTokens(summaryMessage)
-    const summarizedMessages = this.config.summarizedMessages ?? 0
+    const contextTokens = estimateMessagesTokens(
+      blocks.map((block) => ({ role: 'system' as const, content: block.content })),
+    )
+    const contextMessages = prepared.note?.messages ?? 0
 
     const emptyTokens = (
       overrides: Partial<TokenBreakdown> = {},
@@ -502,8 +525,8 @@ export class Agent {
       requestTokens,
       historyTokens,
       historyTokensSent: historyTokens,
-      summaryTokens,
-      summarizedMessages,
+      contextTokens,
+      contextMessages,
       responseTokens: 0,
       promptTokensActual: 0,
       cacheHitTokens: 0,
@@ -528,12 +551,13 @@ export class Agent {
         latencyMs: 0,
         model,
         tokens: emptyTokens(),
+        contextNote: prepared.note,
       }
     }
 
     const baseSystem = buildBaseSystem(capabilities, this.config.today)
     const budget = this.config.contextBudgetTokens ?? CONTEXT_BUDGET_TOKENS
-    const systemTokens = estimateTokens(baseSystem) + summaryTokens
+    const systemTokens = estimateTokens(baseSystem) + contextTokens
 
     if (systemTokens + requestTokens > budget) {
       const reason =
@@ -550,10 +574,11 @@ export class Agent {
         latencyMs: 0,
         model,
         tokens: emptyTokens({ historyTokensSent: 0 }),
+        contextNote: prepared.note,
       }
     }
 
-    const historyTokensSent = estimateMessagesTokens(history)
+    const historyTokensSent = historyTokens
 
     const runDecide = async (nudge?: string) => {
       const decideUser = buildDecideUser(
@@ -565,7 +590,10 @@ export class Agent {
       const reply = await callLLM({
         messages: [
           { role: 'system', content: baseSystem },
-          ...summaryMessage,
+          ...blocks.map((block) => ({
+            role: 'system' as const,
+            content: block.content,
+          })),
           ...history,
           { role: 'user', content: decideUser },
           ...(nudge ? [{ role: 'user' as const, content: nudge }] : []),
@@ -632,7 +660,10 @@ export class Agent {
       const finalizeReply = await callLLM({
         messages: [
           { role: 'system', content: baseSystem },
-          ...summaryMessage,
+          ...blocks.map((block) => ({
+            role: 'system' as const,
+            content: block.content,
+          })),
           ...(outcome ? [] : history),
           { role: 'user', content: finalizeUser },
         ],
@@ -680,8 +711,8 @@ export class Agent {
       requestTokens,
       historyTokens,
       historyTokensSent,
-      summaryTokens,
-      summarizedMessages,
+      contextTokens,
+      contextMessages,
       responseTokens,
       promptTokensActual,
       cacheHitTokens,
@@ -703,6 +734,7 @@ export class Agent {
       latencyMs,
       model,
       tokens,
+      contextNote: prepared.note,
     }
   }
 }

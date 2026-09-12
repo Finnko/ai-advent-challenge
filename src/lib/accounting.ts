@@ -15,7 +15,7 @@ export type SessionAccounting = {
   cacheHitTokens: number
   cacheMissTokens: number
   costUsd: number
-  summarizedMessages: number
+  contextMessages: number
   runs: number
 }
 
@@ -39,9 +39,9 @@ export function accountSession(
       acc.cacheHitTokens += tokens.cacheHitTokens ?? 0
       acc.cacheMissTokens += tokens.cacheMissTokens ?? 0
       acc.costUsd += tokens.costUsd ?? 0
-      acc.summarizedMessages = Math.max(
-        acc.summarizedMessages,
-        tokens.summarizedMessages ?? 0,
+      acc.contextMessages = Math.max(
+        acc.contextMessages,
+        tokens.contextMessages ?? 0,
       )
       acc.runs += 1
       return acc
@@ -54,7 +54,7 @@ export function accountSession(
       cacheHitTokens: 0,
       cacheMissTokens: 0,
       costUsd: 0,
-      summarizedMessages: 0,
+      contextMessages: 0,
       runs: 0,
     },
   )

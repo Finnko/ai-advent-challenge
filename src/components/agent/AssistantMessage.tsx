@@ -23,9 +23,9 @@ export default function AssistantMessage({ run }: { run: AgentRunResult }) {
         ))}
         {run.model && <span className="demo-pill">модель: {run.model}</span>}
         <SourcePill run={run} />
-        {t && t.summarizedMessages > 0 && (
+        {t && t.contextMessages > 0 && (
           <span className="demo-pill !border-[color-mix(in_oklab,var(--accent)_40%,var(--line))] !bg-[color-mix(in_oklab,var(--accent)_12%,var(--surface))] !text-[var(--accent-strong)]">
-            сжато {t.summarizedMessages} сообщ. в сводку
+            сжато {t.contextMessages} сообщ. в сводку
           </span>
         )}
       </div>
@@ -41,8 +41,8 @@ export default function AssistantMessage({ run }: { run: AgentRunResult }) {
           }
         />
         <TokenChip label="ответ" value={`${t.responseTokens}`} />
-        {t.summaryTokens > 0 && (
-          <TokenChip label="сводка" value={`≈${t.summaryTokens}`} />
+        {t.contextTokens > 0 && (
+          <TokenChip label="контекст" value={`≈${t.contextTokens}`} />
         )}
         {t.promptTokensActual > 0 && (
           <TokenChip
