@@ -5,20 +5,29 @@ import type {
   AgentCapabilities,
   AgentRole,
   AgentRunResult,
+  AgentStore,
   CallLLM,
   LlmMessage,
 } from './agent'
 import { estimateMessagesTokens, estimateTokens } from './tokens'
+import {
+  prepareHistoryWithSummary,
+  summaryTokensOf,
+  toLlmMessages,
+} from './compression'
+import type { CompressionMessage, Summarize, SummaryUsage } from './compression'
 import {
   appendMessage as appendMessageToStore,
   createAgentStore,
   createSession as createSessionFromStore,
   deleteSession as deleteSessionFromStore,
   getPersonByToken,
+  getSessionSummary,
   listPeople,
   listSessions as listSessionsFromStore,
   listSubordinates,
   loadMessages as loadMessagesFromStore,
+  upsertSessionSummary,
 } from './store'
 import type { StoredMessage } from './store'
 
@@ -27,6 +36,8 @@ export type ChatMode = 'free' | 'constrained'
 export type ChatUsage = {
   prompt_tokens: number
   completion_tokens: number
+  prompt_cache_hit_tokens?: number
+  prompt_cache_miss_tokens?: number
 }
 
 export type ChatResult = {
@@ -42,7 +53,12 @@ export const TIER_IDS: Tier[] = ['weak', 'medium', 'strong']
 
 type DeepSeekResponse = {
   choices?: { message?: { content?: string } }[]
-  usage?: { prompt_tokens?: number; completion_tokens?: number }
+  usage?: {
+    prompt_tokens?: number
+    completion_tokens?: number
+    prompt_cache_hit_tokens?: number
+    prompt_cache_miss_tokens?: number
+  }
 }
 
 type DeepSeekParams = {
@@ -136,12 +152,19 @@ async function callCompletions(
 
   const content = dataJson.choices?.[0]?.message?.content ?? ''
 
+  const rawUsage = dataJson.usage
   const usage =
-    typeof dataJson.usage?.prompt_tokens === 'number' &&
-    typeof dataJson.usage?.completion_tokens === 'number'
+    typeof rawUsage?.prompt_tokens === 'number' &&
+    typeof rawUsage?.completion_tokens === 'number'
       ? {
-          prompt_tokens: dataJson.usage.prompt_tokens,
-          completion_tokens: dataJson.usage.completion_tokens,
+          prompt_tokens: rawUsage.prompt_tokens,
+          completion_tokens: rawUsage.completion_tokens,
+          ...(typeof rawUsage.prompt_cache_hit_tokens === 'number'
+            ? { prompt_cache_hit_tokens: rawUsage.prompt_cache_hit_tokens }
+            : {}),
+          ...(typeof rawUsage.prompt_cache_miss_tokens === 'number'
+            ? { prompt_cache_miss_tokens: rawUsage.prompt_cache_miss_tokens }
+            : {}),
         }
       : null
 
@@ -438,6 +461,16 @@ const callFlash: CallLLM = async ({
   }
 }
 
+const SUMMARY_TEMPERATURE = 0.2
+
+const summarizeHistory: Summarize = async (messages) => {
+  const apiKey = apiKeyFor('DEEPSEEK_API_KEY')
+  const reply = await callCompletions(TIER_ENDPOINTS.medium, apiKey, messages, {
+    temperature: SUMMARY_TEMPERATURE,
+  })
+  return { content: reply.content, usage: reply.usage }
+}
+
 export type SessionSummary = {
   id: number
   title: string
@@ -494,14 +527,12 @@ export const deleteSession = createServerFn({ method: 'POST' })
     return { ok: true }
   })
 
+function toCompressionMessage(row: StoredMessage): CompressionMessage {
+  return { id: row.id, role: row.role, content: row.content }
+}
+
 function historyToMessages(rows: StoredMessage[]): LlmMessage[] {
-  return rows
-    .filter((row) => row.role === 'user' || row.role === 'assistant')
-    .map((row) => ({
-      role:
-        row.role === 'assistant' ? ('assistant' as const) : ('user' as const),
-      content: row.content,
-    }))
+  return toLlmMessages(rows.map(toCompressionMessage))
 }
 
 function sessionTitleFrom(text: string): string {
@@ -512,10 +543,105 @@ function sessionTitleFrom(text: string): string {
 export type RunAgentResult = {
   run: AgentRunResult
   sessionId: number
+  summary: string | null
+  summarizedMessages: number
+  summaryThroughMessageId: number | null
+  summaryUsage: SummaryUsage | null
+}
+
+export type CompressionComparison = {
+  compressed: AgentRunResult
+  plain: AgentRunResult
+  summary: string | null
+  summarizedMessages: number
+  summaryThroughMessageId: number | null
+  summaryUsage: SummaryUsage | null
 }
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+async function buildAgentContext(
+  store: AgentStore,
+  capabilities: AgentCapabilities,
+): Promise<string | undefined> {
+  const contextLines: string[] = []
+  const latestBooking = await store.latestManagedBookingFor(
+    capabilities.identity.name,
+    capabilities.identity.subordinates,
+  )
+  if (latestBooking) {
+    contextLines.push(
+      `Последняя доступная встреча (пользователя или команды): ${latestBooking.room}, ${latestBooking.date} ${latestBooking.time} (${latestBooking.durationMin} мин), организатор ${latestBooking.bookedBy}, тема: ${latestBooking.title}.`,
+    )
+  }
+  const pendingVacation = await store.latestPendingVacation(
+    capabilities.identity.subordinates,
+  )
+  if (pendingVacation) {
+    contextLines.push(
+      `Последняя заявка на отпуск от подчинённых: ${pendingVacation.employeeName}, с ${pendingVacation.start} по ${pendingVacation.end} (ожидает согласования).`,
+    )
+  }
+  return contextLines.length > 0 ? contextLines.join('\n') : undefined
+}
+
+type ExecuteOptions = {
+  capabilities: AgentCapabilities
+  user: string
+  history: LlmMessage[]
+  summary?: string
+  summarizedMessages?: number
+}
+
+function blockedRun(options: ExecuteOptions, error: unknown): AgentRunResult {
+  const message = errorMessage(error)
+  const historyTokens = estimateMessagesTokens(options.history)
+  return {
+    ok: false,
+    blocked: true,
+    reason: message,
+    answer: `Агент не смог обработать запрос: ${message}`,
+    trace: [],
+    verdicts: [],
+    usage: null,
+    latencyMs: 0,
+    model: TIER_ENDPOINTS.medium.model,
+    tokens: {
+      requestTokens: estimateTokens(options.user),
+      historyTokens,
+      historyTokensSent: historyTokens,
+      summaryTokens: summaryTokensOf(options.summary ?? null),
+      summarizedMessages: options.summarizedMessages ?? 0,
+      responseTokens: 0,
+      promptTokensActual: 0,
+      cacheHitTokens: 0,
+      cacheMissTokens: 0,
+      costUsd: 0,
+    },
+  }
+}
+
+async function executeAgent(options: ExecuteOptions): Promise<AgentRunResult> {
+  const store = createAgentStore()
+  const context = await buildAgentContext(store, options.capabilities)
+  const agent = new Agent({
+    capabilities: options.capabilities,
+    tools: createAgentTools(store),
+    judges: AGENT_JUDGES,
+    callLLM: callFlash,
+    model: TIER_ENDPOINTS.medium.model,
+    today: todayIso(),
+    context,
+    summary: options.summary,
+    summarizedMessages: options.summarizedMessages,
+  })
+  try {
+    return await agent.run(options.user, options.history)
+  } catch (error) {
+    return blockedRun(options, error)
+  }
 }
 
 export const runAgent = createServerFn({ method: 'POST' })
@@ -524,7 +650,7 @@ export const runAgent = createServerFn({ method: 'POST' })
       token: string
       sessionId: number | null
       user: string
-      enforceContextBudget?: boolean
+      compressHistory?: boolean
     }) => {
       if (typeof input !== 'object' || input === null) {
         throw new Error('Некорректный запрос')
@@ -542,16 +668,16 @@ export const runAgent = createServerFn({ method: 'POST' })
         throw new Error('Сообщение обязательно')
       }
       if (
-        input.enforceContextBudget !== undefined &&
-        typeof input.enforceContextBudget !== 'boolean'
+        input.compressHistory !== undefined &&
+        typeof input.compressHistory !== 'boolean'
       ) {
-        throw new Error('Некорректный enforceContextBudget')
+        throw new Error('Некорректный compressHistory')
       }
       return {
         token: input.token.trim(),
         sessionId: input.sessionId,
         user: input.user.trim(),
-        enforceContextBudget: input.enforceContextBudget ?? true,
+        compressHistory: input.compressHistory ?? true,
       }
     },
   )
@@ -567,74 +693,115 @@ export const runAgent = createServerFn({ method: 'POST' })
     }
 
     const rows = await loadMessagesFromStore(sessionId)
-    const history = historyToMessages(rows)
 
-    const store = createAgentStore()
-    const contextLines: string[] = []
-    const latestBooking = await store.latestManagedBookingFor(
-      capabilities.identity.name,
-      capabilities.identity.subordinates,
-    )
-    if (latestBooking) {
-      contextLines.push(
-        `Последняя доступная встреча (пользователя или команды): ${latestBooking.room}, ${latestBooking.date} ${latestBooking.time} (${latestBooking.durationMin} мин), организатор ${latestBooking.bookedBy}, тема: ${latestBooking.title}.`,
-      )
-    }
-    const pendingVacation = await store.latestPendingVacation(
-      capabilities.identity.subordinates,
-    )
-    if (pendingVacation) {
-      contextLines.push(
-        `Последняя заявка на отпуск от подчинённых: ${pendingVacation.employeeName}, с ${pendingVacation.start} по ${pendingVacation.end} (ожидает согласования).`,
-      )
-    }
-    const context =
-      contextLines.length > 0 ? contextLines.join('\n') : undefined
+    let history = historyToMessages(rows)
+    let summary: string | null = null
+    let summarizedMessages = 0
+    let summaryThroughMessageId: number | null = null
+    let summaryUsage: SummaryUsage | null = null
 
-    const agent = new Agent({
-      capabilities,
-      tools: createAgentTools(store),
-      judges: AGENT_JUDGES,
-      callLLM: callFlash,
-      model: TIER_ENDPOINTS.medium.model,
-      today: todayIso(),
-      context,
-      enforceContextBudget: data.enforceContextBudget,
-    })
-
-    let run: AgentRunResult
-    try {
-      run = await agent.run(data.user, history)
-    } catch (error) {
-      const message = errorMessage(error)
-      const requestTokens = estimateTokens(data.user)
-      const historyTokens = estimateMessagesTokens(history)
-      run = {
-        ok: false,
-        blocked: true,
-        reason: message,
-        answer: `Агент не смог обработать запрос: ${message}`,
-        trace: [],
-        verdicts: [],
-        usage: null,
-        latencyMs: 0,
-        model: TIER_ENDPOINTS.medium.model,
-        tokens: {
-          requestTokens,
-          historyTokens,
-          historyTokensSent: historyTokens,
-          trimmedMessages: 0,
-          responseTokens: 0,
-          promptTokensActual: 0,
-          costUsd: 0,
-        },
+    if (data.compressHistory) {
+      const stored = await getSessionSummary(sessionId)
+      const prepared = await prepareHistoryWithSummary({
+        rows: rows.map(toCompressionMessage),
+        previousSummary: stored
+          ? { text: stored.summary, throughMessageId: stored.throughMessageId }
+          : null,
+        summarize: summarizeHistory,
+        enabled: true,
+      })
+      history = prepared.history
+      summary = prepared.summary
+      summarizedMessages = prepared.summarizedMessages
+      summaryThroughMessageId =
+        prepared.throughMessageId > 0 ? prepared.throughMessageId : null
+      summaryUsage = prepared.summaryUsage
+      if (prepared.refreshed && prepared.summary) {
+        await upsertSessionSummary(
+          sessionId,
+          prepared.summary,
+          prepared.throughMessageId,
+        )
       }
     }
+
+    const run = await executeAgent({
+      capabilities,
+      user: data.user,
+      history,
+      summary: summary ?? undefined,
+      summarizedMessages,
+    })
 
     await appendMessageToStore(sessionId, 'user', data.user)
     await appendMessageToStore(sessionId, 'assistant', run.answer, run)
 
-    return { run, sessionId } satisfies RunAgentResult
+    return {
+      run,
+      sessionId,
+      summary,
+      summarizedMessages,
+      summaryThroughMessageId,
+      summaryUsage,
+    } satisfies RunAgentResult
+  })
+
+export const compareCompression = createServerFn({ method: 'POST' })
+  .validator((input: { token: string; sessionId: number; user: string }) => {
+    if (typeof input !== 'object' || input === null) {
+      throw new Error('Некорректный запрос')
+    }
+    if (typeof input.token !== 'string' || input.token.trim().length === 0) {
+      throw new Error('Токен обязателен')
+    }
+    if (!Number.isFinite(input.sessionId) || input.sessionId <= 0) {
+      throw new Error('Некорректный sessionId')
+    }
+    if (typeof input.user !== 'string' || input.user.trim().length === 0) {
+      throw new Error('Сообщение обязательно')
+    }
+    return {
+      token: input.token.trim(),
+      sessionId: input.sessionId,
+      user: input.user.trim(),
+    }
+  })
+  .handler(async ({ data }) => {
+    const capabilities = await resolveCapabilitiesByToken(data.token)
+    const rows = await loadMessagesFromStore(data.sessionId)
+    const stored = await getSessionSummary(data.sessionId)
+
+    const prepared = await prepareHistoryWithSummary({
+      rows: rows.map(toCompressionMessage),
+      previousSummary: stored
+        ? { text: stored.summary, throughMessageId: stored.throughMessageId }
+        : null,
+      summarize: summarizeHistory,
+      enabled: true,
+    })
+
+    const compressed = await executeAgent({
+      capabilities,
+      user: data.user,
+      history: prepared.history,
+      summary: prepared.summary ?? undefined,
+      summarizedMessages: prepared.summarizedMessages,
+    })
+    const plain = await executeAgent({
+      capabilities,
+      user: data.user,
+      history: historyToMessages(rows),
+    })
+
+    return {
+      compressed,
+      plain,
+      summary: prepared.summary,
+      summarizedMessages: prepared.summarizedMessages,
+      summaryThroughMessageId:
+        prepared.throughMessageId > 0 ? prepared.throughMessageId : null,
+      summaryUsage: prepared.summaryUsage,
+    } satisfies CompressionComparison
   })
 
 function todayIso(): string {

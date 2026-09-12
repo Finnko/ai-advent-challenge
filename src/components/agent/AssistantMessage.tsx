@@ -23,9 +23,9 @@ export default function AssistantMessage({ run }: { run: AgentRunResult }) {
         ))}
         {run.model && <span className="demo-pill">модель: {run.model}</span>}
         <SourcePill run={run} />
-        {t && t.trimmedMessages > 0 && (
-          <span className="demo-pill !border-[color-mix(in_oklab,var(--warn)_40%,var(--line))] !bg-[color-mix(in_oklab,var(--warn)_12%,var(--surface))] !text-[var(--warn)]">
-            история усечена: −{t.trimmedMessages} сообщ.
+        {t && t.summarizedMessages > 0 && (
+          <span className="demo-pill !border-[color-mix(in_oklab,var(--accent)_40%,var(--line))] !bg-[color-mix(in_oklab,var(--accent)_12%,var(--surface))] !text-[var(--accent-strong)]">
+            сжато {t.summarizedMessages} сообщ. в сводку
           </span>
         )}
       </div>
@@ -41,10 +41,25 @@ export default function AssistantMessage({ run }: { run: AgentRunResult }) {
           }
         />
         <TokenChip label="ответ" value={`${t.responseTokens}`} />
-        {t.promptTokensActual > 0 && (
-          <TokenChip label="prompt API" value={`${t.promptTokensActual}`} />
+        {t.summaryTokens > 0 && (
+          <TokenChip label="сводка" value={`≈${t.summaryTokens}`} />
         )}
-        <TokenChip label="цена" value={`~${formatUsd(t.costUsd)}`} />
+        {t.promptTokensActual > 0 && (
+          <TokenChip
+            label="prompt API"
+            value={`${t.promptTokensActual}`}
+            note={
+              t.cacheHitTokens > 0 || t.cacheMissTokens > 0
+                ? `кеш ${t.cacheHitTokens} / miss ${t.cacheMissTokens}`
+                : undefined
+            }
+          />
+        )}
+        <TokenChip
+          label="цена"
+          value={`~${formatUsd(t.costUsd)}`}
+          note="с учётом кеша"
+        />
       </div>
       <p className="demo-muted m-0 text-xs">
         {run.blocked ? 'отклонено полиси' : 'ок'} · {run.latencyMs} мс

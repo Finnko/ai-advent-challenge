@@ -1,6 +1,6 @@
 # Project: AI Advent Challenge
 
-Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 8 (`feature/day8`).
+Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 9 (`feature/day9`).
 
 ## Stack
 
@@ -32,25 +32,45 @@ Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 
     `md/` folder, not part of the repo, so these only work in local dev where that folder exists.
   - Agent (Day 6/7) server fns: `resolveCapabilities({ token })`, `listOrg()`, and the persistence
     set `listSessions({ token })` / `loadSession({ sessionId })` / `deleteSession({ sessionId })`
-    and `runAgent({ token, sessionId: number | null, user, enforceContextBudget? })` (auto-creates a
+    and `runAgent({ token, sessionId: number | null, user, compressHistory? })` (auto-creates a
     session when `sessionId` is null, replays stored history into the LLM, and persists both new
     messages). `runAgent` wraps `agent.run` in try/catch: an API failure (e.g. raw 400 on a huge
-    prompt when the guard is off) becomes a graceful blocked `AgentRunResult`, never a thrown error.
+    prompt) becomes a graceful blocked `AgentRunResult`, never a thrown error.
+  - Day 9 adds `compareCompression({ token, sessionId, user })`: loads history, runs the request
+    **twice** (compression on/off via `prepareHistoryWithSummary`), persists nothing, returns both
+    `AgentRunResult`s plus the summary and its `summaryUsage` (for the A/B price delta).
 - **Day 8 token accounting** lives in `src/lib/tokens.ts` (isomorphic, no env): `estimateTokens`
   uses `gpt-tokenizer` (pure TS — the only new npm dep; counts offline, runs client + server).
   Constants: `CONTEXT_BUDGET_TOKENS = 4096` (a deliberately small budget the agent **enforces on
   itself** to demo overflow — the real `deepseek-flash` context is 1M, see `MODEL_CONTEXT_TOKENS`),
-  off-peak DeepSeek prices `PRICE_INPUT_PER_1M = 0.15`, `PRICE_OUTPUT_PER_1M = 0.6` (+`costUsd`,
-  `formatUsd`). In `src/lib/agent.ts`: `Agent.run` estimates the prompt before calling, and when
-  `AgentConfig.enforceContextBudget !== false` trims oldest history turns to fit `contextBudgetTokens`
-  for **both** the `decide` and `finalize` calls (each has its own system/report size), or refuses a
-  single over-budget request. Input policy cap is `MAX_INPUT_CHARS = 30_000` — high enough that the
-  budget refusal (not input policy) is what the demo hits. `chat.ts` `runAgent` replays the full
-  stored history (no message-count cap); only the token budget trims it. `AgentRunResult` carries
-  `tokens: TokenBreakdown` (`requestTokens`/`historyTokens` are local estimates — labels «оценка»; 
-  `responseTokens` = real API completion summed over decide+finalize; `promptTokensActual` is the
-  real API prompt, which counts history twice because it's replayed into both calls;
-  `trimmedMessages` = max dropped across the two calls, `historyTokensSent` = min actually sent).
+  off-peak DeepSeek prices `PRICE_INPUT_PER_1M = 0.15`, `PRICE_INPUT_CACHE_HIT_PER_1M = 0.003`,
+  `PRICE_OUTPUT_PER_1M = 0.6` (+`costUsd`, `savedUsd`, `formatUsd`). In `src/lib/agent.ts`:
+  `Agent.run` estimates `system + request` and refuses a single over-budget request (no more
+  trimming — Day 9 replaced `fitHistory`/`enforceContextBudget` with compression). Input policy cap
+  is `MAX_INPUT_CHARS = 30_000` — high enough that the budget refusal (not input policy) is what the
+  demo hits. `AgentRunResult` carries `tokens: TokenBreakdown` (`requestTokens`/`historyTokens` are
+  local estimates — labels «оценка»; `responseTokens` = real API completion summed over
+  decide+finalize; `promptTokensActual` is the real API prompt; `summaryTokens`/`summarizedMessages`
+  describe the compressed context; `cacheHitTokens`/`cacheMissTokens` come from the API usage and
+  drive cache-aware `costUsd`; `historyTokensSent` is what the caller handed to the agent).
+- **Day 9 context compression** lives in `src/lib/compression.ts` (pure, no env/fetch — tests are
+  offline). `KEEP_RECENT_MESSAGES = 6`, `SUMMARY_CHUNK_MESSAGES = 10`. `splitHistory(rows, keep)`
+  keeps the tail but aligns it to the start of a user turn; `pendingToSummarize(agedOut, through)`
+  gives the not-yet-summarized prefix; `shouldRefresh(count)` = `count >= M`; `buildSummaryMessages`
+  builds the summarizer prompt; `prepareHistoryWithSummary({ rows, previousSummary, summarize,
+  enabled? })` orchestrates (incremental: new summary = previous + new chunk) and returns
+  `{ history, summary, summarizedMessages, summaryUsage, throughMessageId }` without persisting (the
+  caller persists). `store.ts` has `session_summaries` (watermark `through_message_id`) with
+  `getSessionSummary`/`upsertSessionSummary`; `loadMessages` returns message `id`s. `chat.ts`
+  `summarizeHistory` = flash @0.2. In `agent.ts`, `AgentConfig.summary`/`summarizedMessages` insert
+  the summary as a **separate `system` message** after `buildBaseSystem` and before the raw history
+  in **both** decide and finalize. Cache-oriented rebuild: base system is byte-identical across
+  stages (identity/today/subordinates/colleagues/hardening), volatile content (tool list, rooms,
+  `context`, stage instruction) moved to the **last user message**; `finalize` sends raw history only
+  when there is **no tool report** (with a report: `system + summary + request+report`). Cache fields
+  from both calls are summed into `usage`. `src/lib/accounting.ts` (`accountSession`,
+  `summaryCostUsd`, client-safe) is the single source for the per-answer badges and the session sum,
+  so they agree.
 - **Meeting domain (bookings).** `bookings` stores `title`/`duration_min` (default 60) and
   `participants` (JSON array, default `[]`) — migration via `PRAGMA table_info` + `ALTER TABLE`; mock
   meetings are seeded at startup (`BOOKINGS_SEED`). 8 rooms (`ROOMS`) are listed in the `decide` prompt;

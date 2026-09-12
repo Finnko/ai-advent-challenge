@@ -3,6 +3,7 @@ type TokenReportProps = {
   historyTokens: number
   historyTokensSent: number | null
   responseTokens: number | null
+  summaryTokens: number | null
 }
 
 export default function TokenReport({
@@ -10,17 +11,16 @@ export default function TokenReport({
   historyTokens,
   historyTokensSent,
   responseTokens,
+  summaryTokens,
 }: TokenReportProps) {
   const historyNote =
     historyTokensSent === null
       ? 'копится по ходу диалога'
-      : historyTokensSent === historyTokens
-        ? 'вся история уйдёт в API'
-        : `в последнем ходу отправлено ≈${historyTokensSent}`
+      : `в последнем ходу отправлено ≈${historyTokensSent}`
 
   return (
     <div
-      className="grid grid-cols-1 gap-2 sm:grid-cols-3"
+      className="grid grid-cols-1 gap-2 sm:grid-cols-4"
       aria-label="Токены последнего хода"
     >
       <Tile
@@ -30,9 +30,20 @@ export default function TokenReport({
       />
       <Tile label="История диалога" value={historyTokens} note={historyNote} />
       <Tile
+        label="Сводка"
+        value={summaryTokens ?? 0}
+        note={
+          summaryTokens && summaryTokens > 0
+            ? 'уходит вместо старой истории'
+            : 'сводки пока нет'
+        }
+      />
+      <Tile
         label="Ответ модели"
         value={responseTokens}
-        note={responseTokens === null ? 'ещё не было ответа' : 'реальные токены API'}
+        note={
+          responseTokens === null ? 'ещё не было ответа' : 'реальные токены API'
+        }
         estimate={false}
       />
     </div>
