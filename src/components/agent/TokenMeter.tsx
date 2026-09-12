@@ -15,11 +15,12 @@ export default function TokenMeter({
   const ratio = total / budget
   const over = ratio > 1
   const pct = Math.min(100, Math.round(ratio * 100))
-  const fillColor = over
-    ? 'var(--danger)'
-    : ratio > 0.8
-      ? 'var(--warn)'
-      : 'var(--accent)'
+  let fillColor = 'var(--accent)'
+  if (over) {
+    fillColor = 'var(--danger)'
+  } else if (ratio > 0.8) {
+    fillColor = 'var(--warn)'
+  }
 
   return (
     <div className="rounded-xl border border-[var(--line)] bg-[var(--surface)] p-3">
@@ -47,7 +48,7 @@ export default function TokenMeter({
       </div>
       <p className="demo-muted m-0 mt-1 text-[10px]">
         {over
-          ? 'Промпт выше бюджета — с защитой агент урежет историю или откажет.'
+          ? 'Промпт выше бюджета — агент со сжатием оставит последние сообщения и сводку, а одиночный запрос отклонит.'
           : 'Бюджет меньше реального контекста модели, чтобы показать переполнение вживую.'}{' '}
         Реальный контекст {modelContext.toLocaleString('ru-RU')} ток.
       </p>

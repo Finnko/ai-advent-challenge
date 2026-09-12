@@ -1,4 +1,4 @@
-import type { SessionSummary } from '../../lib/chat'
+import type { SessionSummary } from '../../lib/api'
 
 type SessionListProps = {
   sessions: SessionSummary[]

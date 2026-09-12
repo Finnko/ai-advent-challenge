@@ -1,6 +1,6 @@
 # Project: AI Advent Challenge
 
-Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 8 (`feature/day8`).
+Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 9 (`feature/day9`).
 
 ## Stack
 
@@ -10,7 +10,12 @@ Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 
 
 ## LLM layer (Day 1)
 
-- LLM calls live in `src/lib/chat.ts` as `createServerFn` server functions.
+- The raw HTTP transport lives in `src/lib/llm.server.ts`; client-safe LLM types/data live in
+  `src/lib/llm.ts`. Each `createServerFn` wrapper gets its own file in `src/lib/functions/*.functions.ts`
+  (thin adapters: `validator → delegate`), shared wire types live in `src/lib/api.ts`, and shared
+  input validators in `src/lib/functions/validation.ts`. Agent orchestration lives in
+  `src/lib/agent-service.server.ts`; persistence in `src/lib/store.server.ts`. Server-only modules use
+  the `.server.ts` suffix (import protection); client-safe prompt data lives in `dayN.ts`.
 - **Raw `fetch` only — no SDKs.** Days 1–4 hit `https://api.deepseek.com/chat/completions`;
   Day 5 additionally hits the Hugging Face router `https://router.huggingface.co/v1/chat/completions`
   for the weak tier. Do not add `openai`, `deepseek`, or any LLM dependency.
@@ -18,13 +23,15 @@ Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 
   `HUGGING_FACE_TOKEN`). **Keys must never ship to the browser** — no `VITE_`-prefixed key,
   no `import.meta.env` exposure.
 - `.env` is gitignored; `.env.example` is the committed template.
-- `chat.ts` exposes a private generic `callCompletions(endpoint, apiKey, messages, params)`
-  (OpenAI-compatible: DeepSeek + HF router) plus server fns:
-  - `chat` (day1/day2 modes) and generic `ask({ system, user, params? })` used by day3/day4 to
+- `llm.server.ts` exports the generic `callCompletions(endpoint, apiKey, messages, params)`
+  (OpenAI-compatible: DeepSeek + HF router) and `requireEnv`/`apiKeyFor`; `llm.ts` exports
+  `TIER_ENDPOINTS` (server-side routing) and the `ChatResult`/`ChatUsage`/`Tier`/`AskParams` types.
+  `functions/*.functions.ts` wrap them in server fns:
+  - `chat` (day1/day2 modes, config in `day2.ts`) and generic `ask({ system, user, params? })` used by day3/day4 to
     compose multi-step strategies on the client. `ask` params accept optional `temperature`
     (validated 0–2, sent only when given). `ChatResult` returns `model` and server-measured `latencyMs`.
   - `askModel({ tier, system, user })` for Day 5: client sends only `tier: 'weak' | 'medium' | 'strong'`;
-    the tier→endpoint/model/key mapping (`TIER_ENDPOINTS`) lives server-side in `chat.ts`
+    the tier→endpoint/model/key mapping (`TIER_ENDPOINTS`) lives server-side in `llm.ts`
     (weak = `Qwen/Qwen3-8B` via HF, medium = `deepseek-flash`, strong = `deepseek-v4-pro`).
     Client can never pass arbitrary model strings.
   - `readBrief` (reads `md/design/brief.md` from `process.cwd()`) and `saveProposal`
@@ -32,25 +39,62 @@ Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 
     `md/` folder, not part of the repo, so these only work in local dev where that folder exists.
   - Agent (Day 6/7) server fns: `resolveCapabilities({ token })`, `listOrg()`, and the persistence
     set `listSessions({ token })` / `loadSession({ sessionId })` / `deleteSession({ sessionId })`
-    and `runAgent({ token, sessionId: number | null, user, enforceContextBudget? })` (auto-creates a
+    and `runAgent({ token, sessionId: number | null, user, strategy? })` (auto-creates a
     session when `sessionId` is null, replays stored history into the LLM, and persists both new
-    messages). `runAgent` wraps `agent.run` in try/catch: an API failure (e.g. raw 400 on a huge
-    prompt when the guard is off) becomes a graceful blocked `AgentRunResult`, never a thrown error.
+    messages). `runAgent` resolves the context strategy from the `strategy` id and delegates to
+    `agent-service.server.executeAgent`; an API failure (e.g. raw 400 on a huge prompt) becomes a
+    graceful blocked `AgentRunResult`, never a thrown error.
+  - Day 9/10 adds `compareCompression({ token, sessionId, user })`: loads history, runs the request
+    **twice** through the `summary` and `none` context strategies, persists nothing, returns both
+    `AgentRunResult`s plus the summarizer usage `auxUsage` (for the A/B price delta).
 - **Day 8 token accounting** lives in `src/lib/tokens.ts` (isomorphic, no env): `estimateTokens`
   uses `gpt-tokenizer` (pure TS — the only new npm dep; counts offline, runs client + server).
   Constants: `CONTEXT_BUDGET_TOKENS = 4096` (a deliberately small budget the agent **enforces on
   itself** to demo overflow — the real `deepseek-flash` context is 1M, see `MODEL_CONTEXT_TOKENS`),
-  off-peak DeepSeek prices `PRICE_INPUT_PER_1M = 0.15`, `PRICE_OUTPUT_PER_1M = 0.6` (+`costUsd`,
-  `formatUsd`). In `src/lib/agent.ts`: `Agent.run` estimates the prompt before calling, and when
-  `AgentConfig.enforceContextBudget !== false` trims oldest history turns to fit `contextBudgetTokens`
-  for **both** the `decide` and `finalize` calls (each has its own system/report size), or refuses a
-  single over-budget request. Input policy cap is `MAX_INPUT_CHARS = 30_000` — high enough that the
-  budget refusal (not input policy) is what the demo hits. `chat.ts` `runAgent` replays the full
-  stored history (no message-count cap); only the token budget trims it. `AgentRunResult` carries
-  `tokens: TokenBreakdown` (`requestTokens`/`historyTokens` are local estimates — labels «оценка»; 
-  `responseTokens` = real API completion summed over decide+finalize; `promptTokensActual` is the
-  real API prompt, which counts history twice because it's replayed into both calls;
-  `trimmedMessages` = max dropped across the two calls, `historyTokensSent` = min actually sent).
+  off-peak DeepSeek prices `PRICE_INPUT_PER_1M = 0.15`, `PRICE_INPUT_CACHE_HIT_PER_1M = 0.003`,
+  `PRICE_OUTPUT_PER_1M = 0.6` (+`costUsd`, `savedUsd`, `formatUsd`). In `src/lib/agent.ts`:
+  `Agent.run` estimates `system + request` and refuses a single over-budget request (no more
+  trimming — Day 9 replaced `fitHistory`/`enforceContextBudget` with compression). Input policy cap
+  is `MAX_INPUT_CHARS = 30_000` — high enough that the budget refusal (not input policy) is what the
+  demo hits. `AgentRunResult` carries `tokens: TokenBreakdown` (`requestTokens`/`historyTokens` are
+  local estimates — labels «оценка»; `responseTokens` = real API completion summed over
+  decide+finalize; `promptTokensActual` is the real API prompt; `contextTokens`/`contextMessages`
+  describe the context blocks the strategy attached (`AgentRunResult.contextNote` carries the
+  display note); `cacheHitTokens`/`cacheMissTokens` come from the API usage and
+  drive cache-aware `costUsd`; `historyTokensSent` is what the caller handed to the agent).
+- **Day 9/10 context strategies** live behind a seam in `src/lib/context/` (preparation for
+  Day 10's three strategies; only `summary` and `none` are implemented so far). `context/types.ts`
+  defines `ContextStrategyId = 'summary' | 'none'`, `ContextStrategy { id, label, description,
+  prepare(input) }`, `PrepareInput { rows, previousSummary, summarize, saveSummary }` and
+  `PrepareResult { context, auxUsage }`. `context/summary.ts` wraps `compression.ts`
+  (`prepareHistoryWithSummary`) and returns `PreparedContext.blocks = [{ kind: 'summary', content }]`
+  plus a `note`; `context/none.ts` returns the full history with no blocks; `context/registry.ts`
+  maps id → strategy (`CONTEXT_STRATEGIES`, `resolveStrategy`). The client sends only a strategy id,
+  never a model/prompt string.
+  `src/lib/compression.ts` stays pure (no env/fetch — tests are offline): `KEEP_RECENT_MESSAGES = 6`,
+  `SUMMARY_CHUNK_MESSAGES = 10`. `splitHistory(rows, keep)` keeps the tail but aligns it to the start
+  of a user turn; `pendingToSummarize(agedOut, through)` gives the not-yet-summarized prefix;
+  `shouldRefresh(count)` = `count >= M`; `buildSummaryMessages` builds the summarizer prompt;
+  `prepareHistoryWithSummary(...)` orchestrates incremental summarization (new summary = previous +
+  new chunk) and returns `{ history, summary, summarizedMessages, summaryUsage, throughMessageId,
+  refreshed }` without persisting (the strategy calls the injected `saveSummary`). `store.server.ts` has
+  `session_summaries` (watermark `through_message_id`) with `getSessionSummary`/`upsertSessionSummary`;
+  `loadMessages` returns message `id`s. `summarizeHistory` = flash @0.2 lives in `agent-service.server.ts`.
+  In `agent.ts`, `Agent.run(user, prepared: PreparedContext = EMPTY_CONTEXT)`; `PreparedContext =
+  { history, blocks, note }` (`SystemBlock = { kind: 'summary' | 'facts', content }`,
+  `ContextNote = { kind, label, text, messages, throughMessageId }`). `AgentConfig` no longer knows
+  about summaries — it inserts `prepared.blocks` as **separate `system` messages** after
+  `buildBaseSystem` and before the raw history in **both** decide and finalize. Cache-oriented
+  rebuild is preserved: base system is byte-identical across stages
+  (identity/today/subordinates/colleagues/hardening), volatile content (tool list, rooms, `context`,
+  stage instruction) moved to the **last user message**; `finalize` sends raw history only when there
+  is **no tool report** (with a report: `system + blocks + request+report`). Cache fields from both
+  calls are summed into `usage`. `src/lib/accounting.ts` (`accountSession`, `summaryCostUsd`,
+  client-safe) is the single source for the per-answer badges and the session sum, so they agree.
+  `src/lib/agent-service.server.ts` (server-only) owns `resolveCapabilitiesByToken`, `buildAgentContext`,
+  `callFlash`, `summarizeHistory`, `todayIso` and `executeAgent({ capabilities, user, strategy, rows,
+  previousSummary, saveSummary })`, which prepares the context, runs the `Agent` and returns
+  `{ run, auxUsage }` (blocked gracefully on failure). `functions/*.functions.ts` only register server fns.
 - **Meeting domain (bookings).** `bookings` stores `title`/`duration_min` (default 60) and
   `participants` (JSON array, default `[]`) — migration via `PRAGMA table_info` + `ALTER TABLE`; mock
   meetings are seeded at startup (`BOOKINGS_SEED`). 8 rooms (`ROOMS`) are listed in the `decide` prompt;
@@ -75,7 +119,7 @@ Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 
   falling through. Room names match case/prefix-insensitively (`resolveRoom` strips the
   «Переговорка/Лаундж/Комната» prefix and a trailing Russian vowel, so «Ладогу» resolves). `listVacations`
   output does NOT include reference codes (avoids a bogus «Код подтверждения» line on list answers).
-- **Day 7 persistence** lives in `src/lib/store.ts`, a server-only `node:sqlite` singleton (raw
+- **Day 7 persistence** lives in `src/lib/store.server.ts`, a server-only `node:sqlite` singleton (raw
   `DatabaseSync`, no npm dependency; emits an `ExperimentalWarning`, fine). DB file:
   `~/.ai-advent-challenge/agent.sqlite` (override via `AGENT_DB_PATH`), so it survives `git clean`,
   branch switches and deleting the repo-local `data/`. On first open the legacy `data/agent.sqlite`
@@ -83,19 +127,21 @@ Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 
   `<db>.backups/agent-<timestamp>.sqlite` (last 5 kept). Tables: `people` (org seeded mock: Анна + Пётр/Мария/Иван
   via `manager_token`), `sessions`, `messages` (`run_json` holds the full `AgentRunResult`),
   `vacations`, `bookings`. **Never import `node:sqlite` statically in client-reachable code** —
-  always `await import('node:sqlite')` inside server functions (same pattern as `node:fs/promises`).
+  always `await import('node:sqlite')` inside server functions (same pattern as `node:fs/promises`);
+  the `.server.ts` suffix additionally blocks accidental client imports.
   Client-facing UI for the agent lives in `src/lib/agent-ui.ts` (safe data only).
 - The agent demo is a **single live route `/agent`** (renamed from `/day6`) — Day 7 added memory to
   it rather than a second page. Sidebar labels in `src/lib/days.ts` are semantic
   (`Base LLM API`, …, `Agent`), not `Day N`. In `src/lib/agent.ts`: `LlmMessage.role` includes
-  `'assistant'`, `AgentIdentity.subordinates: string[]`, `Agent.run(user, history?)` replays history
-  into `decide`/`finalize`. Tool definitions/runners and the role→tool map live in
+  `'assistant'`, `AgentIdentity.subordinates: string[]`, `Agent.run(user, prepared?)` replays the
+  prepared history and context blocks into `decide`/`finalize`. Tool definitions/runners and the role→tool map live in
   `src/lib/agent-tools.ts` (`TOOL_DEFINITIONS`, `TOOLS_BY_ROLE`, `createAgentTools(store: AgentStore)`);
   `TOOLS_BY_ROLE` is derived from each tool's `roles`, so `resolveCapabilities`, the `decide` prompt
   and `isPermitted` can never drift from the actual tools. Effects are persisted through the injected
   store; `listVacations` answers memory questions from DB.
-- Client-safe prompt/task text (no env) belongs in `src/lib/day3.ts` / `src/lib/day4.ts` /
-  `src/lib/day5.ts` / `src/lib/agent-ui.ts`, never in `chat.ts`.
+- Client-safe prompt/task text (no env) belongs in `src/lib/dayN.ts` (`day2.ts`…`day5.ts`) /
+  `src/lib/agent-ui.ts`; shared wire types in `src/lib/api.ts`. Never put prompt text in
+  `functions/*.functions.ts` / `agent-service.server.ts` / `llm.server.ts` / `store.server.ts`.
 
 ## Commands
 

@@ -40,9 +40,15 @@ export type SessionListItem = {
 }
 
 export type StoredMessage = {
+  id: number
   role: 'user' | 'assistant'
   content: string
   run: AgentRunResult | null
+}
+
+export type SessionSummaryRow = {
+  summary: string
+  throughMessageId: number
 }
 
 type SqliteDatabase = import('node:sqlite').DatabaseSync
@@ -177,6 +183,13 @@ CREATE TABLE IF NOT EXISTS messages (
   content TEXT NOT NULL,
   run_json TEXT,
   created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS session_summaries (
+  session_id INTEGER PRIMARY KEY,
+  summary TEXT NOT NULL,
+  through_message_id INTEGER NOT NULL,
+  updated_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS vacations (
@@ -411,6 +424,9 @@ export async function deleteSession(sessionId: number): Promise<void> {
   db.exec('BEGIN')
   try {
     db.prepare('DELETE FROM messages WHERE session_id = ?').run(sessionId)
+    db.prepare('DELETE FROM session_summaries WHERE session_id = ?').run(
+      sessionId,
+    )
     db.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId)
     db.exec('COMMIT')
   } catch (error) {
@@ -455,18 +471,55 @@ export async function loadMessages(
   const db = await getDb()
   const rows = db
     .prepare(
-      'SELECT role, content, run_json FROM messages WHERE session_id = ? ORDER BY id',
+      'SELECT id, role, content, run_json FROM messages WHERE session_id = ? ORDER BY id',
     )
     .all(sessionId) as Array<{
+    id: number
     role: string
     content: string
     run_json: string | null
   }>
   return rows.map((row) => ({
+    id: Number(row.id),
     role: row.role === 'assistant' ? 'assistant' : 'user',
     content: row.content,
     run: row.run_json ? (safeParse(row.run_json) as AgentRunResult) : null,
   }))
+}
+
+export async function getSessionSummary(
+  sessionId: number,
+): Promise<SessionSummaryRow | null> {
+  const db = await getDb()
+  const row = db
+    .prepare(
+      'SELECT summary, through_message_id FROM session_summaries WHERE session_id = ?',
+    )
+    .get(sessionId) as
+    { summary: string; through_message_id: number } | undefined
+  if (!row) {
+    return null
+  }
+  return {
+    summary: row.summary,
+    throughMessageId: Number(row.through_message_id),
+  }
+}
+
+export async function upsertSessionSummary(
+  sessionId: number,
+  summary: string,
+  throughMessageId: number,
+): Promise<void> {
+  const db = await getDb()
+  db.prepare(
+    `INSERT INTO session_summaries (session_id, summary, through_message_id, updated_at)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(session_id) DO UPDATE SET
+       summary = excluded.summary,
+       through_message_id = excluded.through_message_id,
+       updated_at = excluded.updated_at`,
+  ).run(sessionId, summary, throughMessageId, nowIso())
 }
 
 export async function appendMessage(
@@ -672,9 +725,7 @@ export function createAgentStore(): AgentStore {
         .filter(
           (booking) =>
             owners.has(normalizeName(booking.bookedBy)) ||
-            booking.participants.some(
-              (name) => normalizeName(name) === self,
-            ),
+            booking.participants.some((name) => normalizeName(name) === self),
         )
     },
     async listBookingsOnDate(date: string) {

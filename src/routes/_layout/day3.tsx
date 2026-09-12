@@ -1,8 +1,8 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { ask } from '../../lib/chat'
-import type { ChatResult } from '../../lib/chat'
+import { ask } from '../../lib/functions/ask.functions'
+import type { ChatResult } from '../../lib/llm'
 import {
   EXPERT_ROLES,
   HELPFUL_SYSTEM,

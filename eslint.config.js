@@ -17,6 +17,7 @@ export default tseslint.config(
   {
     rules: {
       curly: ['error', 'all'],
+      'no-nested-ternary': 'error',
     },
   },
 )
