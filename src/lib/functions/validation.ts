@@ -1,8 +1,6 @@
 import type { ChatMode } from '../day2'
 import type { Tier } from '../llm'
 import { TIER_IDS } from '../llm'
-import { CONTEXT_STRATEGY_IDS } from '../context/registry'
-import type { ContextStrategyId } from '../context/types'
 
 export function asObject(input: unknown): Record<string, unknown> {
   if (typeof input !== 'object' || input === null) {
@@ -59,11 +57,4 @@ export function requireChatMode(value: unknown): ChatMode {
     throw new Error('Неизвестный режим')
   }
   return value
-}
-
-export function requireStrategy(value: unknown): ContextStrategyId {
-  if (!CONTEXT_STRATEGY_IDS.includes(value as ContextStrategyId)) {
-    throw new Error('Неизвестная стратегия контекста')
-  }
-  return value as ContextStrategyId
 }

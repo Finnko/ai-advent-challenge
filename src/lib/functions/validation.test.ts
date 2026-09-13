@@ -4,7 +4,6 @@ import {
   requireChatMode,
   requireNullableSessionId,
   requireSessionId,
-  requireStrategy,
   requireString,
   requireText,
   requireTier,
@@ -65,19 +64,14 @@ describe('requireSessionId / requireNullableSessionId', () => {
   })
 })
 
-describe('requireTier / requireChatMode / requireStrategy', () => {
+describe('requireTier / requireChatMode', () => {
   it('распознаёт известные значения', () => {
     expect(requireTier('weak')).toBe('weak')
     expect(requireChatMode('constrained')).toBe('constrained')
-    expect(requireStrategy('summary')).toBe('summary')
-    expect(requireStrategy('none')).toBe('none')
   })
 
   it('отклоняет неизвестные значения', () => {
     expect(() => requireTier('huge')).toThrow('Неизвестная ступень модели')
     expect(() => requireChatMode('json')).toThrow('Неизвестный режим')
-    expect(() => requireStrategy('window')).toThrow(
-      'Неизвестная стратегия контекста',
-    )
   })
 })
