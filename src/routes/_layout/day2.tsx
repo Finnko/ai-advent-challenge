@@ -2,8 +2,9 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
 import Chat from '../../components/Chat'
 import type { ChatMessage } from '../../components/Chat'
-import { CHAT_CONFIGS, chat } from '../../lib/chat'
-import type { ChatMode } from '../../lib/chat'
+import { CHAT_CONFIGS } from '../../lib/day2'
+import type { ChatMode } from '../../lib/day2'
+import { chat } from '../../lib/functions/chat.functions'
 
 export const Route = createFileRoute('/_layout/day2')({ component: Day2 })
 

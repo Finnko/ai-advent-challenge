@@ -2,6 +2,22 @@ import { useEffect, useState } from 'react'
 
 type ThemeMode = 'light' | 'dark' | 'auto'
 
+const NEXT_MODE: Record<ThemeMode, ThemeMode> = {
+  light: 'dark',
+  dark: 'auto',
+  auto: 'light',
+}
+
+const MODE_LABELS: Record<ThemeMode, string> = {
+  auto: 'System',
+  dark: 'Dark',
+  light: 'Light',
+}
+
+function autoTheme(prefersDark: boolean): ThemeMode {
+  return prefersDark ? 'dark' : 'light'
+}
+
 function getInitialMode(): ThemeMode {
   if (typeof window === 'undefined') {
     return 'auto'
@@ -17,7 +33,7 @@ function getInitialMode(): ThemeMode {
 
 function applyThemeMode(mode: ThemeMode) {
   const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
-  const resolved = mode === 'auto' ? (prefersDark ? 'dark' : 'light') : mode
+  const resolved = mode === 'auto' ? autoTheme(prefersDark) : mode
 
   document.documentElement.classList.remove('light', 'dark')
   document.documentElement.classList.add(resolved)
@@ -55,15 +71,13 @@ export default function ThemeToggle() {
   }, [mode])
 
   function toggleMode() {
-    const nextMode: ThemeMode =
-      mode === 'light' ? 'dark' : mode === 'dark' ? 'auto' : 'light'
+    const nextMode = NEXT_MODE[mode]
     setMode(nextMode)
     applyThemeMode(nextMode)
     window.localStorage.setItem('theme', nextMode)
   }
 
-  const modeName =
-    mode === 'auto' ? 'system' : mode === 'dark' ? 'dark' : 'light'
+  const modeName = mode === 'auto' ? 'system' : mode
 
   const label =
     mode === 'auto'
@@ -78,7 +92,7 @@ export default function ThemeToggle() {
       title={label}
       className="rounded-full border border-[var(--line)] bg-[var(--surface)] px-3 py-1.5 text-sm font-semibold text-[var(--ink-soft)] shadow-[0_1px_3px_rgba(15,23,42,0.06)] transition-colors hover:border-[color-mix(in_oklab,var(--accent-strong)_40%,var(--line))]"
     >
-      {mode === 'auto' ? 'System' : mode === 'dark' ? 'Dark' : 'Light'}
+      {MODE_LABELS[mode]}
     </button>
   )
 }

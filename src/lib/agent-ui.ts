@@ -106,7 +106,7 @@ export const EXAMPLES: Example[] = [
   {
     kind: 'employee',
     text: 'Какую встречу я просил организовать первым сообщением в этой сессии?',
-    note: 'тест памяти: после усечения истории агент забудет начало диалога',
+    note: 'тест памяти: начало диалога уходит в сводку, но факты сохраняются',
   },
   {
     kind: 'employee',
@@ -151,7 +151,7 @@ export const EXAMPLES: Example[] = [
   {
     kind: 'manager',
     text: 'Что я просил в самом начале этого диалога?',
-    note: 'тест памяти: после усечения истории агент забудет начало диалога',
+    note: 'тест памяти: начало диалога уходит в сводку, но факты сохраняются',
   },
   {
     kind: 'manager',
@@ -175,7 +175,8 @@ const FILLER_SENTENCE =
 function filler(paragraphs: number, sentencesPerParagraph = 3): string {
   return Array.from(
     { length: paragraphs },
-    (_, i) => FILLER_SENTENCE.repeat(sentencesPerParagraph) + `(абзац ${i + 1})`,
+    (_, i) =>
+      FILLER_SENTENCE.repeat(sentencesPerParagraph) + `(абзац ${i + 1})`,
   ).join('\n\n')
 }
 
@@ -189,13 +190,13 @@ export const TOKEN_SCENARIOS: TokenScenario[] = [
   {
     id: 'long',
     label: 'Длинный диалог',
-    hint: 'отправь несколько раз подряд, чтобы история выросла до бюджета — агент начнёт отбрасывать старые сообщения',
+    hint: 'отправь несколько раз подряд — история вырастет, и агент начнёт сворачивать старые ходы в сводку',
     text: filler(16),
   },
   {
     id: 'overflow',
     label: 'Переполнение',
-    hint: 'один запрос больше бюджета — с защитой агент откажет, без защиты запрос уйдёт как есть',
+    hint: 'один запрос больше бюджета — агент откажет; со снятым сжатием запрос уйдёт как есть',
     text: filler(36),
   },
 ]

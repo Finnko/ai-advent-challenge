@@ -1,4 +1,4 @@
-import type { Tier } from './chat'
+import type { Tier } from './llm'
 
 export type TierMeta = {
   id: Tier

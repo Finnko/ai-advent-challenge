@@ -1,7 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
-import { ask } from '../../lib/chat'
-import type { ChatResult } from '../../lib/chat'
+import { ask } from '../../lib/functions/ask.functions'
+import type { ChatResult } from '../../lib/llm'
 import {
   CONCLUSIONS,
   CONCLUSION_NOTE,

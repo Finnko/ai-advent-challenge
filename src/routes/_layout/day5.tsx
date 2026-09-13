@@ -1,7 +1,9 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
-import { askModel, readBrief, saveProposal } from '../../lib/chat'
-import type { ChatResult } from '../../lib/chat'
+import { askModel } from '../../lib/functions/ask-model.functions'
+import { readBrief } from '../../lib/functions/read-brief.functions'
+import { saveProposal } from '../../lib/functions/save-proposal.functions'
+import type { ChatResult } from '../../lib/llm'
 import { COMPARISON_NOTE, DAY5_SYSTEM, LINKS, TIERS } from '../../lib/day5'
 import type { TierMeta } from '../../lib/day5'
 

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { ReactNode } from 'react'
-import type { ChatResult } from '../lib/chat'
+import type { ChatResult } from '../lib/llm'
 
 export type ChatMessage = {
   role: 'user' | 'assistant'

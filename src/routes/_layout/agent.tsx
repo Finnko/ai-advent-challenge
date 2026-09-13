@@ -1,15 +1,20 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
-import {
-  deleteSession,
-  listOrg,
-  listSessions,
-  loadSession,
-  resolveCapabilities,
-  runAgent,
-} from '../../lib/chat'
-import type { AgentRunResult } from '../../lib/agent'
+import { compareCompression } from '../../lib/functions/compare-compression.functions'
+import { deleteSession } from '../../lib/functions/delete-session.functions'
+import { listOrg } from '../../lib/functions/list-org.functions'
+import { listSessions } from '../../lib/functions/list-sessions.functions'
+import { loadSession } from '../../lib/functions/load-session.functions'
+import { resolveCapabilities } from '../../lib/functions/resolve-capabilities.functions'
+import { runAgent } from '../../lib/functions/run-agent.functions'
+import type {
+  CompressionComparison,
+  OrgPerson,
+  SessionSummary,
+} from '../../lib/api'
+import type { AgentRunResult, ContextNote } from '../../lib/agent'
+import type { ContextStrategyId } from '../../lib/context/types'
 import { EXAMPLES, TOOL_INFO, TOKEN_SCENARIOS } from '../../lib/agent-ui'
 import type {
   Example,
@@ -17,13 +22,8 @@ import type {
   ToolInfo,
   TokenScenarioId,
 } from '../../lib/agent-ui'
-import {
-  CONTEXT_BUDGET_TOKENS,
-  MODEL_CONTEXT_TOKENS,
-  estimateTokens,
-  formatUsd,
-} from '../../lib/tokens'
-import type { OrgPerson, SessionSummary } from '../../lib/chat'
+import { accountSession } from '../../lib/accounting'
+import { CONTEXT_BUDGET_TOKENS, MODEL_CONTEXT_TOKENS } from '../../lib/tokens'
 import PersonaPicker from '../../components/agent/PersonaPicker'
 import CapabilitiesPanel from '../../components/agent/CapabilitiesPanel'
 import ExampleChips from '../../components/agent/ExampleChips'
@@ -32,6 +32,9 @@ import type { ThreadMessage } from '../../components/agent/ChatThread'
 import SessionList from '../../components/agent/SessionList'
 import TokenMeter from '../../components/agent/TokenMeter'
 import TokenReport from '../../components/agent/TokenReport'
+import ContextPanel from '../../components/agent/ContextPanel'
+import SessionAccounting from '../../components/agent/SessionAccounting'
+import CompressionCompare from '../../components/agent/CompressionCompare'
 
 export const Route = createFileRoute('/_layout/agent')({ component: AgentPage })
 
@@ -41,7 +44,11 @@ function AgentPage() {
   const [sessionId, setSessionId] = useState<number | null>(null)
   const [messages, setMessages] = useState<ThreadMessage[]>([])
   const [draft, setDraft] = useState('')
-  const [enforceBudget, setEnforceBudget] = useState(true)
+  const [strategy, setStrategy] = useState<ContextStrategyId>('summary')
+  const [noteState, setNoteState] = useState<ContextNote | null>(null)
+  const [comparison, setComparison] = useState<CompressionComparison | null>(
+    null,
+  )
   const autoPickRef = useRef(false)
 
   const orgQuery = useQuery({
@@ -83,8 +90,12 @@ function AgentPage() {
       token: string
       sessionId: number | null
       user: string
-      enforceContextBudget: boolean
+      strategy: ContextStrategyId
     }) => runAgent({ data: input }),
+  })
+  const compareMutation = useMutation({
+    mutationFn: (input: { token: string; sessionId: number; user: string }) =>
+      compareCompression({ data: input }),
   })
   const loadMutation = useMutation({
     mutationFn: (id: number) => loadSession({ data: { sessionId: id } }),
@@ -95,6 +106,7 @@ function AgentPage() {
 
   const busy =
     sendMutation.isPending ||
+    compareMutation.isPending ||
     loadMutation.isPending ||
     deleteMutation.isPending ||
     capsQuery.isLoading
@@ -105,10 +117,13 @@ function AgentPage() {
     }
     sendMutation.reset()
     loadMutation.reset()
+    compareMutation.reset()
     setActiveToken(token)
     setSessionId(null)
     setMessages([])
     setDraft('')
+    setNoteState(null)
+    setComparison(null)
     autoPickRef.current = true
   }
 
@@ -118,15 +133,16 @@ function AgentPage() {
     }
     setSessionId(id)
     setMessages([])
+    setNoteState(null)
+    setComparison(null)
+    compareMutation.reset()
     loadMutation.mutate(id, {
       onSuccess: (rows) => {
         setMessages(
           rows.map((row): ThreadMessage => ({
             role: row.role,
             content: row.content,
-            ...(row.run
-              ? { run: row.run as AgentRunResult }
-              : {}),
+            ...(row.run ? { run: row.run as AgentRunResult } : {}),
           })),
         )
       },
@@ -151,9 +167,12 @@ function AgentPage() {
       return
     }
     sendMutation.reset()
+    compareMutation.reset()
     setSessionId(null)
     setMessages([])
     setDraft('')
+    setNoteState(null)
+    setComparison(null)
   }
 
   const handleDeleteSession = (id: number) => {
@@ -165,6 +184,8 @@ function AgentPage() {
         if (id === sessionId) {
           setSessionId(null)
           setMessages([])
+          setNoteState(null)
+          setComparison(null)
         }
         queryClient.invalidateQueries({
           queryKey: ['agent-sessions', activeToken],
@@ -181,7 +202,7 @@ function AgentPage() {
     setDraft('')
     setMessages((prev) => [...prev, { role: 'user', content: text }])
     sendMutation.mutate(
-      { token: activeToken, sessionId, user: text, enforceContextBudget: enforceBudget },
+      { token: activeToken, sessionId, user: text, strategy },
       {
         onSuccess: (result) => {
           setSessionId(result.sessionId)
@@ -189,10 +210,25 @@ function AgentPage() {
             ...prev,
             { role: 'assistant', content: result.run.answer, run: result.run },
           ])
+          setNoteState(result.run.contextNote)
           queryClient.invalidateQueries({
             queryKey: ['agent-sessions', activeToken],
           })
         },
+      },
+    )
+  }
+
+  const handleCompare = () => {
+    const text = draft.trim()
+    if (text.length === 0 || sessionId === null || busy || !activeToken) {
+      return
+    }
+    setComparison(null)
+    compareMutation.mutate(
+      { token: activeToken, sessionId, user: text },
+      {
+        onSuccess: (result) => setComparison(result),
       },
     )
   }
@@ -208,32 +244,21 @@ function AgentPage() {
     }
   }
 
-  const historyTokens = messages.reduce(
-    (sum, message) => sum + estimateTokens(message.content),
-    0,
-  )
-  const requestTokens = estimateTokens(draft)
+  const accounting = accountSession(messages, draft)
+  const requestTokens = accounting.requestTokens
+  const historyTokens = accounting.historyTokens
   const lastRun: AgentRunResult | null =
     [...messages].reverse().find((message) => message.run)?.run ?? null
-  const sessionTotals = messages.reduce(
-    (acc, message) => {
-      if (message.role !== 'assistant' || !message.run?.usage) {
-        return acc
-      }
-      const usage = message.run.usage
-      acc.prompt += usage.prompt_tokens
-      acc.completion += usage.completion_tokens
-      acc.cost += message.run.tokens?.costUsd ?? 0
-      return acc
-    },
-    { prompt: 0, completion: 0, cost: 0 },
-  )
+  const compareError = compareMutation.isError
+    ? toError(compareMutation.error)
+    : null
 
-  const capsPanel: Parameters<typeof CapabilitiesPanel>[0] = capsQuery.data
-    ? { status: 'ready', caps: capsQuery.data }
-    : capsQuery.isError
-      ? { status: 'error', message: toError(capsQuery.error) }
-      : { status: 'loading' }
+  let capsPanel: Parameters<typeof CapabilitiesPanel>[0] = { status: 'loading' }
+  if (capsQuery.data) {
+    capsPanel = { status: 'ready', caps: capsQuery.data }
+  } else if (capsQuery.isError) {
+    capsPanel = { status: 'error', message: toError(capsQuery.error) }
+  }
 
   const sendError = sendMutation.isError ? toError(sendMutation.error) : null
   const orgError = orgQuery.isError ? toError(orgQuery.error) : null
@@ -241,19 +266,26 @@ function AgentPage() {
   return (
     <div className="mx-auto flex max-w-[1440px] flex-col gap-4 px-4 pb-6 pt-6">
       <header className="mb-1">
-        <p className="island-kicker mb-2">Agent · Context memory</p>
-        <h1 className="demo-title mb-2">Корпоративный агент с памятью</h1>
+        <p className="island-kicker mb-2">Agent · Context strategies</p>
+        <h1 className="demo-title mb-2">
+          Корпоративный агент со стратегиями контекста
+        </h1>
         <p className="demo-muted m-0 max-w-4xl text-sm">
-          Тот же агент, что в первый день, — теперь он помнит: диалоги живут в
-          SQLite и переживают перезапуск, а результаты инструментов
-          (согласования отпусков, брони) сохраняются в БД. Роль и подчинённые
-          приходят с «бэкенда» (таблица people), а не из константы.
+          Тот же агент, что в первый день, — теперь контекст собирается подключаемой
+          стратегией. Сейчас активна «сжатие истории»: последние сообщения уходят
+          как есть, а старая история сворачивается в сводку, которая хранится
+          отдельно в SQLite. Шов стратегии готов принять другие режимы (окно,
+          facts, ветки). A/B сравнение показывает экономию токенов и цены.
         </p>
       </header>
 
-      {orgQuery.isLoading && <p className="demo-muted">Загружаю сотрудников…</p>}
+      {orgQuery.isLoading && (
+        <p className="demo-muted">Загружаю сотрудников…</p>
+      )}
 
-      {orgError && <div className="demo-alert demo-alert-danger">{orgError}</div>}
+      {orgError && (
+        <div className="demo-alert demo-alert-danger">{orgError}</div>
+      )}
 
       {activePerson && manager && (
         <section className="demo-panel p-5">
@@ -328,12 +360,7 @@ function AgentPage() {
               </div>
             )}
 
-            {sessionTotals.prompt + sessionTotals.completion > 0 && (
-              <p className="demo-muted m-0 text-xs">
-                Суммарно за сессию: prompt {sessionTotals.prompt} + completion{' '}
-                {sessionTotals.completion} ток. · ~{formatUsd(sessionTotals.cost)}
-              </p>
-            )}
+            <SessionAccounting totals={accounting} />
 
             <TokenReport
               requestTokens={requestTokens}
@@ -342,7 +369,15 @@ function AgentPage() {
                 lastRun ? lastRun.tokens.historyTokensSent : null
               }
               responseTokens={lastRun ? lastRun.tokens.responseTokens : null}
+              contextTokens={lastRun ? lastRun.tokens.contextTokens : null}
             />
+
+            {noteState && (
+              <ContextPanel
+                note={noteState}
+                onClear={() => setNoteState(null)}
+              />
+            )}
 
             <TokenMeter
               historyTokens={historyTokens}
@@ -369,21 +404,32 @@ function AgentPage() {
               <label
                 className="demo-muted flex cursor-pointer select-none items-center gap-1.5 text-xs"
                 title={
-                  enforceBudget
-                    ? 'Агент урежет историю и откажет запрос больше бюджета'
-                    : 'Агент шлёт всё как есть — история растёт без ограничений'
+                  strategy === 'summary'
+                    ? 'Агент шлёт последние N сообщений и сводку старой истории; одиночный запрос больше бюджета отклоняется'
+                    : 'История уходит целиком, без сводки — база для сравнения'
                 }
               >
                 <input
                   type="checkbox"
-                  checked={enforceBudget}
-                  onChange={(e) => setEnforceBudget(e.target.checked)}
+                  checked={strategy === 'summary'}
+                  onChange={(e) =>
+                    setStrategy(e.target.checked ? 'summary' : 'none')
+                  }
                   disabled={busy}
                   className="accent-[var(--accent)]"
                 />
-                защита бюджета
+                сжатие истории
               </label>
             </div>
+
+            <CompressionCompare
+              canCompare={sessionId !== null && draft.trim().length > 0}
+              running={compareMutation.isPending}
+              disabled={busy}
+              result={comparison}
+              error={compareError}
+              onCompare={handleCompare}
+            />
 
             <ChatThread messages={messages} running={busy} />
 
