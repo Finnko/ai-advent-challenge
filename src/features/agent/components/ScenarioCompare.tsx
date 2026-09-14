@@ -1,6 +1,12 @@
+import { Check, X } from 'lucide-react'
 import type { ScenarioComparison, ScenarioTrace } from '../types'
 import { formatUsd } from '../domain/tokens'
 import { strategyLabel } from '../data/day10'
+import { Button } from '@/components/ui/Button'
+import { Input } from '@/components/ui/Input'
+import { Badge } from '@/components/ui/Badge'
+import { Alert } from '@/components/ui/Alert'
+import { Card } from '@/components/ui/Card'
 
 type ScenarioCompareProps = {
   scenario: string
@@ -98,19 +104,17 @@ export default function ScenarioCompare({
             панель соберёт ответы, метрики и чеклист ключевых деталей.
           </p>
         </div>
-        <button
-          type="button"
+        <Button
           onClick={onCompare}
           disabled={disabled || running || !canCompare}
-          className="demo-button"
         >
           {running ? 'Сравниваю…' : 'Сравнить'}
-        </button>
+        </Button>
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
         {checklist.map((item, index) => (
-          <span key={`${item}-${index}`} className="demo-pill">
+          <Badge key={`${item}-${index}`}>
             {item}
             <button
               type="button"
@@ -118,11 +122,11 @@ export default function ScenarioCompare({
               className="text-[var(--ink-muted)] hover:text-[var(--danger)]"
               title="Убрать деталь"
             >
-              ×
+              <X className="h-3 w-3" />
             </button>
-          </span>
+          </Badge>
         ))}
-        <input
+        <Input
           value={checklistDraft}
           onChange={(event) => onChecklistDraft(event.target.value)}
           onKeyDown={(event) => {
@@ -132,19 +136,15 @@ export default function ScenarioCompare({
             }
           }}
           placeholder="Добавить ключевую деталь…"
-          className="demo-input demo-input-fit w-56"
+          className="w-56"
         />
-        <button
-          type="button"
-          onClick={onAddChecklist}
-          className="demo-button demo-button-secondary px-3 py-1 text-xs"
-        >
+        <Button variant="secondary" size="sm" onClick={onAddChecklist}>
           + деталь
-        </button>
+        </Button>
       </div>
 
       {error && (
-        <div className="demo-alert demo-alert-danger mt-3">{error}</div>
+        <Alert variant="destructive" className="mt-3">{error}</Alert>
       )}
 
       {result && result.traces.length > 0 && (
@@ -177,12 +177,12 @@ function TraceCard({
 }) {
   const metrics = metricsOf(trace)
   return (
-    <article className="demo-card w-[320px] shrink-0">
+    <Card className="w-[320px] shrink-0">
       <div className="flex items-center justify-between gap-2">
         <h3 className="m-0 text-sm font-bold text-[var(--ink)]">
           {strategyLabel(trace.strategy)}
         </h3>
-        <span className="demo-pill">{metrics.runs} ходов</span>
+        <Badge>{metrics.runs} ходов</Badge>
       </div>
       <p className="demo-muted m-0 mt-1 truncate text-[11px]">{trace.title}</p>
 
@@ -211,11 +211,15 @@ function TraceCard({
                 <span
                   className={
                     ok
-                      ? 'font-bold text-[var(--positive)]'
-                      : 'font-bold text-[var(--danger)]'
+                      ? 'text-[var(--positive)]'
+                      : 'text-[var(--danger)]'
                   }
                 >
-                  {ok ? '✓' : '✗'}
+                  {ok ? (
+                    <Check className="h-3.5 w-3.5" />
+                  ) : (
+                    <X className="h-3.5 w-3.5" />
+                  )}
                 </span>
                 <span className="text-[var(--ink-muted)]">{item}</span>
               </li>
@@ -223,7 +227,7 @@ function TraceCard({
           })}
         </ul>
       )}
-    </article>
+    </Card>
   )
 }
 

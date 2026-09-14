@@ -1,11 +1,13 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
-import { askModel } from '../../lib/functions/ask-model.functions'
-import { readBrief } from '../../lib/functions/read-brief.functions'
-import { saveProposal } from '../../lib/functions/save-proposal.functions'
-import type { ChatResult } from '../../lib/llm'
-import { COMPARISON_NOTE, DAY5_SYSTEM, LINKS, TIERS } from '../../lib/day5'
-import type { TierMeta } from '../../lib/day5'
+import { askModel } from '@lib/functions/ask-model.functions'
+import { readBrief } from '@lib/functions/read-brief.functions'
+import { saveProposal } from '@lib/functions/save-proposal.functions'
+import type { ChatResult } from '@lib/llm'
+import { Button } from '@/components/ui/Button'
+import { Alert } from '@/components/ui/Alert'
+import { COMPARISON_NOTE, DAY5_SYSTEM, LINKS, TIERS } from '@lib/day5'
+import type { TierMeta } from '@lib/day5'
 
 export const Route = createFileRoute('/_layout/day5')({ component: Day5 })
 
@@ -126,9 +128,9 @@ function Day5() {
             отвечают параллельно; пока все три не ответят, кнопка заблокирована.
           </p>
           {brief.status === 'error' && (
-            <div className="demo-alert demo-alert-danger">
+            <Alert variant="destructive">
               <p className="m-0 text-sm">{brief.error}</p>
-            </div>
+            </Alert>
           )}
           {brief.status === 'loading' && (
             <div className="flex items-center gap-2">
@@ -137,14 +139,12 @@ function Day5() {
             </div>
           )}
           <div className="mt-3 flex flex-wrap items-center gap-3">
-            <button
-              type="button"
+            <Button
               onClick={() => void handleRunAll()}
               disabled={running || !briefReady}
-              className="demo-button"
             >
               {running ? 'Модели думают…' : 'Собрать 3 предложения'}
-            </button>
+            </Button>
             {running && <TypingDots text="Один бриф у трёх моделей…" />}
           </div>
         </div>
@@ -237,9 +237,9 @@ function CardBody({ state }: { state: CardState }) {
       )
     case 'error':
       return (
-        <div className="demo-alert demo-alert-danger">
+        <Alert variant="destructive">
           <p className="m-0 text-sm">{state.error}</p>
-        </div>
+        </Alert>
       )
     case 'done':
       return <AnswerBlock answer={state.answer} savedPath={state.savedPath} />
@@ -256,11 +256,11 @@ function AnswerBlock({
   return (
     <div>
       {answer.content.trim().length === 0 ? (
-        <div className="demo-alert">
+        <Alert>
           <p className="m-0 text-sm">
             Модель вернула пустой ответ. Попробуй ещё раз.
           </p>
-        </div>
+        </Alert>
       ) : (
         <pre className="demo-code-block select-text whitespace-pre-wrap text-sm">
           {answer.content}

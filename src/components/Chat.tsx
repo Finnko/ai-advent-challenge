@@ -1,6 +1,9 @@
 import { useState } from 'react'
 import type { ReactNode } from 'react'
 import type { ChatResult } from '../lib/llm'
+import { Button } from '@/components/ui/Button'
+import { Textarea } from '@/components/ui/Textarea'
+import { Alert } from '@/components/ui/Alert'
 
 export type ChatMessage = {
   role: 'user' | 'assistant'
@@ -88,7 +91,7 @@ export default function Chat({
       </div>
 
       {error && (
-        <div className="demo-alert demo-alert-danger mb-3">{error}</div>
+        <Alert variant="destructive" className="mb-3">{error}</Alert>
       )}
 
       <form
@@ -98,22 +101,21 @@ export default function Chat({
         }}
         className="flex flex-col gap-3 border-t border-[var(--line)] pt-3"
       >
-        <textarea
+        <Textarea
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
           placeholder={placeholder ?? 'Спроси у LLM что угодно…'}
-          className="demo-textarea min-h-0"
+          className="min-h-0"
           rows={2}
           disabled={loading}
         />
         <div className="flex justify-end">
-          <button
+          <Button
             type="submit"
-            className="demo-button"
             disabled={loading || prompt.trim().length === 0}
           >
             {loading ? 'Думает…' : 'Отправить'}
-          </button>
+          </Button>
         </div>
       </form>
     </div>

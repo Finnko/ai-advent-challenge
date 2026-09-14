@@ -1,7 +1,11 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
-import { ask } from '../../lib/functions/ask.functions'
-import type { ChatResult } from '../../lib/llm'
+import { ask } from '@lib/functions/ask.functions'
+import type { ChatResult } from '@lib/llm'
+import { Button } from '@/components/ui/Button'
+import { Textarea } from '@/components/ui/Textarea'
+import { Badge } from '@/components/ui/Badge'
+import { Alert } from '@/components/ui/Alert'
 import {
   CONCLUSIONS,
   CONCLUSION_NOTE,
@@ -9,8 +13,8 @@ import {
   TASKS,
   TEMPERATURES,
   checkFinalAnswer,
-} from '../../lib/day4'
-import type { Day4Task, FinalCheck } from '../../lib/day4'
+} from '@lib/day4'
+import type { Day4Task, FinalCheck } from '@lib/day4'
 
 export const Route = createFileRoute('/_layout/day4')({ component: Day4 })
 
@@ -116,16 +120,14 @@ function Day4() {
             {TASK.prompt}
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-3">
-            <button
-              type="button"
+            <Button
               onClick={() => void handleRunAll('curated')}
               disabled={running}
-              className="demo-button"
             >
               {running && source === 'curated'
                 ? 'Выполняется…'
                 : 'Запустить при трёх температурах'}
-            </button>
+            </Button>
             {running && source === 'curated' && (
               <TypingDots text="Отправляю три одинаковых запроса…" />
             )}
@@ -140,24 +142,23 @@ function Day4() {
             Свободный запрос без эталона: здесь высокая температура особенно
             заметна.
           </p>
-          <textarea
+          <Textarea
             value={customPrompt}
             onChange={(e) => setCustomPrompt(e.target.value)}
             rows={4}
             placeholder="Например: придумай 5 необычных названий для кофейни у моря…"
-            className="demo-textarea resize-y text-sm"
+            className="resize-y"
           />
           <div className="mt-3 flex flex-wrap items-center gap-3">
-            <button
-              type="button"
+            <Button
+              variant="secondary"
               onClick={() => void handleRunAll('custom')}
               disabled={running || customPrompt.trim().length === 0}
-              className="demo-button demo-button-secondary"
             >
               {running && source === 'custom'
                 ? 'Выполняется…'
                 : 'Запустить при трёх температурах'}
-            </button>
+            </Button>
             {running && source === 'custom' && (
               <TypingDots text="Отправляю три одинаковых запроса…" />
             )}
@@ -206,12 +207,12 @@ function Day4() {
             <div className="demo-panel p-5">
               <h2 className="demo-section-title mb-3">Эталонный ответ</h2>
               {source === 'custom' ? (
-                <div className="demo-alert">
+                <Alert>
                   <p className="m-0 text-sm">
                     У своего промпта нет эталона — сравнивай ответы по точности,
                     креативности и разнообразию сам.
                   </p>
-                </div>
+                </Alert>
               ) : (
                 <>
                   <div className="demo-code-block whitespace-pre-wrap text-sm">
@@ -277,9 +278,9 @@ function TempCard({ state }: { state: TempState }) {
       )
     case 'error':
       return (
-        <div className="demo-alert demo-alert-danger">
+        <Alert variant="destructive">
           <p className="m-0 text-sm">{state.error}</p>
-        </div>
+        </Alert>
       )
     case 'done':
       return <AnswerBlock answer={state.answer} />
@@ -290,11 +291,11 @@ function AnswerBlock({ answer }: { answer: Answer }) {
   return (
     <div>
       {answer.content.trim().length === 0 ? (
-        <div className="demo-alert">
+        <Alert>
           <p className="m-0 text-sm">
             Модель вернула пустой ответ. Попробуй ещё раз.
           </p>
-        </div>
+        </Alert>
       ) : (
         <pre className="demo-code-block whitespace-pre-wrap text-sm">
           {answer.content}
@@ -310,20 +311,12 @@ function AnswerBlock({ answer }: { answer: Answer }) {
 
 function CheckPill({ check }: { check: FinalCheck }) {
   if (check === 'correct') {
-    return (
-      <span className="demo-pill !border-[color-mix(in_oklab,var(--accent)_60%,var(--line))] !bg-[color-mix(in_oklab,var(--accent)_22%,var(--surface-tint))]">
-        Итог верный
-      </span>
-    )
+    return <Badge variant="accent">Итог верный</Badge>
   }
   if (check === 'wrong') {
-    return (
-      <span className="demo-pill !border-[color-mix(in_oklab,#e5484d_55%,var(--line))] !bg-[color-mix(in_oklab,#e5484d_18%,var(--surface-tint))]">
-        Не совпал
-      </span>
-    )
+    return <Badge variant="danger">Не совпал</Badge>
   }
-  return <span className="demo-pill">Нет строки «Итог:»</span>
+  return <Badge>Нет строки «Итог:»</Badge>
 }
 
 function Inspector({

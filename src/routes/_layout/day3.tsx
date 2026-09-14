@@ -1,8 +1,8 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { ask } from '../../lib/functions/ask.functions'
-import type { ChatResult } from '../../lib/llm'
+import { ask } from '@lib/functions/ask.functions'
+import type { ChatResult } from '@lib/llm'
 import {
   EXPERT_ROLES,
   HELPFUL_SYSTEM,
@@ -12,8 +12,11 @@ import {
   STRATEGIES,
   TASKS,
   buildJudgePrompt,
-} from '../../lib/day3'
-import type { Day3Task, ExpertId, StrategyId } from '../../lib/day3'
+} from '@lib/day3'
+import type { Day3Task, ExpertId, StrategyId } from '@lib/day3'
+import { Button } from '@/components/ui/Button'
+import { Badge } from '@/components/ui/Badge'
+import { Alert } from '@/components/ui/Alert'
 
 export const Route = createFileRoute('/_layout/day3')({ component: Day3 })
 
@@ -193,14 +196,13 @@ function Day3() {
           {TASKS.map((t) => {
             const isActive = t.id === selectedId
             return (
-              <button
+              <Button
                 key={t.id}
-                type="button"
+                variant={isActive ? 'default' : 'secondary'}
                 onClick={() => handleSelectTask(t.id)}
-                className={`demo-button ${isActive ? '' : 'demo-button-secondary'}`}
               >
                 {t.label}
-              </button>
+              </Button>
             )
           })}
         </div>
@@ -209,14 +211,12 @@ function Day3() {
         </p>
         <div className="demo-code-block whitespace-pre-wrap">{task.prompt}</div>
         <div className="mt-4 flex flex-wrap items-center gap-3">
-          <button
-            type="button"
+          <Button
             onClick={() => void handleRunAll()}
             disabled={running}
-            className="demo-button"
           >
             {running ? 'Выполняется…' : 'Запустить 4 стратегии'}
-          </button>
+          </Button>
           {verdict.status === 'loading' && (
             <TypingDots text="Судья оценивает ответы…" />
           )}
@@ -234,14 +234,14 @@ function Day3() {
                   <p className="demo-muted m-0 text-xs">{description}</p>
                 </div>
                 {(state.status === 'done' || state.status === 'error') && (
-                  <button
-                    type="button"
+                  <Button
+                    variant="secondary"
+                    size="sm"
                     onClick={() => void handleRerun(id)}
                     disabled={running}
-                    className="demo-button demo-button-secondary shrink-0 px-3 py-1 text-xs"
                   >
                     Повторить
-                  </button>
+                  </Button>
                 )}
               </div>
               <div className="min-h-0 flex-1 pt-3">
@@ -302,9 +302,9 @@ function StrategyCard({
       )
     case 'error':
       return (
-        <div className="demo-alert demo-alert-danger">
+        <Alert variant="destructive">
           <p className="m-0 text-sm">{state.error}</p>
-        </div>
+        </Alert>
       )
     case 'done':
       return <ResultBody result={state.result} />
@@ -354,11 +354,11 @@ function AnswerBlock({
   return (
     <div>
       {answer.content.trim().length === 0 ? (
-        <div className="demo-alert">
+        <Alert>
           <p className="m-0 text-sm">
             Модель вернула пустой ответ. Попробуй ещё раз.
           </p>
-        </div>
+        </Alert>
       ) : (
         <pre className="demo-code-block whitespace-pre-wrap text-sm">
           {answer.content}
@@ -474,9 +474,9 @@ function VerdictCard({ verdict }: { verdict: VerdictState }) {
     case 'error':
       return (
         <div className="flex flex-col gap-3">
-          <div className="demo-alert demo-alert-danger">
+          <Alert variant="destructive">
             <p className="m-0 text-sm">{verdict.error}</p>
-          </div>
+          </Alert>
           {verdict.raw && (
             <pre className="demo-code-block whitespace-pre-wrap text-xs">
               {verdict.raw}
@@ -502,17 +502,10 @@ function VerdictBody({ verdict }: { verdict: VerdictShape }) {
           const score = verdict.scores?.[id]
           const isWinner = id === winner
           return (
-            <span
-              key={id}
-              className={`demo-pill ${
-                isWinner
-                  ? '!border-[color-mix(in_oklab,var(--accent)_60%,var(--line))] !bg-[color-mix(in_oklab,var(--accent)_22%,var(--surface-tint))]'
-                  : ''
-              }`}
-            >
+            <Badge key={id} variant={isWinner ? 'accent' : 'default'}>
               {label}: {typeof score === 'number' ? score : '—'}
               {isWinner ? '  (победитель)' : ''}
-            </span>
+            </Badge>
           )
         })}
       </div>

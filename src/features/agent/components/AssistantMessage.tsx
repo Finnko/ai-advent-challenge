@@ -2,15 +2,17 @@ import type { AgentRunResult } from '../domain/agent'
 import type { JudgeVerdict } from '../domain/agent'
 import { formatUsd } from '../domain/tokens'
 import TraceAccordion from './TraceAccordion'
+import { Badge } from '@/components/ui/Badge'
+import { Alert } from '@/components/ui/Alert'
 
 export default function AssistantMessage({ run }: { run: AgentRunResult }) {
   const t = run.tokens
   return (
     <div className="flex flex-col gap-2">
       {run.blocked && (
-        <div className="demo-alert demo-alert-danger m-0">
+        <Alert variant="destructive" className="m-0">
           <p className="m-0 text-sm">{run.answer}</p>
-        </div>
+        </Alert>
       )}
       {!run.blocked && (
         <div className="demo-code-block select-text whitespace-pre-wrap text-sm">
@@ -21,27 +23,23 @@ export default function AssistantMessage({ run }: { run: AgentRunResult }) {
         {run.verdicts.map((verdict) => (
           <VerdictPill key={verdict.judge} verdict={verdict} />
         ))}
-        {run.model && <span className="demo-pill">модель: {run.model}</span>}
+        {run.model && <Badge>модель: {run.model}</Badge>}
         <SourcePill run={run} />
         {t && run.contextNote?.kind === 'summary' && t.contextMessages > 0 && (
-          <span className="demo-pill !border-[color-mix(in_oklab,var(--accent)_40%,var(--line))] !bg-[color-mix(in_oklab,var(--accent)_12%,var(--surface))] !text-[var(--accent-strong)]">
+          <Badge variant="accent">
             сжато {t.contextMessages} сообщ. в сводку
-          </span>
+          </Badge>
         )}
         {run.contextNote?.kind === 'facts' && (
-          <span className="demo-pill !border-[color-mix(in_oklab,var(--accent)_40%,var(--line))] !bg-[color-mix(in_oklab,var(--accent)_12%,var(--surface))] !text-[var(--accent-strong)]">
-            фактов: {run.contextNote.messages}
-          </span>
+          <Badge variant="accent">фактов: {run.contextNote.messages}</Badge>
         )}
         {run.contextNote?.kind === 'window' && (
-          <span className="demo-pill !border-[color-mix(in_oklab,var(--warn)_40%,var(--line))] !bg-[color-mix(in_oklab,var(--warn)_10%,var(--surface))]">
+          <Badge variant="warn">
             отброшено {run.contextNote.messages} сообщ.
-          </span>
+          </Badge>
         )}
         {run.contextNote?.kind === 'branch' && (
-          <span className="demo-pill">
-            ветка: {run.contextNote.text}
-          </span>
+          <Badge>ветка: {run.contextNote.text}</Badge>
         )}
       </div>
       <div className="flex flex-wrap items-center gap-1.5">
@@ -94,14 +92,13 @@ function TokenChip({
   note?: string
 }) {
   return (
-    <span
-      className="demo-pill"
+    <Badge
       title={note ? `${label}: ${value} · ${note}` : `${label}: ${value}`}
     >
       <span className="text-[var(--ink-muted)]">{label}</span>{' '}
       <span className="font-bold text-[var(--ink)]">{value}</span>
       {note && <span className="text-[var(--ink-muted)]"> · {note}</span>}
-    </span>
+    </Badge>
   )
 }
 
@@ -109,16 +106,12 @@ function VerdictPill({ verdict }: { verdict: JudgeVerdict }) {
   const failed = verdict.status === 'fail'
 
   return (
-    <span
-      className={`demo-pill ${
-        failed
-          ? '!border-[color-mix(in_oklab,var(--danger)_40%,var(--line))] !bg-[color-mix(in_oklab,var(--danger)_12%,var(--surface))] !text-[var(--danger)]'
-          : ''
-      }`}
+    <Badge
+      variant={failed ? 'danger' : 'default'}
       title={verdict.message}
     >
       {verdict.judge}: {verdict.status === 'pass' ? 'ок' : 'нарушение'}
-    </span>
+    </Badge>
   )
 }
 
@@ -131,30 +124,24 @@ function SourcePill({ run }: { run: AgentRunResult }) {
   )
   if (!decide) {
     return (
-      <span
-        className="demo-pill"
-        title="Инструмент не вызывался — ответ собран из контекста (история/память модели)"
-      >
+      <Badge title="Инструмент не вызывался — ответ собран из контекста (история/память модели)">
         из контекста
-      </span>
+      </Badge>
     )
   }
   if (decide.tool === 'listBookings' || decide.tool === 'listVacations') {
     return (
-      <span
-        className="demo-pill !border-[color-mix(in_oklab,var(--accent)_45%,var(--line))]"
+      <Badge
+        variant="accent"
         title="Ответ построен по данным из SQLite через инструмент, а не по памяти модели"
       >
         из БД
-      </span>
+      </Badge>
     )
   }
   return (
-    <span
-      className="demo-pill"
-      title={`Ответ построен по отчёту инструмента ${decide.tool}`}
-    >
+    <Badge title={`Ответ построен по отчёту инструмента ${decide.tool}`}>
       из инструмента
-    </span>
+    </Badge>
   )
 }

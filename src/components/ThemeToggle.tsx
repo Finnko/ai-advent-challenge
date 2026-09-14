@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Button } from '@/components/ui/Button'
 
 type ThemeMode = 'light' | 'dark' | 'auto'
 
@@ -85,14 +86,14 @@ export default function ThemeToggle() {
       : `Theme mode: ${modeName}. Click to switch mode.`
 
   return (
-    <button
-      type="button"
+    <Button
+      variant="secondary"
       onClick={toggleMode}
       aria-label={label}
       title={label}
-      className="rounded-full border border-[var(--line)] bg-[var(--surface)] px-3 py-1.5 text-sm font-semibold text-[var(--ink-soft)] shadow-[0_1px_3px_rgba(15,23,42,0.06)] transition-colors hover:border-[color-mix(in_oklab,var(--accent-strong)_40%,var(--line))]"
+      className="rounded-full px-3 shadow-[0_1px_3px_rgba(15,23,42,0.06)]"
     >
       {MODE_LABELS[mode]}
-    </button>
+    </Button>
   )
 }

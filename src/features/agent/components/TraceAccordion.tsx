@@ -1,4 +1,5 @@
 import type { AgentTraceStep } from '../domain/agent'
+import { Badge } from '@/components/ui/Badge'
 
 const STAGE_LABELS: Record<string, string> = {
   input: 'Input policy',
@@ -79,11 +80,11 @@ function StepBody({ step }: { step: AgentTraceStep }) {
       return (
         <div className="flex flex-col gap-1.5">
           <div className="flex flex-wrap gap-1.5">
-            <span className="demo-pill">{step.tool}</span>
+            <Badge>{step.tool}</Badge>
             {step.outcome.ok ? (
-              <span className="demo-pill">выполнено</span>
+              <Badge variant="success">выполнено</Badge>
             ) : (
-              <span className="demo-pill">отклонено</span>
+              <Badge variant="danger">отклонено</Badge>
             )}
           </div>
           {step.outcome.reference && (
