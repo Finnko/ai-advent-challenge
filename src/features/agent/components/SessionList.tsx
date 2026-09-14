@@ -19,7 +19,7 @@ export default function SessionList({
   onNew,
 }: SessionListProps) {
   return (
-    <div className="flex h-full min-h-0 flex-col gap-3">
+    <div className="flex h-full max-h-[70vh] min-h-0 flex-col gap-3">
       <Button
         className="justify-center"
         onClick={onNew}

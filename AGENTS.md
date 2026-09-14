@@ -1,6 +1,6 @@
 # Project: AI Advent Challenge
 
-Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 10 (`feature/day10`).
+Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 11 (`feature/day11`).
 
 ## Stack
 
@@ -50,10 +50,28 @@ Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 
   | 'branch'`, `ContextStrategy.prepare(input)` → `PreparedContext { history, blocks, note }`.
 - **Strategy is fixed per session** (`sessions.strategy`): set by `createSession`, read by `runAgent`;
   never switchable mid-session.
-- Blocks are inserted as **separate `system` messages** after the base system and before raw history, in
-  both `decide` and `finalize`. Base system is byte-identical across stages; volatile content (tools,
-  rooms, context, stage instruction) goes in the last user message, so the cache prefix survives.
+- Strategy blocks are inserted as **separate `system` messages** after the base system and before raw
+  history, in both `decide` and `finalize`. Memory blocks go **after** the history (last, right before
+  the user turn) so stale prior replies don't override fresher memory. Base system is byte-identical
+  across stages; volatile content (tools, rooms, context, stage instruction) goes in the last user
+  message, so the cache prefix survives.
 - Pure modules (no env/fetch — offline tests): `compression.ts`, `facts.ts`.
+
+## Memory model (Day 11)
+
+- Three layers, each stored separately: **short-term** = active-branch `messages`; **working** =
+  `working_memory` keyed by `session_id`; **long-term** = `long_term_memory` keyed by `token`
+  (survives sessions and scenarios).
+- Seam in `features/agent/domain/memory/`: `types.ts` (layers/entries), `extract.ts` (LLM candidates
+  tagged with a layer), `router.ts` (`MemoryRouter` validates and routes to a layer), `read.ts`
+  (merge, long-term cap, system-block assembly).
+- Memory blocks are inserted as separate `system` messages in order `long-term → working`, after the
+  strategy's blocks and the history (last, right before the user turn). `SystemBlock.kind` covers
+  `'working' | 'long-term'`. A precedence line (`MEMORY_PRECEDENCE_LINE`) is added to the last user
+  message when memory blocks are present: memory is authoritative over earlier history.
+- Memory is fixed per session via `sessions.memory_enabled` (set by `createSession`, read by `runAgent`).
+  Auto-extraction runs each turn; manual entries (`source='manual'`) survive auto overwrites; long-term
+  is capped at `LONG_TERM_LIMIT`.
 
 ## Persistence
 
@@ -62,7 +80,8 @@ Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 
 - DB path `~/.ai-advent-challenge/agent.sqlite` (override `AGENT_DB_PATH`); legacy `data/agent.sqlite`
   is migrated on first open, and an existing DB is snapshotted to `<db>.backups/` (last 5).
 - Migrations are idempotent (`PRAGMA table_info` + `ALTER`). Branches are copy-on-fork; `loadMessages`
-  and `appendMessage` are scoped to the active branch.
+  and `appendMessage` are scoped to the active branch. Sessions carry `strategy`/`scenario`/`memory_enabled`;
+  memory lives in `working_memory` and `long_term_memory` (separate from `session_facts`/`session_summaries`).
 
 ## Commands
 

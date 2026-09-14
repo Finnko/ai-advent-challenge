@@ -43,12 +43,12 @@ const STATS = [
   },
 ]
 
-const STATUS: Record<string, string> = {}
-for (let i = 0; i < DAYS.length - 1; i++) {
-  STATUS[DAYS[i].path] = 'Доступно'
-}
-STATUS['/agent'] = 'Демо'
-STATUS['/agent-strategies'] = 'Демо'
+const STATUS: Record<string, string> = Object.fromEntries(
+  DAYS.map((day) => [
+    day.path,
+    day.path.startsWith('/agent') ? 'Демо' : 'Доступно',
+  ]),
+)
 
 function StatCard({ stat }: { stat: (typeof STATS)[number] }) {
   return (
@@ -74,7 +74,7 @@ function Hub() {
         <p className="island-kicker mb-1.5">AI Advent Challenge</p>
         <h1 className="demo-title">Обзор курса</h1>
         <p className="m-0 mt-1 text-sm text-[var(--ink-muted)] sm:text-base">
-          Семь практических шагов: от сырого LLM API до агента с памятью.
+          Восемь практических шагов: от сырого LLM API до агента с памятью.
         </p>
       </header>
 
@@ -95,11 +95,11 @@ function Hub() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-12">№</TableHead>
+              <TableHead className="w-16 whitespace-nowrap">№</TableHead>
               <TableHead>Модуль</TableHead>
               <TableHead>Задача</TableHead>
               <TableHead className="hidden sm:table-cell">Маршрут</TableHead>
-              <TableHead>Статус</TableHead>
+              <TableHead className="w-28 whitespace-nowrap">Статус</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -107,7 +107,7 @@ function Hub() {
               const isAgent = day.path.startsWith('/agent')
               return (
                 <TableRow key={day.path}>
-                  <TableCell className="text-[var(--ink-muted)]">
+                  <TableCell className="whitespace-nowrap tabular-nums text-[var(--ink-muted)]">
                     {String(i + 1).padStart(2, '0')}
                   </TableCell>
                   <TableCell className="whitespace-nowrap text-sm font-bold text-[var(--ink)]">
