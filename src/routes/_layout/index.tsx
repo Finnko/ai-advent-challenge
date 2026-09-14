@@ -39,6 +39,7 @@ for (let i = 0; i < DAYS.length - 1; i++) {
   STATUS[DAYS[i].path] = 'Доступно'
 }
 STATUS['/agent'] = 'Демо'
+STATUS['/agent-strategies'] = 'Демо'
 
 function StatCard({ stat }: { stat: (typeof STATS)[number] }) {
   return (
@@ -64,7 +65,7 @@ function Hub() {
         <p className="island-kicker mb-1.5">AI Advent Challenge</p>
         <h1 className="demo-title">Обзор курса</h1>
         <p className="m-0 mt-1 text-sm text-[var(--ink-muted)] sm:text-base">
-          Шесть практических шагов: от сырого LLM API до агента с памятью.
+          Семь практических шагов: от сырого LLM API до агента с памятью.
         </p>
       </header>
 
@@ -95,7 +96,8 @@ function Hub() {
             </thead>
             <tbody>
               {DAYS.map((day, i) => {
-                const isAgent = day.path === '/agent'
+                const isAgent =
+                  day.path === '/agent' || day.path === '/agent-strategies'
                 return (
                   <tr key={day.path}>
                     <td className="text-[var(--ink-muted)]">

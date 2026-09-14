@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as LayoutRouteRouteImport } from './routes/_layout/route'
 import { Route as LayoutIndexRouteImport } from './routes/_layout/index'
 import { Route as LayoutAgentRouteImport } from './routes/_layout/agent'
+import { Route as LayoutAgentStrategiesRouteImport } from './routes/_layout/agent-strategies'
 import { Route as LayoutDay1RouteImport } from './routes/_layout/day1'
 import { Route as LayoutDay2RouteImport } from './routes/_layout/day2'
 import { Route as LayoutDay3RouteImport } from './routes/_layout/day3'
@@ -30,6 +31,11 @@ const LayoutIndexRoute = LayoutIndexRouteImport.update({
 const LayoutAgentRoute = LayoutAgentRouteImport.update({
   id: '/agent',
   path: '/agent',
+  getParentRoute: () => LayoutRouteRoute,
+} as any)
+const LayoutAgentStrategiesRoute = LayoutAgentStrategiesRouteImport.update({
+  id: '/agent-strategies',
+  path: '/agent-strategies',
   getParentRoute: () => LayoutRouteRoute,
 } as any)
 const LayoutDay1Route = LayoutDay1RouteImport.update({
@@ -61,6 +67,7 @@ const LayoutDay5Route = LayoutDay5RouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof LayoutIndexRoute
   '/agent': typeof LayoutAgentRoute
+  '/agent-strategies': typeof LayoutAgentStrategiesRoute
   '/day1': typeof LayoutDay1Route
   '/day2': typeof LayoutDay2Route
   '/day3': typeof LayoutDay3Route
@@ -69,6 +76,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/agent': typeof LayoutAgentRoute
+  '/agent-strategies': typeof LayoutAgentStrategiesRoute
   '/day1': typeof LayoutDay1Route
   '/day2': typeof LayoutDay2Route
   '/day3': typeof LayoutDay3Route
@@ -80,6 +88,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_layout': typeof LayoutRouteRouteWithChildren
   '/_layout/agent': typeof LayoutAgentRoute
+  '/_layout/agent-strategies': typeof LayoutAgentStrategiesRoute
   '/_layout/day1': typeof LayoutDay1Route
   '/_layout/day2': typeof LayoutDay2Route
   '/_layout/day3': typeof LayoutDay3Route
@@ -89,13 +98,30 @@ export interface FileRoutesById {
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/agent' | '/day1' | '/day2' | '/day3' | '/day4' | '/day5'
+  fullPaths:
+    | '/'
+    | '/agent'
+    | '/agent-strategies'
+    | '/day1'
+    | '/day2'
+    | '/day3'
+    | '/day4'
+    | '/day5'
   fileRoutesByTo: FileRoutesByTo
-  to: '/agent' | '/day1' | '/day2' | '/day3' | '/day4' | '/day5' | '/'
+  to:
+    | '/agent'
+    | '/agent-strategies'
+    | '/day1'
+    | '/day2'
+    | '/day3'
+    | '/day4'
+    | '/day5'
+    | '/'
   id:
     | '__root__'
     | '/_layout'
     | '/_layout/agent'
+    | '/_layout/agent-strategies'
     | '/_layout/day1'
     | '/_layout/day2'
     | '/_layout/day3'
@@ -129,6 +155,13 @@ declare module '@tanstack/react-router' {
       path: '/agent'
       fullPath: '/agent'
       preLoaderRoute: typeof LayoutAgentRouteImport
+      parentRoute: typeof LayoutRouteRoute
+    }
+    '/_layout/agent-strategies': {
+      id: '/_layout/agent-strategies'
+      path: '/agent-strategies'
+      fullPath: '/agent-strategies'
+      preLoaderRoute: typeof LayoutAgentStrategiesRouteImport
       parentRoute: typeof LayoutRouteRoute
     }
     '/_layout/day1': {
@@ -171,6 +204,7 @@ declare module '@tanstack/react-router' {
 
 interface LayoutRouteRouteChildren {
   LayoutAgentRoute: typeof LayoutAgentRoute
+  LayoutAgentStrategiesRoute: typeof LayoutAgentStrategiesRoute
   LayoutDay1Route: typeof LayoutDay1Route
   LayoutDay2Route: typeof LayoutDay2Route
   LayoutDay3Route: typeof LayoutDay3Route
@@ -181,6 +215,7 @@ interface LayoutRouteRouteChildren {
 
 const LayoutRouteRouteChildren: LayoutRouteRouteChildren = {
   LayoutAgentRoute: LayoutAgentRoute,
+  LayoutAgentStrategiesRoute: LayoutAgentStrategiesRoute,
   LayoutDay1Route: LayoutDay1Route,
   LayoutDay2Route: LayoutDay2Route,
   LayoutDay3Route: LayoutDay3Route,

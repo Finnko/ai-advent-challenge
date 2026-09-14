@@ -38,4 +38,11 @@ export const DAYS = [
     description:
       'Агент с памятью и сжатием истории: сводка старого диалога, кеш промпта, A/B экономии.',
   },
+  {
+    path: '/agent-strategies',
+    label: 'Context strategies',
+    title: 'Стратегии контекста',
+    description:
+      'Скользящее окно, key-value факты и ветки диалога — три стратегии управления контекстом и их сравнение.',
+  },
 ] as const
