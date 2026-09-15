@@ -1,4 +1,5 @@
 import type { FactItem } from '../types'
+import { Badge } from '@/components/ui/Badge'
 
 type FactsPanelProps = {
   facts: FactItem[]
@@ -9,7 +10,7 @@ export default function FactsPanel({ facts }: FactsPanelProps) {
     <div className="rounded-xl border border-[var(--line)] bg-[var(--surface)] p-3">
       <div className="flex items-center justify-between gap-2">
         <p className="island-kicker m-0 text-[10px]">Факты диалога</p>
-        <span className="demo-pill">{facts.length}</span>
+        <Badge>{facts.length}</Badge>
       </div>
       {facts.length === 0 ? (
         <p className="demo-muted m-0 mt-2 text-xs">

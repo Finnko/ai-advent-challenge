@@ -1,6 +1,7 @@
 import type { AgentRunResult, AgentRole } from './domain/agent'
 import type { SummaryUsage } from './domain/compression'
 import type { ContextStrategyId } from './domain/context/types'
+import type { MemoryEntry } from './domain/memory/types'
 
 export type OrgPerson = {
   token: string
@@ -15,9 +16,17 @@ export type SessionSummary = {
   title: string
   strategy: ContextStrategyId
   scenario: string | null
+  memoryEnabled: boolean
   createdAt: string
   lastMessage: string
   messageCount: number
+}
+
+export type MemoryItem = MemoryEntry
+
+export type MemoryView = {
+  working: MemoryItem[]
+  longTerm: MemoryItem[]
 }
 
 export type RunAgentResult = {

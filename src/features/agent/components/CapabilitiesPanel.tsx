@@ -1,6 +1,8 @@
 import { TOOL_INFO } from '../data/agent-ui'
 import type { AgentCapabilities } from '../domain/agent'
-import TypingDots from '../../../components/TypingDots'
+import TypingDots from '@/components/TypingDots'
+import { Badge } from '@/components/ui/Badge'
+import { Alert } from '@/components/ui/Alert'
 
 type CapabilitiesPanelProps =
   | { status: 'loading' }
@@ -21,9 +23,9 @@ export default function CapabilitiesPanel(props: CapabilitiesPanelProps) {
 
   if (props.status === 'error') {
     return (
-      <div className="demo-alert demo-alert-danger mt-3">
+      <Alert variant="destructive" className="mt-3">
         <p className="m-0 text-sm">{props.message}</p>
-      </div>
+      </Alert>
     )
   }
 
@@ -34,23 +36,21 @@ export default function CapabilitiesPanel(props: CapabilitiesPanelProps) {
   return (
     <div className="mt-3 flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="demo-pill">
+        <Badge>
           {caps.identity.title} {caps.identity.name}
-        </span>
-        <span className="demo-pill">роль: {caps.identity.role}</span>
+        </Badge>
+        <Badge>роль: {caps.identity.role}</Badge>
         {availableTools.map((t) => (
-          <span key={t.name} className="demo-pill" title={t.description}>
+          <Badge key={t.name} title={t.description}>
             {t.label}
-          </span>
+          </Badge>
         ))}
       </div>
       {caps.identity.subordinates.length > 0 && (
         <div className="flex flex-wrap items-center gap-2">
           <span className="demo-muted text-xs">Подчинённые:</span>
           {caps.identity.subordinates.map((name) => (
-            <span key={name} className="demo-pill">
-              {name}
-            </span>
+            <Badge key={name}>{name}</Badge>
           ))}
         </div>
       )}

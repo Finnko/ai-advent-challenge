@@ -10,12 +10,18 @@ import {
 
 export const createSession = createServerFn({ method: 'POST' })
   .validator(
-    (input: { token: string; strategy: string; scenario?: string | null }) => {
+    (input: {
+      token: string
+      strategy: string
+      scenario?: string | null
+      memory?: boolean
+    }) => {
       const data = asObject(input)
       return {
         token: requireToken(data.token),
         strategy: requireStrategy(data.strategy),
         scenario: optionalScenario(data.scenario),
+        memory: data.memory === true,
       }
     },
   )
@@ -23,7 +29,7 @@ export const createSession = createServerFn({ method: 'POST' })
     const sessionId = await createSessionInStore(
       data.token,
       data.scenario ?? 'Новая сессия',
-      { strategy: data.strategy, scenario: data.scenario },
+      { strategy: data.strategy, scenario: data.scenario, memory: data.memory },
     )
     return { sessionId } satisfies CreateSessionResult
   })

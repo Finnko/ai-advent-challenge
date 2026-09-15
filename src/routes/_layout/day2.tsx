@@ -1,10 +1,13 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
-import Chat from '../../components/Chat'
-import type { ChatMessage } from '../../components/Chat'
-import { CHAT_CONFIGS } from '../../lib/day2'
-import type { ChatMode } from '../../lib/day2'
-import { chat } from '../../lib/functions/chat.functions'
+import Chat from '@/components/Chat'
+import type { ChatMessage } from '@/components/Chat'
+import { CHAT_CONFIGS } from '@lib/day2'
+import type { ChatMode } from '@lib/day2'
+import { chat } from '@lib/functions/chat.functions'
+import { Button } from '@/components/ui/Button'
+import { Badge } from '@/components/ui/Badge'
+import { Alert } from '@/components/ui/Alert'
 
 export const Route = createFileRoute('/_layout/day2')({ component: Day2 })
 
@@ -30,14 +33,13 @@ function Day2() {
               const config = CHAT_CONFIGS[mode]
               const isActive = mode === active
               return (
-                <button
+                <Button
                   key={mode}
-                  type="button"
+                  variant={isActive ? 'default' : 'secondary'}
                   onClick={() => setActive(mode)}
-                  className={`demo-button ${isActive ? '' : 'demo-button-secondary'}`}
                 >
                   {config.label}
-                </button>
+                </Button>
               )
             })}
           </div>
@@ -114,12 +116,12 @@ type ConstrainedShape = {
 function ConstrainedMessage({ message }: { message: ChatMessage }) {
   if (message.content.trim().length === 0) {
     return (
-      <div className="demo-alert">
+      <Alert>
         <p className="m-0 text-sm">
           Модель вернула пустой ответ — известная особенность JSON-режима.
           Попробуй ещё раз.
         </p>
-      </div>
+      </Alert>
     )
   }
 
@@ -127,7 +129,7 @@ function ConstrainedMessage({ message }: { message: ChatMessage }) {
 
   if (!parsed) {
     return (
-      <div className="demo-alert demo-alert-danger">
+      <Alert variant="destructive">
         <p className="m-0 mb-2 text-sm font-semibold">
           Ответ — не валидный JSON
         </p>
@@ -135,7 +137,7 @@ function ConstrainedMessage({ message }: { message: ChatMessage }) {
         <p className="m-0 mt-2 text-xs opacity-80">
           Возможно, ответ обрезан лимитом токенов. Попробуй ещё раз.
         </p>
-      </div>
+      </Alert>
     )
   }
 
@@ -154,9 +156,7 @@ function ConstrainedMessage({ message }: { message: ChatMessage }) {
       {Array.isArray(parsed.keywords) && parsed.keywords.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
           {parsed.keywords.map((keyword, i) => (
-            <span key={i} className="demo-pill">
-              {keyword}
-            </span>
+            <Badge key={i}>{keyword}</Badge>
           ))}
         </div>
       )}

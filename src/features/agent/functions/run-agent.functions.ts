@@ -8,11 +8,15 @@ import {
   appendMessage as appendMessageToStore,
   createSession as createSessionFromStore,
   getActiveBranch,
+  getLongTermMemory,
   getSession,
   getSessionFacts,
   getSessionSummary,
+  getWorkingMemory,
   loadMessages as loadMessagesFromStore,
+  saveLongTermMemory,
   saveSessionFacts,
+  saveWorkingMemory,
   upsertSessionSummary,
 } from '../server/store.server'
 import type { StoredMessage } from '../server/store.server'
@@ -73,6 +77,14 @@ export const runAgent = createServerFn({ method: 'POST' })
     const stored = await getSessionSummary(activeSessionId)
     const facts = await getSessionFacts(activeSessionId)
 
+    const memoryEnabled = session?.memoryEnabled ?? false
+    const working = memoryEnabled
+      ? await getWorkingMemory(activeSessionId)
+      : []
+    const longTerm = memoryEnabled
+      ? await getLongTermMemory(session?.token ?? data.token)
+      : []
+
     const execution = await executeAgent({
       capabilities,
       user: data.user,
@@ -83,6 +95,17 @@ export const runAgent = createServerFn({ method: 'POST' })
         : null,
       facts,
       branchLabel: activeBranch?.title,
+      memory: {
+        enabled: memoryEnabled,
+        token: session?.token ?? data.token,
+        sessionId: activeSessionId,
+        scenario: session?.scenario ?? null,
+        working,
+        longTerm,
+        saveWorking: (entries) => saveWorkingMemory(activeSessionId, entries),
+        saveLongTerm: (entries) =>
+          saveLongTermMemory(session?.token ?? data.token, entries),
+      },
       saveSummary: (summary, throughMessageId) =>
         upsertSessionSummary(activeSessionId, summary, throughMessageId),
       saveFacts: (next) => saveSessionFacts(activeSessionId, next),

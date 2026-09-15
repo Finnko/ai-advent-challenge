@@ -1,4 +1,5 @@
 import type { OrgPerson } from '../types'
+import { Badge } from '@/components/ui/Badge'
 
 type PersonaPickerProps = {
   manager: OrgPerson
@@ -79,13 +80,12 @@ function PersonaCard({
     >
       <div className="flex items-center justify-between gap-2">
         <p className="island-kicker m-0">{kicker}</p>
-        <span
-          className={`demo-pill !py-0.5 !text-[10px] ${
-            active ? '' : 'invisible'
-          }`}
+        <Badge
+          variant="accent"
+          className={`py-0.5 text-[10px] ${active ? '' : 'invisible'}`}
         >
           активна
-        </span>
+        </Badge>
       </div>
       <p className={`m-0 font-bold text-[var(--ink)] ${compact ? 'text-sm' : 'text-base'}`}>
         {person.name}

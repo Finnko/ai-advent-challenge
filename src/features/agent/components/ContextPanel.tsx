@@ -1,4 +1,5 @@
 import type { ContextNote } from '../domain/agent'
+import { Button } from '@/components/ui/Button'
 
 type ContextPanelProps = {
   note: ContextNote
@@ -20,13 +21,14 @@ export default function ContextPanel({ note, onClear }: ContextPanelProps) {
         {note.text}
       </p>
       {onClear && (
-        <button
-          type="button"
+        <Button
+          variant="secondary"
+          size="xs"
+          className="mt-2"
           onClick={onClear}
-          className="demo-button demo-button-secondary mt-2 px-2 py-0.5 text-[10px]"
         >
           скрыть
-        </button>
+        </Button>
       )}
     </div>
   )

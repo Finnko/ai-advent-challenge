@@ -21,7 +21,11 @@ import { useCreateBranch } from '../api/create-branch'
 import { useSwitchBranch } from '../api/switch-branch'
 import { useCompareSessions } from '../api/compare-sessions'
 import { useSaveChecklist } from '../api/save-checklist'
-import { Tabs, TabsList, TabsTrigger } from '../../../components/ui/Tabs'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/Tabs'
+import { Button } from '@/components/ui/Button'
+import { Input } from '@/components/ui/Input'
+import { Textarea } from '@/components/ui/Textarea'
+import { Alert } from '@/components/ui/Alert'
 import PersonaPicker from '../components/PersonaPicker'
 import ChatThread from '../components/ChatThread'
 import type { ThreadMessage } from '../components/ChatThread'
@@ -241,7 +245,7 @@ export default function AgentStrategiesPage() {
       </header>
 
       {orgQuery.isLoading && <p className="demo-muted">Загружаю сотрудников…</p>}
-      {orgError && <div className="demo-alert demo-alert-danger">{orgError}</div>}
+      {orgError && <Alert variant="destructive">{orgError}</Alert>}
 
       {activePerson && manager && (
         <section className="demo-panel p-5">
@@ -309,11 +313,11 @@ export default function AgentStrategiesPage() {
               </Tabs>
               <label className="demo-muted flex items-center gap-2 text-xs">
                 сценарий
-                <input
+                <Input
                   value={scenario}
                   onChange={(event) => setScenario(event.target.value)}
                   disabled={busy || sessionLocked}
-                  className="demo-input demo-input-fit w-48 py-1 text-xs"
+                  className="h-8 w-48 py-1 text-xs"
                 />
               </label>
             </div>
@@ -362,10 +366,10 @@ export default function AgentStrategiesPage() {
             )}
 
             {sendError && (
-              <div className="demo-alert demo-alert-danger">{sendError}</div>
+              <Alert variant="destructive">{sendError}</Alert>
             )}
             {branchError && (
-              <div className="demo-alert demo-alert-danger">{branchError}</div>
+              <Alert variant="destructive">{branchError}</Alert>
             )}
 
             <form
@@ -375,11 +379,11 @@ export default function AgentStrategiesPage() {
               }}
               className="flex flex-col gap-3"
             >
-              <textarea
+              <Textarea
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
                 placeholder="Введите сообщение из сценария или своё…"
-                className="demo-textarea min-h-0"
+                className="min-h-0"
                 rows={4}
                 disabled={busy}
               />
@@ -388,13 +392,12 @@ export default function AgentStrategiesPage() {
                   {STRATEGY_CHOICES.find((c) => c.id === activeStrategy)
                     ?.description ?? ''}
                 </span>
-                <button
+                <Button
                   type="submit"
-                  className="demo-button"
                   disabled={busy || draft.trim().length === 0}
                 >
                   {busy ? 'Агент работает…' : 'Отправить агенту'}
-                </button>
+                </Button>
               </div>
             </form>
           </section>

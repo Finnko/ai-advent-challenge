@@ -2,6 +2,8 @@ import type { AgentRunResult } from '../domain/agent'
 import type { CompressionComparison } from '../types'
 import { summaryCostUsd } from '../domain/accounting'
 import { formatUsd } from '../domain/tokens'
+import { Button } from '@/components/ui/Button'
+import { Alert } from '@/components/ui/Alert'
 
 type CompressionCompareProps = {
   canCompare: boolean
@@ -38,14 +40,14 @@ export default function CompressionCompare({
             Один запрос прогоняется дважды; ничего не сохраняется.
           </p>
         </div>
-        <button
-          type="button"
+        <Button
+          variant="secondary"
+          size="sm"
           onClick={onCompare}
           disabled={!canCompare || running || disabled}
-          className="demo-button demo-button-secondary px-3 py-1 text-xs"
         >
           {running ? 'Сравниваю…' : 'Сравнить'}
-        </button>
+        </Button>
       </div>
 
       {!canCompare && (
@@ -55,7 +57,7 @@ export default function CompressionCompare({
       )}
 
       {error && (
-        <p className="demo-alert demo-alert-danger m-0 mt-2 text-xs">{error}</p>
+        <Alert variant="destructive" className="m-0 mt-2 text-xs">{error}</Alert>
       )}
 
       {result && (

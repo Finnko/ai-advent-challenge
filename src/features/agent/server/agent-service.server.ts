@@ -7,6 +7,7 @@ import type {
   AgentRunResult,
   AgentStore,
   CallLLM,
+  PreparedContext,
 } from '../domain/agent'
 import { TOOLS_BY_ROLE, createAgentTools } from '../domain/agent-tools'
 import type { ContextStrategy } from '../domain/context/types'
@@ -19,11 +20,19 @@ import type {
   SummaryUsage,
 } from '../domain/compression'
 import { toLlmMessages } from '../domain/compression'
+import { createExtractMemories } from '../domain/memory/extract'
+import type { MemoryEntry } from '../domain/memory/types'
+import {
+  applyLongTermLimit,
+  buildMemoryBlocks,
+  mergeMemoryEntries,
+} from '../domain/memory/read'
+import { MemoryRouter } from '../domain/memory/router'
 import {
   callCompletions,
   apiKeyFor,
-} from '../../../lib/llm.server'
-import { TIER_ENDPOINTS } from '../../../lib/llm'
+} from '@lib/llm.server'
+import { TIER_ENDPOINTS } from '@lib/llm'
 import { estimateMessagesTokens, estimateTokens } from '../domain/tokens'
 import {
   createAgentStore,
@@ -108,6 +117,18 @@ const summarizeHistory: Summarize = async (messages) => {
 }
 
 const extractFacts = createExtractFacts(callFlash)
+const extractMemories = createExtractMemories(callFlash)
+
+export type MemoryOptions = {
+  enabled: boolean
+  token: string
+  sessionId: number
+  scenario: string | null
+  working: MemoryEntry[]
+  longTerm: MemoryEntry[]
+  saveWorking: (entries: MemoryEntry[]) => Promise<void> | void
+  saveLongTerm: (entries: MemoryEntry[]) => Promise<void> | void
+}
 
 export type ExecuteOptions = {
   capabilities: AgentCapabilities
@@ -117,6 +138,7 @@ export type ExecuteOptions = {
   previousSummary: PreviousSummary | null
   facts: Fact[]
   branchLabel?: string
+  memory?: MemoryOptions
   saveSummary: (
     summary: string,
     throughMessageId: number,
@@ -144,6 +166,7 @@ export async function executeAgent(
     context,
   })
   try {
+    const memoryBlocks = await prepareMemoryBlocks(options)
     const prepared = await options.strategy.prepare({
       rows: options.rows,
       request: options.user,
@@ -155,10 +178,70 @@ export async function executeAgent(
       saveFacts: options.saveFacts,
       branchLabel: options.branchLabel,
     })
-    const run = await agent.run(options.user, prepared.context)
-    return { run, auxUsage: prepared.auxUsage }
+    const context: PreparedContext = {
+      ...prepared.context,
+      blocks: [...memoryBlocks.blocks, ...prepared.context.blocks],
+    }
+    const run = await agent.run(options.user, context)
+    return {
+      run,
+      auxUsage: sumSummaryUsage(prepared.auxUsage, memoryBlocks.usage),
+    }
   } catch (error) {
     return { run: blockedRun(options, error), auxUsage: null }
+  }
+}
+
+async function prepareMemoryBlocks(
+  options: ExecuteOptions,
+): Promise<{ blocks: PreparedContext['blocks']; usage: SummaryUsage | null }> {
+  const memory = options.memory
+  if (!memory?.enabled) {
+    return { blocks: [], usage: null }
+  }
+  const snapshot = { working: memory.working, longTerm: memory.longTerm }
+  let next = snapshot
+  let usage: SummaryUsage | null = null
+  try {
+    const extracted = await extractMemories(snapshot, options.user)
+    usage = extracted.usage
+    const routed = MemoryRouter.route({
+      candidates: extracted.candidates,
+      scenario: memory.scenario,
+    })
+    const workingEntries = routed.filter((entry) => entry.layer === 'working')
+    const longTermEntries = routed.filter((entry) => entry.layer === 'long-term')
+    next = {
+      working: mergeMemoryEntries(snapshot.working, workingEntries),
+      longTerm: applyLongTermLimit(
+        mergeMemoryEntries(snapshot.longTerm, longTermEntries),
+      ),
+    }
+    if (workingEntries.length > 0) {
+      await memory.saveWorking(next.working)
+    }
+    if (longTermEntries.length > 0) {
+      await memory.saveLongTerm(next.longTerm)
+    }
+  } catch {
+    next = snapshot
+  }
+  return { blocks: buildMemoryBlocks(next), usage }
+}
+
+function sumSummaryUsage(
+  left: SummaryUsage | null,
+  right: SummaryUsage | null,
+): SummaryUsage | null {
+  if (!left) {
+    return right
+  }
+  if (!right) {
+    return left
+  }
+  return {
+    prompt_tokens: left.prompt_tokens + right.prompt_tokens,
+    completion_tokens: left.completion_tokens + right.completion_tokens,
   }
 }
 

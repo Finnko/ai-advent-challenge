@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as LayoutRouteRouteImport } from './routes/_layout/route'
 import { Route as LayoutIndexRouteImport } from './routes/_layout/index'
 import { Route as LayoutAgentRouteImport } from './routes/_layout/agent'
+import { Route as LayoutAgentMemoryRouteImport } from './routes/_layout/agent-memory'
 import { Route as LayoutAgentStrategiesRouteImport } from './routes/_layout/agent-strategies'
 import { Route as LayoutDay1RouteImport } from './routes/_layout/day1'
 import { Route as LayoutDay2RouteImport } from './routes/_layout/day2'
@@ -31,6 +32,11 @@ const LayoutIndexRoute = LayoutIndexRouteImport.update({
 const LayoutAgentRoute = LayoutAgentRouteImport.update({
   id: '/agent',
   path: '/agent',
+  getParentRoute: () => LayoutRouteRoute,
+} as any)
+const LayoutAgentMemoryRoute = LayoutAgentMemoryRouteImport.update({
+  id: '/agent-memory',
+  path: '/agent-memory',
   getParentRoute: () => LayoutRouteRoute,
 } as any)
 const LayoutAgentStrategiesRoute = LayoutAgentStrategiesRouteImport.update({
@@ -67,6 +73,7 @@ const LayoutDay5Route = LayoutDay5RouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof LayoutIndexRoute
   '/agent': typeof LayoutAgentRoute
+  '/agent-memory': typeof LayoutAgentMemoryRoute
   '/agent-strategies': typeof LayoutAgentStrategiesRoute
   '/day1': typeof LayoutDay1Route
   '/day2': typeof LayoutDay2Route
@@ -76,6 +83,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/agent': typeof LayoutAgentRoute
+  '/agent-memory': typeof LayoutAgentMemoryRoute
   '/agent-strategies': typeof LayoutAgentStrategiesRoute
   '/day1': typeof LayoutDay1Route
   '/day2': typeof LayoutDay2Route
@@ -88,6 +96,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_layout': typeof LayoutRouteRouteWithChildren
   '/_layout/agent': typeof LayoutAgentRoute
+  '/_layout/agent-memory': typeof LayoutAgentMemoryRoute
   '/_layout/agent-strategies': typeof LayoutAgentStrategiesRoute
   '/_layout/day1': typeof LayoutDay1Route
   '/_layout/day2': typeof LayoutDay2Route
@@ -101,6 +110,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/agent'
+    | '/agent-memory'
     | '/agent-strategies'
     | '/day1'
     | '/day2'
@@ -110,6 +120,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/agent'
+    | '/agent-memory'
     | '/agent-strategies'
     | '/day1'
     | '/day2'
@@ -121,6 +132,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/_layout'
     | '/_layout/agent'
+    | '/_layout/agent-memory'
     | '/_layout/agent-strategies'
     | '/_layout/day1'
     | '/_layout/day2'
@@ -155,6 +167,13 @@ declare module '@tanstack/react-router' {
       path: '/agent'
       fullPath: '/agent'
       preLoaderRoute: typeof LayoutAgentRouteImport
+      parentRoute: typeof LayoutRouteRoute
+    }
+    '/_layout/agent-memory': {
+      id: '/_layout/agent-memory'
+      path: '/agent-memory'
+      fullPath: '/agent-memory'
+      preLoaderRoute: typeof LayoutAgentMemoryRouteImport
       parentRoute: typeof LayoutRouteRoute
     }
     '/_layout/agent-strategies': {
@@ -204,6 +223,7 @@ declare module '@tanstack/react-router' {
 
 interface LayoutRouteRouteChildren {
   LayoutAgentRoute: typeof LayoutAgentRoute
+  LayoutAgentMemoryRoute: typeof LayoutAgentMemoryRoute
   LayoutAgentStrategiesRoute: typeof LayoutAgentStrategiesRoute
   LayoutDay1Route: typeof LayoutDay1Route
   LayoutDay2Route: typeof LayoutDay2Route
@@ -215,6 +235,7 @@ interface LayoutRouteRouteChildren {
 
 const LayoutRouteRouteChildren: LayoutRouteRouteChildren = {
   LayoutAgentRoute: LayoutAgentRoute,
+  LayoutAgentMemoryRoute: LayoutAgentMemoryRoute,
   LayoutAgentStrategiesRoute: LayoutAgentStrategiesRoute,
   LayoutDay1Route: LayoutDay1Route,
   LayoutDay2Route: LayoutDay2Route,

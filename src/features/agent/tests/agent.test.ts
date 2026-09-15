@@ -281,6 +281,65 @@ describe('Agent pipeline', () => {
     expect(run.contextNote?.text).toContain('планёрку')
   })
 
+  it('приоритезирует блоки памяти над прошлыми ответами истории', async () => {
+    const { callLLM, calls } = scriptedLLM({
+      decide: '{"tool": null, "args": {}}',
+      finalize: 'Бюджет: 2 миллиона.',
+    })
+    const memoryContext: PreparedContext = {
+      history: [
+        { role: 'user', content: 'какой бюджет у нас' },
+        {
+          role: 'assistant',
+          content: 'В долговременной памяти нет данных о бюджете.',
+        },
+      ],
+      blocks: [
+        {
+          kind: 'long-term',
+          content:
+            'ДОЛГОВРЕМЕННАЯ ПАМЯТЬ (профиль, решения, знания):\n- бюджет: 2 миллиона',
+        },
+      ],
+      note: null,
+    }
+    await buildAgent({ callLLM }).run('какой бюджет?', memoryContext)
+
+    for (const call of calls) {
+      const lastUser = [...call.messages]
+        .reverse()
+        .find((message) => message.role === 'user')
+      expect(lastUser?.content).toContain('доверяй памяти')
+
+      const memoryIndex = call.messages.findIndex((message) =>
+        message.content.includes('- бюджет: 2 миллиона'),
+      )
+      const staleIndex = call.messages.findIndex((message) =>
+        message.content.includes('нет данных о бюджете'),
+      )
+      expect(memoryIndex).toBeGreaterThan(staleIndex)
+      expect(memoryIndex).toBeGreaterThan(-1)
+      expect(call.messages[memoryIndex + 1]).toBe(lastUser)
+    }
+  })
+
+  it('не добавляет директиву приоритета памяти без memory-блоков', async () => {
+    const { callLLM, calls } = scriptedLLM({
+      decide: '{"tool": null, "args": {}}',
+      finalize: 'Ок',
+    })
+    const summaryContext: PreparedContext = {
+      history: [],
+      blocks: [{ kind: 'summary', content: 'СВОДКА ПРЕДЫДУЩЕГО ДИАЛОГА:\nПлан.' }],
+      note: null,
+    }
+    await buildAgent({ callLLM }).run('Как дела?', summaryContext)
+
+    const finalize = calls.find((call) => !call.isDecide)
+    const joined = finalize?.messages.map((m) => m.content).join('\n') ?? ''
+    expect(joined).not.toContain('доверяй памяти')
+  })
+
   it('не отправляет сырую историю в finalize при отчёте инструмента', async () => {
     const store = createFakeStore({ bookings: [createBooking()] })
     const { callLLM, calls } = scriptedLLM({

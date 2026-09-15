@@ -23,6 +23,11 @@ import TokenReport from '../components/TokenReport'
 import ContextPanel from '../components/ContextPanel'
 import SessionAccounting from '../components/SessionAccounting'
 import CompressionCompare from '../components/CompressionCompare'
+import { Button } from '@/components/ui/Button'
+import { Textarea } from '@/components/ui/Textarea'
+import { Badge } from '@/components/ui/Badge'
+import { Alert } from '@/components/ui/Alert'
+import { Checkbox } from '@/components/ui/Checkbox'
 
 export default function AgentPage() {
   const [activeToken, setActiveToken] = useState<string | null>(null)
@@ -195,7 +200,7 @@ export default function AgentPage() {
       </header>
 
       {orgQuery.isLoading && <p className="demo-muted">Загружаю сотрудников…</p>}
-      {orgError && <div className="demo-alert demo-alert-danger">{orgError}</div>}
+      {orgError && <Alert variant="destructive">{orgError}</Alert>}
 
       {activePerson && manager && (
         <section className="demo-panel p-5">
@@ -259,13 +264,9 @@ export default function AgentPage() {
             {availableTools.length > 0 && (
               <div className="flex flex-wrap gap-1.5">
                 {availableTools.map((tool) => (
-                  <span
-                    key={tool.name}
-                    className="demo-pill"
-                    title={tool.description}
-                  >
+                  <Badge key={tool.name} title={tool.description}>
                     {tool.label}
-                  </span>
+                  </Badge>
                 ))}
               </div>
             )}
@@ -294,30 +295,28 @@ export default function AgentPage() {
             <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-3">
               <div className="flex flex-wrap gap-2">
                 {TOKEN_SCENARIOS.map((scenario) => (
-                  <button
+                  <Button
                     key={scenario.id}
-                    type="button"
+                    variant="secondary"
+                    size="sm"
                     onClick={() => setDraft(scenario.text)}
                     disabled={busy}
-                    className="demo-button demo-button-secondary px-3 py-1 text-xs"
                     title={scenario.hint}
                   >
                     {scenario.label}
-                  </button>
+                  </Button>
                 ))}
               </div>
               <label
                 className="demo-muted flex cursor-pointer select-none items-center gap-1.5 text-xs"
                 title={strategyHint}
               >
-                <input
-                  type="checkbox"
+                <Checkbox
                   checked={strategy === 'summary'}
-                  onChange={(event) =>
-                    setStrategy(event.target.checked ? 'summary' : 'none')
+                  onCheckedChange={(checked) =>
+                    setStrategy(checked ? 'summary' : 'none')
                   }
                   disabled={busy || sessionId !== null}
-                  className="accent-[var(--accent)]"
                 />
                 сжатие истории
               </label>
@@ -335,7 +334,7 @@ export default function AgentPage() {
             <ChatThread messages={messages} running={busy} />
 
             {sendError && (
-              <div className="demo-alert demo-alert-danger">{sendError}</div>
+              <Alert variant="destructive">{sendError}</Alert>
             )}
 
             <form
@@ -345,22 +344,21 @@ export default function AgentPage() {
               }}
               className="flex flex-col gap-3"
             >
-              <textarea
+              <Textarea
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
                 placeholder="Например: забронируй переговорку на завтра на 15:00 на 6 человек…"
-                className="demo-textarea min-h-0"
+                className="min-h-0"
                 rows={6}
                 disabled={busy}
               />
               <div className="flex justify-end">
-                <button
+                <Button
                   type="submit"
-                  className="demo-button"
                   disabled={busy || draft.trim().length === 0}
                 >
                   {busy ? 'Агент работает…' : 'Отправить агенту'}
-                </button>
+                </Button>
               </div>
             </form>
           </section>

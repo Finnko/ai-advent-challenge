@@ -1,4 +1,5 @@
 import type { Example } from '../data/agent-ui'
+import { Button } from '@/components/ui/Button'
 
 type ExampleChipsProps = {
   examples: Example[]
@@ -18,18 +19,19 @@ export default function ExampleChips({
   return (
     <div className="flex flex-wrap gap-2">
       {examples.map((example) => (
-        <button
+        <Button
           key={example.text}
-          type="button"
+          variant="secondary"
+          size="sm"
           onClick={() => onPick(example.text)}
           disabled={disabled}
-          className="demo-button demo-button-secondary px-3 py-1 text-left text-xs"
+          className="text-left"
           title={example.note}
         >
           {example.text.length > 52
             ? `${example.text.slice(0, 52)}…`
             : example.text}
-        </button>
+        </Button>
       ))}
     </div>
   )

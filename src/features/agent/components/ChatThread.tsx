@@ -1,7 +1,9 @@
 import { useEffect, useRef } from 'react'
+import { GitBranch } from 'lucide-react'
 import type { AgentRunResult } from '../domain/agent'
 import AssistantMessage from './AssistantMessage'
-import TypingDots from '../../../components/TypingDots'
+import TypingDots from '@/components/TypingDots'
+import { Button } from '@/components/ui/Button'
 
 export type ThreadMessage = {
   id?: number
@@ -81,22 +83,23 @@ function ForkButton({
   onFork: () => void
 }) {
   return (
-    <button
-      type="button"
+    <Button
+      variant="secondary"
+      size="xs"
       onClick={onFork}
       disabled={disabled}
-      className="demo-button demo-button-secondary px-2 py-0.5 text-[10px]"
       title="Создать ветку от этого сообщения"
     >
-      ⑂ ветка
-    </button>
+      <GitBranch className="h-3 w-3" />
+      ветка
+    </Button>
   )
 }
 
 function UserBubble({ text }: { text: string }) {
   return (
-    <div className="flex justify-end">
-      <div className="max-w-[85%] rounded-2xl border border-[var(--line)] bg-[color-mix(in_oklab,var(--accent)_18%,var(--surface-strong))] px-4 py-2.5 text-sm">
+    <div className="flex w-full justify-end">
+      <div className="max-w-[85%] break-words rounded-2xl border border-[var(--line)] bg-[color-mix(in_oklab,var(--accent)_18%,var(--surface-strong))] px-4 py-2.5 text-sm">
         {text}
       </div>
     </div>

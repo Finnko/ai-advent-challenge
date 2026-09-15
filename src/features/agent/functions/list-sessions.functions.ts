@@ -15,6 +15,7 @@ export const listSessions = createServerFn({ method: 'POST' })
       title: row.title,
       strategy: row.strategy,
       scenario: row.scenario,
+      memoryEnabled: row.memoryEnabled,
       createdAt: row.createdAt,
       lastMessage: row.lastMessage,
       messageCount: row.messageCount,

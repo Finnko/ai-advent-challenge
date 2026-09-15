@@ -1,4 +1,5 @@
 import type { SessionSummary } from '../types'
+import { Button } from '@/components/ui/Button'
 
 type SessionListProps = {
   sessions: SessionSummary[]
@@ -18,15 +19,14 @@ export default function SessionList({
   onNew,
 }: SessionListProps) {
   return (
-    <div className="flex h-full min-h-0 flex-col gap-3">
-      <button
-        type="button"
+    <div className="flex h-full max-h-[70vh] min-h-0 flex-col gap-3">
+      <Button
+        className="justify-center"
         onClick={onNew}
         disabled={disabled}
-        className="demo-button justify-center"
       >
         + Новая сессия
-      </button>
+      </Button>
 
       <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pr-1">
         {sessions.length === 0 && (
@@ -67,15 +67,15 @@ export default function SessionList({
                 )}
               </button>
               <div className="mt-1 flex justify-end">
-                <button
-                  type="button"
+                <Button
+                  variant="danger"
+                  size="xs"
                   onClick={() => onDelete(session.id)}
                   disabled={disabled}
-                  className="demo-button demo-button-danger px-2 py-0.5 !text-[10px]"
                   title="Удалить сессию"
                 >
                   Удалить
-                </button>
+                </Button>
               </div>
             </div>
           )

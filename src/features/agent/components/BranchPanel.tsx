@@ -1,4 +1,7 @@
+import { Plus } from 'lucide-react'
 import type { BranchInfo } from '../types'
+import { Button } from '@/components/ui/Button'
+import { Badge } from '@/components/ui/Badge'
 
 type BranchPanelProps = {
   branches: BranchInfo[]
@@ -58,35 +61,33 @@ export default function BranchPanel({
               className="flex items-center gap-1.5"
               style={{ marginLeft: depth * 14 }}
             >
-              <button
-                type="button"
-                onClick={() => onSwitch(branch.id)}
-                disabled={disabled || branch.isActive}
-                className={`demo-pill ${
-                  branch.isActive
-                    ? '!border-[color-mix(in_oklab,var(--accent)_50%,var(--line))] !bg-[var(--accent-soft)] !text-[var(--accent-strong)]'
-                    : ''
-                }`}
-                title={
-                  forkMessageId
-                    ? `Ответвлена от сообщения #${forkMessageId} · ${branch.messageCount} сообщ.`
-                    : `Корневая ветка · ${branch.messageCount} сообщ.`
-                }
-              >
-                {branch.title} · {branch.messageCount}
-              </button>
-              {parentBranchId !== null && forkMessageId !== null && (
+              <Badge asChild variant={branch.isActive ? 'accent' : 'default'}>
                 <button
                   type="button"
+                  onClick={() => onSwitch(branch.id)}
+                  disabled={disabled || branch.isActive}
+                  className="cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
+                  title={
+                    forkMessageId
+                      ? `Ответвлена от сообщения #${forkMessageId} · ${branch.messageCount} сообщ.`
+                      : `Корневая ветка · ${branch.messageCount} сообщ.`
+                  }
+                >
+                  {branch.title} · {branch.messageCount}
+                </button>
+              </Badge>
+              {parentBranchId !== null && forkMessageId !== null && (
+                <Button
+                  variant="secondary"
+                  size="xs"
                   onClick={() =>
                     onForkCheckpoint(parentBranchId, forkMessageId)
                   }
                   disabled={disabled}
-                  className="demo-button demo-button-secondary px-1.5 py-0.5 text-[10px]"
                   title={`Создать ещё ветку от того же checkpoint (#${forkMessageId})`}
                 >
-                  ＋
-                </button>
+                  <Plus className="h-3 w-3" />
+                </Button>
               )}
             </div>
           )
@@ -94,7 +95,8 @@ export default function BranchPanel({
       </div>
       <p className="demo-muted m-0 mt-2 text-xs">
         Активна ветка — в неё пишет агент; переключение меняет историю в запросе.
-        Форк создаётся кнопкой на сообщении, «＋» — ещё одна ветка от того же места.
+        Форк создаётся кнопкой на сообщении, кнопка с плюсом — ещё одна ветка от
+        того же места.
       </p>
     </div>
   )

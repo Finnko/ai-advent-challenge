@@ -1,5 +1,14 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { DAYS } from '../../lib/days'
+import { DAYS } from '@lib/days'
+import { Badge } from '@/components/ui/Badge'
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from '@/components/ui/Table'
 
 export const Route = createFileRoute('/_layout/')({ component: Hub })
 
@@ -34,12 +43,12 @@ const STATS = [
   },
 ]
 
-const STATUS: Record<string, string> = {}
-for (let i = 0; i < DAYS.length - 1; i++) {
-  STATUS[DAYS[i].path] = 'Доступно'
-}
-STATUS['/agent'] = 'Демо'
-STATUS['/agent-strategies'] = 'Демо'
+const STATUS: Record<string, string> = Object.fromEntries(
+  DAYS.map((day) => [
+    day.path,
+    day.path.startsWith('/agent') ? 'Демо' : 'Доступно',
+  ]),
+)
 
 function StatCard({ stat }: { stat: (typeof STATS)[number] }) {
   return (
@@ -65,7 +74,7 @@ function Hub() {
         <p className="island-kicker mb-1.5">AI Advent Challenge</p>
         <h1 className="demo-title">Обзор курса</h1>
         <p className="m-0 mt-1 text-sm text-[var(--ink-muted)] sm:text-base">
-          Семь практических шагов: от сырого LLM API до агента с памятью.
+          Восемь практических шагов: от сырого LLM API до агента с памятью.
         </p>
       </header>
 
@@ -81,59 +90,50 @@ function Hub() {
       <section className="demo-panel mt-6 rounded-2xl p-5 sm:p-6">
         <div className="mb-4 flex items-center justify-between gap-3">
           <h2 className="demo-section-title">Программа курса</h2>
-          <span className="demo-pill">{DAYS.length} модулей</span>
+          <Badge>{DAYS.length} модулей</Badge>
         </div>
-        <div className="demo-table-shell">
-          <table className="demo-table">
-            <thead>
-              <tr>
-                <th className="w-12">№</th>
-                <th>Модуль</th>
-                <th>Задача</th>
-                <th className="hidden sm:table-cell">Маршрут</th>
-                <th>Статус</th>
-              </tr>
-            </thead>
-            <tbody>
-              {DAYS.map((day, i) => {
-                const isAgent =
-                  day.path === '/agent' || day.path === '/agent-strategies'
-                return (
-                  <tr key={day.path}>
-                    <td className="text-[var(--ink-muted)]">
-                      {String(i + 1).padStart(2, '0')}
-                    </td>
-                    <td className="whitespace-nowrap text-sm font-bold text-[var(--ink)]">
-                      {day.label}
-                    </td>
-                    <td>
-                      <span className="block text-sm font-semibold text-[var(--ink-soft)]">
-                        {day.title}
-                      </span>
-                      <span className="block text-xs text-[var(--ink-muted)]">
-                        {day.description}
-                      </span>
-                    </td>
-                    <td className="hidden whitespace-nowrap sm:table-cell">
-                      <code className="text-xs">{day.path}</code>
-                    </td>
-                    <td className="whitespace-nowrap">
-                      <span
-                        className={
-                          isAgent
-                            ? 'demo-pill !border-[color-mix(in_oklab,var(--accent)_45%,var(--line))] !bg-[var(--accent-soft)] !text-[var(--accent-strong)]'
-                            : 'demo-pill'
-                        }
-                      >
-                        {STATUS[day.path]}
-                      </span>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-16 whitespace-nowrap">№</TableHead>
+              <TableHead>Модуль</TableHead>
+              <TableHead>Задача</TableHead>
+              <TableHead className="hidden sm:table-cell">Маршрут</TableHead>
+              <TableHead className="w-28 whitespace-nowrap">Статус</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {DAYS.map((day, i) => {
+              const isAgent = day.path.startsWith('/agent')
+              return (
+                <TableRow key={day.path}>
+                  <TableCell className="whitespace-nowrap tabular-nums text-[var(--ink-muted)]">
+                    {String(i + 1).padStart(2, '0')}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-sm font-bold text-[var(--ink)]">
+                    {day.label}
+                  </TableCell>
+                  <TableCell>
+                    <span className="block text-sm font-semibold text-[var(--ink-soft)]">
+                      {day.title}
+                    </span>
+                    <span className="block text-xs text-[var(--ink-muted)]">
+                      {day.description}
+                    </span>
+                  </TableCell>
+                  <TableCell className="hidden whitespace-nowrap sm:table-cell">
+                    <code className="text-xs">{day.path}</code>
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    <Badge variant={isAgent ? 'accent' : 'default'}>
+                      {STATUS[day.path]}
+                    </Badge>
+                  </TableCell>
+                </TableRow>
+              )
+            })}
+          </TableBody>
+        </Table>
         <p className="demo-muted mt-4 text-xs">
           Начни с первого модуля — каждый следующий опирается на предыдущий.
         </p>

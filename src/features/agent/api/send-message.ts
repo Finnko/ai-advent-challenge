@@ -6,6 +6,7 @@ import { sessionsQueryOptions } from './get-sessions'
 import { sessionMessagesQueryOptions } from './get-session-messages'
 import { sessionBranchesQueryOptions } from './get-branches'
 import { sessionFactsQueryOptions } from './get-facts'
+import { memoryQueryOptions } from './get-memory'
 
 export type SendMessageInput = {
   token: string
@@ -13,6 +14,7 @@ export type SendMessageInput = {
   user: string
   strategy: string
   scenario?: string | null
+  memory?: boolean
 }
 
 export async function sendMessage(
@@ -25,6 +27,7 @@ export async function sendMessage(
         token: input.token,
         strategy: input.strategy,
         scenario: input.scenario ?? null,
+        memory: input.memory ?? false,
       },
     })
     sessionId = created.sessionId
@@ -51,6 +54,9 @@ export function useSendMessage(token: string) {
       })
       queryClient.invalidateQueries({
         queryKey: sessionFactsQueryOptions(sessionId).queryKey,
+      })
+      queryClient.invalidateQueries({
+        queryKey: memoryQueryOptions(sessionId, token).queryKey,
       })
     },
   })
