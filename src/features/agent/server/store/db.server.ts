@@ -89,6 +89,58 @@ const BOOKINGS_SEED: Array<
   ],
 ]
 
+const PROFILES_SEED: Array<
+  [
+    token: string,
+    name: string,
+    addressing: string | null,
+    tone: string | null,
+    language: string | null,
+    verbosity: string | null,
+    format: string | null,
+    constraints: string | null,
+    instructions: string | null,
+    isDefault: number,
+  ]
+> = [
+  [
+    'tok-manager-demo',
+    'Формальный',
+    'Анна',
+    'деловой, официальный',
+    'русский',
+    'кратко',
+    'структурированный список',
+    'без сленга и эмодзи',
+    '',
+    1,
+  ],
+  [
+    'tok-manager-demo',
+    'Наставник',
+    'Анна',
+    'поддерживающий',
+    'русский',
+    'подробно',
+    'пошаговый план',
+    'не давать оценок сотрудникам',
+    'Когда просят «напиши фичу» — сначала уточни требования, затем предложи план из трёх шагов: анализ, реализация, проверка.',
+    0,
+  ],
+  [
+    'tok-employee-demo',
+    'Дружелюбный',
+    'Пётр',
+    'неформальный, дружелюбный',
+    'французский',
+    'средне',
+    'короткие абзацы',
+    'Pas de langue de bois.',
+    'Réponds toujours en français, même si ma question est en russe. Tutoie-moi et propose toujours l’étape suivante.',
+    1,
+  ],
+]
+
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS people (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -107,6 +159,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   scenario TEXT,
   active_branch_id INTEGER,
   memory_enabled INTEGER NOT NULL DEFAULT 0,
+  profile_id INTEGER,
   created_at TEXT NOT NULL
 );
 
@@ -171,6 +224,22 @@ CREATE TABLE IF NOT EXISTS long_term_memory (
   PRIMARY KEY (token, key)
 );
 
+CREATE TABLE IF NOT EXISTS profiles (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  token TEXT NOT NULL,
+  name TEXT NOT NULL,
+  addressing TEXT,
+  tone TEXT,
+  language TEXT,
+  verbosity TEXT,
+  format TEXT,
+  constraints TEXT,
+  instructions TEXT,
+  is_default INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS vacations (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   employee_name TEXT NOT NULL,
@@ -198,6 +267,8 @@ CREATE TABLE IF NOT EXISTS bookings (
 
 CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
 CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, id);
+CREATE INDEX IF NOT EXISTS idx_profiles_token ON profiles(token);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_profiles_default ON profiles(token) WHERE is_default = 1;
 `
 
 let dbPromise: Promise<SqliteDatabase> | null = null
@@ -298,8 +369,10 @@ async function openDatabase(): Promise<SqliteDatabase> {
   db.exec(SCHEMA_SQL)
   migrateBookings(db)
   migrateSessions(db)
+  migrateProfiles(db)
   seedPeople(db)
   seedBookings(db)
+  seedProfiles(db)
   console.log(`[store] SQLite: ${dbPath}`)
   return db
 }
@@ -352,6 +425,48 @@ function tableColumns(db: SqliteDatabase, table: string): string[] {
   ).map((column) => column.name)
 }
 
+function seedProfiles(db: SqliteDatabase): void {
+  const row = db.prepare('SELECT COUNT(*) AS count FROM profiles').get() as {
+    count: number
+  }
+  if ((row?.count ?? 0) > 0) {
+    return
+  }
+  const insert = db.prepare(
+    `INSERT INTO profiles (token, name, addressing, tone, language, verbosity, format, constraints, instructions, is_default, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  )
+  for (const entry of PROFILES_SEED) {
+    const [
+      token,
+      name,
+      addressing,
+      tone,
+      language,
+      verbosity,
+      format,
+      constraints,
+      instructions,
+      isDefault,
+    ] = entry
+    const now = nowIso()
+    insert.run(
+      token,
+      name,
+      addressing,
+      tone,
+      language,
+      verbosity,
+      format,
+      constraints,
+      instructions && instructions.length > 0 ? instructions : null,
+      isDefault,
+      now,
+      now,
+    )
+  }
+}
+
 export function migrateBookings(db: SqliteDatabase): void {
   const columns = tableColumns(db, 'bookings')
   if (!columns.includes('title')) {
@@ -389,6 +504,9 @@ export function migrateSessions(db: SqliteDatabase): void {
       'ALTER TABLE sessions ADD COLUMN memory_enabled INTEGER NOT NULL DEFAULT 0',
     )
   }
+  if (!sessionColumns.includes('profile_id')) {
+    db.exec('ALTER TABLE sessions ADD COLUMN profile_id INTEGER')
+  }
   const messageColumns = tableColumns(db, 'messages')
   if (!messageColumns.includes('branch_id')) {
     db.exec('ALTER TABLE messages ADD COLUMN branch_id INTEGER')
@@ -421,4 +539,25 @@ export function migrateSessions(db: SqliteDatabase): void {
     setActive.run(branchId, session.id)
     backfill.run(branchId, session.id)
   }
+}
+
+export function migrateProfiles(db: SqliteDatabase): void {
+  const token = 'tok-employee-demo'
+  const name = 'Дружелюбный'
+  const now = nowIso()
+  db.prepare(
+    'UPDATE profiles SET language = ?, updated_at = ? WHERE token = ? AND name = ? AND language = ?',
+  ).run('французский', now, token, name, 'русский')
+  db.prepare(
+    'UPDATE profiles SET constraints = ?, updated_at = ? WHERE token = ? AND name = ? AND constraints = ?',
+  ).run('Pas de langue de bois.', now, token, name, 'без канцелярита')
+  db.prepare(
+    'UPDATE profiles SET instructions = ?, updated_at = ? WHERE token = ? AND name = ? AND instructions = ?',
+  ).run(
+    'Réponds toujours en français, même si ma question est en russe. Tutoie-moi et propose toujours l’étape suivante.',
+    now,
+    token,
+    name,
+    'Обращайся на «ты» и предлагай следующий шаг.',
+  )
 }

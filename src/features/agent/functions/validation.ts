@@ -8,11 +8,15 @@ export {
   requireUser,
 } from '@lib/functions/validation'
 
+import { asObject } from '@lib/functions/validation'
+
 import { CONTEXT_STRATEGY_IDS } from '../domain/context/registry'
 import type { ContextStrategyId } from '../domain/context/types'
 import { isMemoryLayer } from '../domain/memory/read'
 import type { MemoryLayer } from '../domain/memory/types'
 import { MAX_MEMORY_VALUE_CHARS } from '../domain/memory/types'
+import type { ProfileField, ProfileInput } from '../domain/profile/types'
+import { PROFILE_NAME_MAX, profileFieldMax } from '../domain/profile/types'
 
 export function requireBranchId(value: unknown): number {
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
@@ -58,4 +62,72 @@ export function requireMemoryValue(value: unknown): string {
     throw new Error(`Значение памяти длиннее ${MAX_MEMORY_VALUE_CHARS} символов`)
   }
   return trimmed
+}
+
+export function requireProfileId(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    throw new Error('Некорректный profileId')
+  }
+  return value
+}
+
+export function optionalProfileId(
+  value: unknown,
+): number | null | undefined {
+  if (value === undefined) {
+    return undefined
+  }
+  if (value === null) {
+    return null
+  }
+  return requireProfileId(value)
+}
+
+export function requireProfileName(value: unknown): string {
+  if (typeof value !== 'string') {
+    throw new Error('Имя профиля обязательно')
+  }
+  const trimmed = value.trim()
+  if (trimmed.length === 0) {
+    throw new Error('Имя профиля обязательно')
+  }
+  if (trimmed.length > PROFILE_NAME_MAX) {
+    throw new Error(`Имя профиля длиннее ${PROFILE_NAME_MAX} символов`)
+  }
+  return trimmed
+}
+
+export function optionalProfileField(
+  value: unknown,
+  field: ProfileField,
+): string | null {
+  if (value === undefined || value === null) {
+    return null
+  }
+  if (typeof value !== 'string') {
+    throw new Error('Некорректное значение поля профиля')
+  }
+  const trimmed = value.trim()
+  if (trimmed.length === 0) {
+    return null
+  }
+  const max = profileFieldMax(field)
+  if (trimmed.length > max) {
+    throw new Error(`Значение поля «${field}» длиннее ${max} символов`)
+  }
+  return trimmed
+}
+
+export function requireProfileInput(value: unknown): ProfileInput {
+  const data = asObject(value)
+  return {
+    name: requireProfileName(data.name),
+    addressing: optionalProfileField(data.addressing, 'addressing'),
+    tone: optionalProfileField(data.tone, 'tone'),
+    language: optionalProfileField(data.language, 'language'),
+    verbosity: optionalProfileField(data.verbosity, 'verbosity'),
+    format: optionalProfileField(data.format, 'format'),
+    constraints: optionalProfileField(data.constraints, 'constraints'),
+    instructions: optionalProfileField(data.instructions, 'instructions'),
+  }
 }

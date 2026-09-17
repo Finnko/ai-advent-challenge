@@ -7,6 +7,8 @@ import type {
 } from '../domain/agent'
 import { normalizeName } from '../domain/agent-tools'
 
+export const TEST_NOW = new Date('2026-09-10T12:00:00')
+
 function timeToMinutes(time: string): number {
   const [hours, minutes] = time.split(':').map((part) => Number(part) || 0)
   return hours * 60 + minutes

@@ -4,6 +4,8 @@ import type { CompressionComparison } from '../types'
 import type { CompressionMessage } from '../domain/compression'
 import { resolveStrategy } from '../domain/context/registry'
 import {
+  getProfile,
+  getSession,
   getSessionFacts,
   getSessionSummary,
   loadMessages as loadMessagesFromStore,
@@ -36,6 +38,9 @@ export const compareCompression = createServerFn({ method: 'POST' })
     const rows = await loadMessagesFromStore(data.sessionId)
     const stored = await getSessionSummary(data.sessionId)
     const facts = await getSessionFacts(data.sessionId)
+    const session = await getSession(data.sessionId)
+    const profile =
+      session?.profileId != null ? await getProfile(session.profileId) : null
     const compressionRows = rows.map(toCompressionMessage)
     const previousSummary = stored
       ? { text: stored.summary, throughMessageId: stored.throughMessageId }
@@ -48,6 +53,7 @@ export const compareCompression = createServerFn({ method: 'POST' })
       rows: compressionRows,
       previousSummary,
       facts,
+      profile,
       saveSummary: noopSaveSummary,
       saveFacts: noopSaveSummary,
     })
@@ -58,6 +64,7 @@ export const compareCompression = createServerFn({ method: 'POST' })
       rows: compressionRows,
       previousSummary: null,
       facts,
+      profile,
       saveSummary: noopSaveSummary,
       saveFacts: noopSaveSummary,
     })

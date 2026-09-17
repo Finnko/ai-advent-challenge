@@ -2,6 +2,7 @@ import type { AgentRunResult, AgentRole } from './domain/agent'
 import type { SummaryUsage } from './domain/compression'
 import type { ContextStrategyId } from './domain/context/types'
 import type { MemoryEntry } from './domain/memory/types'
+import type { ProfileRecord } from './domain/profile/types'
 
 export type OrgPerson = {
   token: string
@@ -17,9 +18,23 @@ export type SessionSummary = {
   strategy: ContextStrategyId
   scenario: string | null
   memoryEnabled: boolean
+  profileId: number | null
+  profileName: string | null
   createdAt: string
   lastMessage: string
   messageCount: number
+}
+
+export type ProfileItem = ProfileRecord
+
+export type ProfileComparisonEntry = {
+  profileId: number
+  profileName: string
+  run: AgentRunResult
+}
+
+export type ProfileComparison = {
+  results: ProfileComparisonEntry[]
 }
 
 export type MemoryItem = MemoryEntry

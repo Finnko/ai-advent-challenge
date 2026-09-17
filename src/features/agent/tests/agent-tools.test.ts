@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { AgentTool } from '../domain/agent'
 import { ROOMS, ROOM_CAPACITY, createAgentTools } from '../domain/agent-tools'
 import {
+  TEST_NOW,
   createBooking,
   createFakeStore,
   createIdentity,
@@ -11,7 +12,9 @@ import {
 } from './agent-testkit'
 
 function getTool(store: FakeStore, name: string): AgentTool {
-  const tool = createAgentTools(store).find((item) => item.name === name)
+  const tool = createAgentTools(store, TEST_NOW).find(
+    (item) => item.name === name,
+  )
   if (!tool) {
     throw new Error(`Инструмент ${name} не найден`)
   }
@@ -110,6 +113,33 @@ describe('bookMeetingRoom', () => {
     expect((await tool.run({}, createIdentity())).text).toContain(
       'Не указаны дата и время',
     )
+  })
+
+  it('отказывает на прошедшей дате', async () => {
+    const store = createFakeStore()
+    const outcome = await getTool(store, 'bookMeetingRoom').run(
+      { room: 'Иртыш', date: '2026-09-09', time: '16:00' },
+      createIdentity(),
+    )
+    expect(outcome.ok).toBe(false)
+    expect(outcome.text).toContain('в прошлом')
+    expect(store.bookings).toHaveLength(0)
+  })
+
+  it('отказывает на уже прошедшем времени сегодня и разрешает будущее', async () => {
+    const store = createFakeStore()
+    const tool = getTool(store, 'bookMeetingRoom')
+    const past = await tool.run(
+      { room: 'Иртыш', date: '2026-09-10', time: '11:00' },
+      createIdentity(),
+    )
+    expect(past.ok).toBe(false)
+    expect(past.text).toContain('в прошлом')
+    const future = await tool.run(
+      { room: 'Иртыш', date: '2026-09-10', time: '13:00' },
+      createIdentity(),
+    )
+    expect(future.ok).toBe(true)
   })
 })
 
@@ -328,6 +358,62 @@ describe('listBookings', () => {
       'listBookings',
     ).run({}, createIdentity())
     expect(outcome.text).toContain('Записанных встреч нет')
+  })
+
+  it('скрывает прошедшие встречи по умолчанию', async () => {
+    const store = createFakeStore({
+      bookings: [
+        createBooking({ room: 'Переговорка «Иртыш»', date: '2026-09-01' }),
+        createBooking({ room: 'Переговорка «Ладога»', date: '2026-09-11' }),
+      ],
+    })
+    const outcome = await getTool(store, 'listBookings').run(
+      {},
+      createIdentity(),
+    )
+    expect(outcome.text).toContain('Ладога')
+    expect(outcome.text).not.toContain('Иртыш')
+  })
+
+  it('показывает прошедшие встречи с includePast', async () => {
+    const store = createFakeStore({
+      bookings: [
+        createBooking({ room: 'Переговорка «Иртыш»', date: '2026-09-01' }),
+        createBooking({ room: 'Переговорка «Ладога»', date: '2026-09-11' }),
+      ],
+    })
+    const outcome = await getTool(store, 'listBookings').run(
+      { includePast: true },
+      createIdentity(),
+    )
+    expect(outcome.text).toContain('Иртыш')
+    expect(outcome.text).toContain('Ладога')
+  })
+
+  it('фильтрует по диапазону from/to', async () => {
+    const store = createFakeStore({
+      bookings: [
+        createBooking({ room: 'Переговорка «Иртыш»', date: '2026-09-01' }),
+        createBooking({ room: 'Переговорка «Ладога»', date: '2026-09-11' }),
+        createBooking({ room: 'Переговорка «Байкал»', date: '2026-09-20' }),
+      ],
+    })
+    const outcome = await getTool(store, 'listBookings').run(
+      { from: '2026-09-05', to: '2026-09-15' },
+      createIdentity(),
+    )
+    expect(outcome.text).toContain('Ладога')
+    expect(outcome.text).not.toContain('Иртыш')
+    expect(outcome.text).not.toContain('Байкал')
+  })
+
+  it('валидирует даты диапазона', async () => {
+    const outcome = await getTool(createFakeStore(), 'listBookings').run(
+      { from: '05.09.2026' },
+      createIdentity(),
+    )
+    expect(outcome.ok).toBe(false)
+    expect(outcome.text).toContain('YYYY-MM-DD')
   })
 })
 

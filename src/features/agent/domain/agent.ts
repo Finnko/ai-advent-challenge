@@ -65,7 +65,7 @@ export type CallLLM = (params: {
 }) => Promise<LlmReply>
 
 export type SystemBlock = {
-  kind: 'summary' | 'facts' | 'working' | 'long-term'
+  kind: 'summary' | 'facts' | 'working' | 'long-term' | 'profile'
   content: string
 }
 
@@ -244,6 +244,7 @@ export type AgentConfig = {
   callLLM: CallLLM
   model: string
   today: string
+  responseLanguage?: string | null
   context?: string
   contextBudgetTokens?: number
 }
@@ -368,6 +369,23 @@ const HARDENING_LINE =
 const MEMORY_PRECEDENCE_LINE =
   'Блоки памяти выше (РАБОЧАЯ ПАМЯТЬ / ДОЛГОВРЕМЕННАЯ ПАМЯТЬ) — актуальный источник фактов о пользователе. При расхождении с более ранними репликами истории доверяй памяти, а не прежнему ответу. Не утверждай, что данных нет, если они есть в блоках памяти.'
 
+const PROFILE_PRECEDENCE_LINE =
+  'Блок ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ выше — настройки стиля, формата и ограничений пользователя. Соблюдай их в ответе.'
+
+function buildPrecedenceLine(
+  hasProfileBlocks: boolean,
+  hasMemoryBlocks: boolean,
+): string | null {
+  const lines: string[] = []
+  if (hasProfileBlocks) {
+    lines.push(PROFILE_PRECEDENCE_LINE)
+  }
+  if (hasMemoryBlocks) {
+    lines.push(MEMORY_PRECEDENCE_LINE)
+  }
+  return lines.length > 0 ? lines.join('\n') : null
+}
+
 function buildBaseSystem(caps: AgentCapabilities, today: string): string {
   return [
     `Ты — корпоративный агент. Сегодня: ${today}. Пользователь: ${caps.identity.title} ${caps.identity.name} (роль: ${caps.identity.role}).`,
@@ -386,7 +404,7 @@ function buildDecideUser(
   caps: AgentCapabilities,
   tools: AgentTool[],
   context: string | undefined,
-  hasMemoryBlocks: boolean,
+  precedenceLine: string | null,
 ): string {
   const available = caps.allowedTools
     .map((name) => tools.find((t) => t.name === name))
@@ -408,6 +426,11 @@ function buildDecideUser(
           'Вопросы о том, какие переговорки свободны/доступны на дату и время, решай через listAvailableRooms, а не по памяти.',
         ]
       : []),
+    ...(available.some((t) => t.name === 'listBookings')
+      ? [
+          'Прошедшие встречи listBookings по умолчанию не показывает. Если пользователь явно спрашивает о прошлых встречах или о периоде — передай includePast: true и, при необходимости, from/to в формате YYYY-MM-DD.',
+        ]
+      : []),
     ...(available.some((t) => t.name === 'inviteToMeeting')
       ? [
           'Просьбу позвать/пригласить сотрудников на встречу решай через inviteToMeeting. Комнату, дату и время бери из сообщения или из контекста (последняя бронь пользователя). Если они известны из контекста — обязательно вызывай инструмент, не переспрашивай.',
@@ -426,29 +449,45 @@ function buildDecideUser(
         ]
       : []),
     ...(context ? ['', 'Контекст:', context] : []),
-    ...(hasMemoryBlocks ? ['', MEMORY_PRECEDENCE_LINE] : []),
+    ...(precedenceLine ? ['', precedenceLine] : []),
     '',
     'Ответь ровно одним json-объектом вида {"tool": "имя_инструмента" | null, "args": { ... }}. Без текста до "{" и после "}", без markdown.',
   ]
   return lines.join('\n')
 }
 
+function buildLanguageLine(
+  responseLanguage: string | null,
+  hasProfileBlocks: boolean,
+): string {
+  if (responseLanguage) {
+    return `Язык ответа: ${responseLanguage}. Отвечай на нём, даже если запрос или отчёт инструмента на русском.`
+  }
+  if (hasProfileBlocks) {
+    return 'Язык и стиль ответа — по блоку ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ (по умолчанию русский).'
+  }
+  return 'Отвечай по-русски.'
+}
+
 function buildFinalizeUser(
   request: string,
   report: string,
-  hasMemoryBlocks: boolean,
+  precedenceLine: string | null,
+  responseLanguage: string | null,
+  hasProfileBlocks: boolean,
 ): string {
   return [
     `Запрос пользователя:\n${request}`,
     '',
     report,
     '',
-    ...(hasMemoryBlocks ? [MEMORY_PRECEDENCE_LINE, ''] : []),
+    ...(precedenceLine ? [precedenceLine, ''] : []),
     'Отвечай по фактам из отчёта инструмента. Если в отчёте есть «Код подтверждения: …» — включи этот код в ответ дословно. Не выдумывай выполненные действия, которых нет в отчёте.',
     'Если инструмент не вызывался — просто ответь на запрос.',
     'Вопросы вроде «кому я согласовал отпуск?» решаются через listVacations — не отвечай по памяти модели, используй данные отчёта.',
     'Список участников встречи бери из отчёта инструмента — не выдумывай приглашённых.',
-    'Отвечай кратко, по-русски, обычным текстом без markdown-разметки.',
+    'Отвечай кратко, обычным текстом без markdown-разметки.',
+    buildLanguageLine(responseLanguage, hasProfileBlocks),
   ].join('\n')
 }
 
@@ -511,6 +550,10 @@ function isMemoryBlock(block: SystemBlock): boolean {
   return block.kind === 'working' || block.kind === 'long-term'
 }
 
+function isProfileBlock(block: SystemBlock): boolean {
+  return block.kind === 'profile'
+}
+
 function asSystemMessage(block: SystemBlock): LlmMessage {
   return { role: 'system', content: block.content }
 }
@@ -530,9 +573,17 @@ export class Agent {
 
     const history = prepared.history
     const blocks = prepared.blocks
+    const profileBlocks = blocks.filter(isProfileBlock)
     const memoryBlocks = blocks.filter(isMemoryBlock)
-    const contextBlocks = blocks.filter((block) => !isMemoryBlock(block))
+    const contextBlocks = blocks.filter(
+      (block) => !isMemoryBlock(block) && !isProfileBlock(block),
+    )
     const hasMemoryBlocks = memoryBlocks.length > 0
+    const hasProfileBlocks = profileBlocks.length > 0
+    const precedenceLine = buildPrecedenceLine(
+      hasProfileBlocks,
+      hasMemoryBlocks,
+    )
     const requestTokens = estimateTokens(request)
     const historyTokens = estimateMessagesTokens(history)
     const contextTokens = estimateMessagesTokens(
@@ -607,13 +658,14 @@ export class Agent {
         capabilities,
         tools,
         this.config.context,
-        hasMemoryBlocks,
+        precedenceLine,
       )
       const reply = await callLLM({
         messages: [
           { role: 'system', content: baseSystem },
           ...contextBlocks.map(asSystemMessage),
           ...history,
+          ...profileBlocks.map(asSystemMessage),
           ...memoryBlocks.map(asSystemMessage),
           { role: 'user', content: decideUser },
           ...(nudge ? [{ role: 'user' as const, content: nudge }] : []),
@@ -679,13 +731,16 @@ export class Agent {
       const finalizeUser = buildFinalizeUser(
         request,
         report,
-        hasMemoryBlocks,
+        precedenceLine,
+        this.config.responseLanguage ?? null,
+        hasProfileBlocks,
       )
       const finalizeReply = await callLLM({
         messages: [
           { role: 'system', content: baseSystem },
           ...contextBlocks.map(asSystemMessage),
           ...(outcome ? [] : history),
+          ...profileBlocks.map(asSystemMessage),
           ...memoryBlocks.map(asSystemMessage),
           { role: 'user', content: finalizeUser },
         ],

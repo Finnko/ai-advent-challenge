@@ -9,6 +9,7 @@ import {
   createSession as createSessionFromStore,
   getActiveBranch,
   getLongTermMemory,
+  getProfile,
   getSession,
   getSessionFacts,
   getSessionSummary,
@@ -85,6 +86,9 @@ export const runAgent = createServerFn({ method: 'POST' })
       ? await getLongTermMemory(session?.token ?? data.token)
       : []
 
+    const profile =
+      session?.profileId != null ? await getProfile(session.profileId) : null
+
     const execution = await executeAgent({
       capabilities,
       user: data.user,
@@ -95,6 +99,7 @@ export const runAgent = createServerFn({ method: 'POST' })
         : null,
       facts,
       branchLabel: activeBranch?.title,
+      profile,
       memory: {
         enabled: memoryEnabled,
         token: session?.token ?? data.token,

@@ -15,6 +15,7 @@ export type SendMessageInput = {
   strategy: string
   scenario?: string | null
   memory?: boolean
+  profileId?: number | null
 }
 
 export async function sendMessage(
@@ -28,6 +29,7 @@ export async function sendMessage(
         strategy: input.strategy,
         scenario: input.scenario ?? null,
         memory: input.memory ?? false,
+        profileId: input.profileId,
       },
     })
     sessionId = created.sessionId
@@ -37,14 +39,14 @@ export async function sendMessage(
   })
 }
 
-export function useSendMessage(token: string) {
+export function useSendMessage() {
   const queryClient = useQueryClient()
+
   return useMutation({
-    mutationFn: sendMessage,
-    onSuccess: (result) => {
+    onSuccess: (result, vars) => {
       const sessionId = result.sessionId
       queryClient.invalidateQueries({
-        queryKey: sessionsQueryOptions(token).queryKey,
+        queryKey: sessionsQueryOptions(vars.token).queryKey,
       })
       queryClient.invalidateQueries({
         queryKey: sessionMessagesQueryOptions(sessionId).queryKey,
@@ -56,8 +58,9 @@ export function useSendMessage(token: string) {
         queryKey: sessionFactsQueryOptions(sessionId).queryKey,
       })
       queryClient.invalidateQueries({
-        queryKey: memoryQueryOptions(sessionId, token).queryKey,
+        queryKey: memoryQueryOptions(sessionId, vars.token).queryKey,
       })
     },
+    mutationFn: sendMessage,
   })
 }

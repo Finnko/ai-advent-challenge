@@ -43,3 +43,14 @@ export type {
   SessionSummaryRow,
   StoredMessage,
 } from './store/sessions.server'
+export {
+  createProfile,
+  deleteProfile,
+  getDefaultProfile,
+  getDefaultProfileId,
+  getProfile,
+  listProfiles,
+  setDefaultProfile,
+  updateProfile,
+} from './store/profiles.server'
+export type { ProfileRow } from './store/profiles.server'

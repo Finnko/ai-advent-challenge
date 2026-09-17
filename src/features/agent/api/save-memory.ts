@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import type { MemoryLayer } from '../domain/memory/types'
-import { saveMemory } from '../functions/save-memory.functions'
+import { saveMemory as saveMemoryFn } from '../functions/save-memory.functions'
 import { memoryQueryOptions } from './get-memory'
 
 export type SaveMemoryInput = {
@@ -12,14 +12,17 @@ export type SaveMemoryInput = {
   scenario?: string | null
 }
 
+export const saveMemory = (input: SaveMemoryInput) => saveMemoryFn({ data: input })
+
 export function useSaveMemory() {
   const queryClient = useQueryClient()
+
   return useMutation({
-    mutationFn: (input: SaveMemoryInput) => saveMemory({ data: input }),
-    onSuccess: (_result, input) => {
+    onSuccess: (_result, vars) => {
       queryClient.invalidateQueries({
-        queryKey: memoryQueryOptions(input.sessionId, input.token).queryKey,
+        queryKey: memoryQueryOptions(vars.sessionId, vars.token).queryKey,
       })
     },
+    mutationFn: saveMemory,
   })
 }

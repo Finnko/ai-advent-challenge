@@ -28,6 +28,8 @@ import {
   mergeMemoryEntries,
 } from '../domain/memory/read'
 import { MemoryRouter } from '../domain/memory/router'
+import type { ProfileRecord } from '../domain/profile/types'
+import { buildProfileBlocks } from '../domain/profile/read'
 import {
   callCompletions,
   apiKeyFor,
@@ -139,6 +141,7 @@ export type ExecuteOptions = {
   facts: Fact[]
   branchLabel?: string
   memory?: MemoryOptions
+  profile?: ProfileRecord | null
   saveSummary: (
     summary: string,
     throughMessageId: number,
@@ -154,19 +157,22 @@ export type AgentExecution = {
 export async function executeAgent(
   options: ExecuteOptions,
 ): Promise<AgentExecution> {
+  const now = new Date()
   const store = createAgentStore()
   const context = await buildAgentContext(store, options.capabilities)
   const agent = new Agent({
     capabilities: options.capabilities,
-    tools: createAgentTools(store),
+    tools: createAgentTools(store, now),
     judges: AGENT_JUDGES,
     callLLM: callFlash,
     model: TIER_ENDPOINTS.medium.model,
-    today: todayIso(),
+    today: todayIso(now),
+    responseLanguage: options.profile?.language ?? null,
     context,
   })
   try {
     const memoryBlocks = await prepareMemoryBlocks(options)
+    const profileBlocks = buildProfileBlocks(options.profile ?? null)
     const prepared = await options.strategy.prepare({
       rows: options.rows,
       request: options.user,
@@ -180,7 +186,11 @@ export async function executeAgent(
     })
     const context: PreparedContext = {
       ...prepared.context,
-      blocks: [...memoryBlocks.blocks, ...prepared.context.blocks],
+      blocks: [
+        ...profileBlocks,
+        ...memoryBlocks.blocks,
+        ...prepared.context.blocks,
+      ],
     }
     const run = await agent.run(options.user, context)
     return {
@@ -278,8 +288,7 @@ function blockedRun(options: ExecuteOptions, error: unknown): AgentRunResult {
   }
 }
 
-function todayIso(): string {
-  const now = new Date()
+function todayIso(now: Date = new Date()): string {
   const month = String(now.getMonth() + 1).padStart(2, '0')
   const day = String(now.getDate()).padStart(2, '0')
   return `${now.getFullYear()}-${month}-${day}`

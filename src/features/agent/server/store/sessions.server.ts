@@ -3,6 +3,7 @@ import type { ContextStrategyId } from '../../domain/context/types'
 import type { Fact } from '../../domain/facts'
 import type { MemoryEntry, MemoryLayer } from '../../domain/memory/types'
 import { getDb, nowIso, safeParse } from './db.server'
+import { getDefaultProfileId } from './profiles.server'
 
 export type PersonRow = {
   id: number
@@ -21,6 +22,7 @@ export type SessionRow = {
   scenario: string | null
   active_branch_id: number | null
   memoryEnabled: boolean
+  profileId: number | null
   created_at: string
 }
 
@@ -48,6 +50,8 @@ export type SessionListItem = {
   strategy: ContextStrategyId
   scenario: string | null
   memoryEnabled: boolean
+  profileId: number | null
+  profileName: string | null
   createdAt: string
   lastMessage: string
   messageCount: number
@@ -113,17 +117,22 @@ export async function createSession(
     strategy?: ContextStrategyId
     scenario?: string | null
     memory?: boolean
+    profileId?: number | null
   } = {},
 ): Promise<number> {
   const db = await getDb()
   const strategy = options.strategy ?? 'summary'
   const scenario = options.scenario ?? null
   const memoryEnabled = options.memory ? 1 : 0
+  const profileId =
+    options.profileId === undefined
+      ? await getDefaultProfileId(token)
+      : options.profileId
   const result = db
     .prepare(
-      'INSERT INTO sessions (token, title, strategy, scenario, memory_enabled, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+      'INSERT INTO sessions (token, title, strategy, scenario, memory_enabled, profile_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
     )
-    .run(token, title, strategy, scenario, memoryEnabled, nowIso())
+    .run(token, title, strategy, scenario, memoryEnabled, profileId, nowIso())
   const sessionId = Number(result.lastInsertRowid)
   const branch = db
     .prepare(
@@ -141,7 +150,7 @@ export async function getSession(sessionId: number): Promise<SessionRow | null> 
   const db = await getDb()
   const row = db
     .prepare(
-      'SELECT id, token, title, strategy, scenario, active_branch_id, memory_enabled, created_at FROM sessions WHERE id = ?',
+      'SELECT id, token, title, strategy, scenario, active_branch_id, memory_enabled, profile_id, created_at FROM sessions WHERE id = ?',
     )
     .get(sessionId) as
     | {
@@ -152,6 +161,7 @@ export async function getSession(sessionId: number): Promise<SessionRow | null> 
         scenario: string | null
         active_branch_id: number | null
         memory_enabled: number
+        profile_id: number | null
         created_at: string
       }
     | undefined
@@ -167,6 +177,7 @@ export async function getSession(sessionId: number): Promise<SessionRow | null> 
     active_branch_id:
       row.active_branch_id === null ? null : Number(row.active_branch_id),
     memoryEnabled: Number(row.memory_enabled) === 1,
+    profileId: row.profile_id === null ? null : Number(row.profile_id),
     created_at: row.created_at,
   }
 }
@@ -362,10 +373,13 @@ export async function listSessions(token: string): Promise<SessionListItem[]> {
         s.strategy AS strategy,
         s.scenario AS scenario,
         s.memory_enabled AS memory_enabled,
+        s.profile_id AS profile_id,
+        p.name AS profile_name,
         s.created_at AS created_at,
         (SELECT m.content FROM messages m WHERE m.session_id = s.id AND m.branch_id = s.active_branch_id ORDER BY m.id DESC LIMIT 1) AS last_message,
         (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id AND m.branch_id = s.active_branch_id) AS message_count
       FROM sessions s
+      LEFT JOIN profiles p ON p.id = s.profile_id
       WHERE s.token = ?
       ORDER BY s.id DESC`,
     )
@@ -375,6 +389,8 @@ export async function listSessions(token: string): Promise<SessionListItem[]> {
     strategy: string
     scenario: string | null
     memory_enabled: number
+    profile_id: number | null
+    profile_name: string | null
     created_at: string
     last_message: string | null
     message_count: number
@@ -385,6 +401,8 @@ export async function listSessions(token: string): Promise<SessionListItem[]> {
     strategy: row.strategy as ContextStrategyId,
     scenario: row.scenario,
     memoryEnabled: Number(row.memory_enabled) === 1,
+    profileId: row.profile_id === null ? null : Number(row.profile_id),
+    profileName: row.profile_name,
     createdAt: row.created_at,
     lastMessage: row.last_message ?? '',
     messageCount: Number(row.message_count),

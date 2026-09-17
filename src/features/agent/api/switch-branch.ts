@@ -1,21 +1,29 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { switchBranch } from '../functions/switch-branch.functions'
+import { switchBranch as switchBranchFn } from '../functions/switch-branch.functions'
 import { sessionBranchesQueryOptions } from './get-branches'
 import { sessionMessagesQueryOptions } from './get-session-messages'
 
+export type SwitchBranchInput = {
+  sessionId: number
+  branchId: number
+}
+
+export const switchBranch = (input: SwitchBranchInput) =>
+  switchBranchFn({ data: input })
+
 export function useSwitchBranch() {
   const queryClient = useQueryClient()
+
   return useMutation({
-    mutationFn: (input: { sessionId: number; branchId: number }) =>
-      switchBranch({ data: input }),
-    onSuccess: (result, input) => {
+    onSuccess: (result, vars) => {
       queryClient.setQueryData(
-        sessionBranchesQueryOptions(input.sessionId).queryKey,
+        sessionBranchesQueryOptions(vars.sessionId).queryKey,
         result.branches,
       )
       queryClient.invalidateQueries({
-        queryKey: sessionMessagesQueryOptions(input.sessionId).queryKey,
+        queryKey: sessionMessagesQueryOptions(vars.sessionId).queryKey,
       })
     },
+    mutationFn: switchBranch,
   })
 }
