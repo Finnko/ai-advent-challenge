@@ -1,16 +1,24 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { deleteSession } from '../functions/delete-session.functions'
+import { deleteSession as deleteSessionFn } from '../functions/delete-session.functions'
 import { sessionsQueryOptions } from './get-sessions'
 
-export function useDeleteSession(token: string) {
+export type DeleteSessionInput = {
+  token: string
+  sessionId: number
+}
+
+export const deleteSession = ({ token: _token, sessionId }: DeleteSessionInput) =>
+  deleteSessionFn({ data: { sessionId } })
+
+export function useDeleteSession() {
   const queryClient = useQueryClient()
+
   return useMutation({
-    mutationFn: (sessionId: number) =>
-      deleteSession({ data: { sessionId } }),
-    onSuccess: () => {
+    onSuccess: (_result, vars) => {
       queryClient.invalidateQueries({
-        queryKey: sessionsQueryOptions(token).queryKey,
+        queryKey: sessionsQueryOptions(vars.token).queryKey,
       })
     },
+    mutationFn: deleteSession,
   })
 }

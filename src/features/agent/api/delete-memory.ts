@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import type { MemoryLayer } from '../domain/memory/types'
-import { deleteMemory } from '../functions/delete-memory.functions'
+import { deleteMemory as deleteMemoryFn } from '../functions/delete-memory.functions'
 import { memoryQueryOptions } from './get-memory'
 
 export type DeleteMemoryInput = {
@@ -10,14 +10,18 @@ export type DeleteMemoryInput = {
   key: string
 }
 
+export const deleteMemory = (input: DeleteMemoryInput) =>
+  deleteMemoryFn({ data: input })
+
 export function useDeleteMemory() {
   const queryClient = useQueryClient()
+
   return useMutation({
-    mutationFn: (input: DeleteMemoryInput) => deleteMemory({ data: input }),
-    onSuccess: (_result, input) => {
+    onSuccess: (_result, vars) => {
       queryClient.invalidateQueries({
-        queryKey: memoryQueryOptions(input.sessionId, input.token).queryKey,
+        queryKey: memoryQueryOptions(vars.sessionId, vars.token).queryKey,
       })
     },
+    mutationFn: deleteMemory,
   })
 }

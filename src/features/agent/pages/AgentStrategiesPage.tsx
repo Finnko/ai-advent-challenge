@@ -26,6 +26,7 @@ import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Textarea } from '@/components/ui/Textarea'
 import { Alert } from '@/components/ui/Alert'
+import { Badge } from '@/components/ui/Badge'
 import PersonaPicker from '../components/PersonaPicker'
 import ChatThread from '../components/ChatThread'
 import type { ThreadMessage } from '../components/ChatThread'
@@ -64,12 +65,12 @@ export default function AgentStrategiesPage() {
   const factsQuery = useSessionFacts(sessionId)
   const checklistQuery = useChecklist(activeToken, scenario)
 
-  const sendMutation = useSendMessage(activeToken ?? '')
-  const deleteMutation = useDeleteSession(activeToken ?? '')
+  const sendMutation = useSendMessage()
+  const deleteMutation = useDeleteSession()
   const branchMutation = useCreateBranch()
   const switchMutation = useSwitchBranch()
   const compareMutation = useCompareSessions()
-  const saveChecklistMutation = useSaveChecklist(activeToken ?? '', scenario)
+  const saveChecklistMutation = useSaveChecklist()
 
   const messages: ThreadMessage[] = (messagesQuery.data ?? []).map((row) => ({
     id: row.id,
@@ -151,13 +152,16 @@ export default function AgentStrategiesPage() {
     if (busy) {
       return
     }
-    deleteMutation.mutate(id, {
-      onSuccess: () => {
-        if (id === sessionId) {
-          setSessionId(null)
-        }
+    deleteMutation.mutate(
+      { token: activeToken ?? '', sessionId: id },
+      {
+        onSuccess: () => {
+          if (id === sessionId) {
+            setSessionId(null)
+          }
+        },
       },
-    })
+    )
   }
 
   const handleSend = () => {
@@ -213,14 +217,18 @@ export default function AgentStrategiesPage() {
       return
     }
     setChecklistDraft('')
-    saveChecklistMutation.mutate([...checklist, value])
+    saveChecklistMutation.mutate({ token: activeToken, scenario, items: [...checklist, value] })
   }
 
   const handleRemoveChecklist = (index: number) => {
     if (!activeToken) {
       return
     }
-    saveChecklistMutation.mutate(checklist.filter((_, i) => i !== index))
+    saveChecklistMutation.mutate({
+      token: activeToken,
+      scenario,
+      items: checklist.filter((_, i) => i !== index),
+    })
   }
 
   const sendError = sendMutation.isError ? toError(sendMutation.error) : null
@@ -286,9 +294,14 @@ export default function AgentStrategiesPage() {
               <h2 className="demo-section-title m-0">
                 Чат · {activePerson.name}
               </h2>
-              <span className="demo-muted text-xs">
-                {sessionId ? `сессия #${sessionId}` : 'новая сессия'}
-              </span>
+              <div className="flex items-center gap-2">
+                {sessionSummary?.profileName && (
+                  <Badge>{sessionSummary.profileName}</Badge>
+                )}
+                <span className="demo-muted text-xs">
+                  {sessionId ? `сессия #${sessionId}` : 'новая сессия'}
+                </span>
+              </div>
             </div>
 
             <div className="flex flex-wrap items-center gap-3">

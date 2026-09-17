@@ -53,15 +53,17 @@ describe('migrateSessions', () => {
 
     const session = db
       .prepare(
-        'SELECT strategy, scenario, active_branch_id FROM sessions WHERE id = 1',
+        'SELECT strategy, scenario, active_branch_id, profile_id FROM sessions WHERE id = 1',
       )
       .get() as {
       strategy: string
       scenario: string | null
       active_branch_id: number
+      profile_id: number | null
     }
     expect(session.strategy).toBe('summary')
     expect(session.scenario).toBeNull()
+    expect(session.profile_id).toBeNull()
     expect(session.active_branch_id).not.toBeNull()
 
     const branch = db

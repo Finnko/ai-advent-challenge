@@ -58,8 +58,8 @@ export default function AgentPage() {
   const sessionsQuery = useSessions(activeToken)
   const messagesQuery = useSessionMessages(sessionId)
 
-  const sendMutation = useSendMessage(activeToken ?? '')
-  const deleteMutation = useDeleteSession(activeToken ?? '')
+  const sendMutation = useSendMessage()
+  const deleteMutation = useDeleteSession()
   const compareMutation = useCompareCompression()
 
   const messages: ThreadMessage[] = (messagesQuery.data ?? []).map((row) => ({
@@ -124,13 +124,16 @@ export default function AgentPage() {
     if (busy) {
       return
     }
-    deleteMutation.mutate(id, {
-      onSuccess: () => {
-        if (id === sessionId) {
-          setSessionId(null)
-        }
+    deleteMutation.mutate(
+      { token: activeToken ?? '', sessionId: id },
+      {
+        onSuccess: () => {
+          if (id === sessionId) {
+            setSessionId(null)
+          }
+        },
       },
-    })
+    )
   }
 
   const handleSend = () => {

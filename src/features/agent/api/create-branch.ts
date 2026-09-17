@@ -1,25 +1,31 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { createBranch } from '../functions/create-branch.functions'
+import { createBranch as createBranchFn } from '../functions/create-branch.functions'
 import { sessionBranchesQueryOptions } from './get-branches'
 import { sessionMessagesQueryOptions } from './get-session-messages'
 
+export type CreateBranchInput = {
+  sessionId: number
+  fromMessageId: number
+  parentBranchId?: number
+  title?: string
+}
+
+export const createBranch = (input: CreateBranchInput) =>
+  createBranchFn({ data: input })
+
 export function useCreateBranch() {
   const queryClient = useQueryClient()
+
   return useMutation({
-    mutationFn: (input: {
-      sessionId: number
-      fromMessageId: number
-      parentBranchId?: number
-      title?: string
-    }) => createBranch({ data: input }),
-    onSuccess: (result, input) => {
+    onSuccess: (result, vars) => {
       queryClient.setQueryData(
-        sessionBranchesQueryOptions(input.sessionId).queryKey,
+        sessionBranchesQueryOptions(vars.sessionId).queryKey,
         result.branches,
       )
       queryClient.invalidateQueries({
-        queryKey: sessionMessagesQueryOptions(input.sessionId).queryKey,
+        queryKey: sessionMessagesQueryOptions(vars.sessionId).queryKey,
       })
     },
+    mutationFn: createBranch,
   })
 }

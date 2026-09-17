@@ -1,6 +1,6 @@
 # Project: AI Advent Challenge
 
-Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 11 (`feature/day11`).
+Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 12 (`feature/day12`).
 
 ## Stack
 
@@ -41,6 +41,8 @@ Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 
   action-like request.
 - Room names resolve case/prefix-insensitively; groups over `ROOM_CAPACITY` are refused; `listVacations`
   output omits reference codes.
+- Tools get a `ToolClock` (`createAgentTools(store, now)`); `bookMeetingRoom` refuses slots in the past, and
+  `listBookings` hides past meetings by default (override with `includePast`/`from`/`to`).
 - An API failure (e.g. raw 400 on a huge prompt) becomes a graceful blocked `AgentRunResult`, never a
   thrown error.
 
@@ -51,10 +53,10 @@ Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 
 - **Strategy is fixed per session** (`sessions.strategy`): set by `createSession`, read by `runAgent`;
   never switchable mid-session.
 - Strategy blocks are inserted as **separate `system` messages** after the base system and before raw
-  history, in both `decide` and `finalize`. Memory blocks go **after** the history (last, right before
-  the user turn) so stale prior replies don't override fresher memory. Base system is byte-identical
-  across stages; volatile content (tools, rooms, context, stage instruction) goes in the last user
-  message, so the cache prefix survives.
+  history, in both `decide` and `finalize`. Profile and memory blocks go **after** the history, in order
+  `profile → long-term → working` (last, right before the user turn) so stale prior replies don't override
+  fresher profile/memory. Base system is byte-identical across stages; volatile content (tools, rooms,
+  context, stage instruction) goes in the last user message, so the cache prefix survives.
 - Pure modules (no env/fetch — offline tests): `compression.ts`, `facts.ts`.
 
 ## Memory model (Day 11)
@@ -73,6 +75,21 @@ Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 
   Auto-extraction runs each turn; manual entries (`source='manual'`) survive auto overwrites; long-term
   is capped at `LONG_TERM_LIMIT`.
 
+## User profile (Day 12)
+
+- Seam in `features/agent/domain/profile/`: `types.ts` (fields, limits, labels) and `read.ts`
+  (`formatProfileBlock` / `buildProfileBlocks`); stored in the `profiles` table keyed by `token`.
+- Profile is **fixed per session** (`sessions.profile_id`): set by `createSession` (explicit id,
+  `null`, or default), read by `runAgent`. `deleteProfile` nulls the sessions and transfers the default
+  to the most recent remaining profile; a partial unique index keeps **one default per token**.
+- `SystemBlock.kind` includes `'profile'`; the block is inserted after history and before memory, and
+  `PROFILE_PRECEDENCE_LINE` is merged into the last user message alongside `MEMORY_PRECEDENCE_LINE`.
+- `compareProfiles` runs the same request under two profiles with strategy `none`, no memory and no
+  persistence (dry-run) — the only place the client sends `profileIds`.
+- Profile is loaded server-side from the session; the client sends only ids. Limits live in
+  `functions/validation.ts` (`requireProfileName`, `optionalProfileField`: name≤60, field≤120,
+  constraints≤500, instructions≤1200).
+
 ## Persistence
 
 - `features/agent/server/store.server.ts` is a `node:sqlite` singleton. **Never import `node:sqlite`
@@ -80,8 +97,9 @@ Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 
 - DB path `~/.ai-advent-challenge/agent.sqlite` (override `AGENT_DB_PATH`); legacy `data/agent.sqlite`
   is migrated on first open, and an existing DB is snapshotted to `<db>.backups/` (last 5).
 - Migrations are idempotent (`PRAGMA table_info` + `ALTER`). Branches are copy-on-fork; `loadMessages`
-  and `appendMessage` are scoped to the active branch. Sessions carry `strategy`/`scenario`/`memory_enabled`;
-  memory lives in `working_memory` and `long_term_memory` (separate from `session_facts`/`session_summaries`).
+  and `appendMessage` are scoped to the active branch. Sessions carry
+  `strategy`/`scenario`/`memory_enabled`/`profile_id`; memory lives in `working_memory` and
+  `long_term_memory`, profiles in `profiles` (separate from `session_facts`/`session_summaries`).
 
 ## Commands
 

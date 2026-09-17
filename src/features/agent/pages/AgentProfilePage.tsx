@@ -1,19 +1,22 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { AgentRunResult } from '../domain/agent'
-import type { MemoryLayer } from '../domain/memory/types'
+import type { ProfileInput } from '../domain/profile/types'
 import { accountSession } from '../domain/accounting'
 import {
-  DEFAULT_MEMORY_SCENARIO,
-  MEMORY_SESSION_ONE,
-  MEMORY_SESSION_TWO,
-  MEMORY_STRATEGY,
-} from '../data/day11'
+  DEFAULT_PROFILE_SCENARIO,
+  PROFILE_SCRIPT,
+  PROFILE_PAGE_HINT,
+  PROFILE_STRATEGY,
+} from '../data/day12'
 import { useOrg } from '../api/get-org'
 import { useSessions } from '../api/get-sessions'
 import { useSessionMessages } from '../api/get-session-messages'
-import { useMemory } from '../api/get-memory'
-import { useSaveMemory } from '../api/save-memory'
-import { useDeleteMemory } from '../api/delete-memory'
+import { useProfiles } from '../api/get-profiles'
+import { useCreateProfile } from '../api/create-profile'
+import { useUpdateProfile } from '../api/update-profile'
+import { useDeleteProfile } from '../api/delete-profile'
+import { useSetDefaultProfile } from '../api/set-default-profile'
+import { useCompareProfiles } from '../api/compare-profiles'
 import { useSendMessage } from '../api/send-message'
 import { useDeleteSession } from '../api/delete-session'
 import PersonaPicker from '../components/PersonaPicker'
@@ -22,19 +25,20 @@ import type { ThreadMessage } from '../components/ChatThread'
 import SessionList from '../components/SessionList'
 import TokenReport from '../components/TokenReport'
 import ScenarioChips from '../components/ScenarioChips'
-import MemoryInspector from '../components/MemoryInspector'
-import MemoryPanel from '../components/MemoryPanel'
+import ProfileList from '../components/ProfileList'
+import ProfileEditor from '../components/ProfileEditor'
+import ProfileCompare from '../components/ProfileCompare'
 import { Textarea } from '@/components/ui/Textarea'
 import { Button } from '@/components/ui/Button'
 import { Alert } from '@/components/ui/Alert'
 import { Badge } from '@/components/ui/Badge'
 
-const EMPTY_MEMORY = { working: [], longTerm: [] }
-
-export default function AgentMemoryPage() {
+export default function AgentProfilePage() {
   const [activeToken, setActiveToken] = useState<string | null>(null)
   const [sessionId, setSessionId] = useState<number | null>(null)
   const [draft, setDraft] = useState('')
+  const [selectedProfileId, setSelectedProfileId] = useState<number | null>(null)
+  const [creating, setCreating] = useState(false)
 
   const orgQuery = useOrg()
   const people = orgQuery.data ?? []
@@ -51,12 +55,16 @@ export default function AgentMemoryPage() {
 
   const sessionsQuery = useSessions(activeToken)
   const messagesQuery = useSessionMessages(sessionId)
-  const memoryQuery = useMemory(sessionId, activeToken)
+  const profilesQuery = useProfiles(activeToken)
+  const profiles = profilesQuery.data ?? []
 
   const sendMutation = useSendMessage()
   const deleteSessionMutation = useDeleteSession()
-  const saveMemoryMutation = useSaveMemory()
-  const deleteMemoryMutation = useDeleteMemory()
+  const createProfileMutation = useCreateProfile()
+  const updateProfileMutation = useUpdateProfile()
+  const deleteProfileMutation = useDeleteProfile()
+  const setDefaultMutation = useSetDefaultProfile()
+  const compareMutation = useCompareProfiles()
 
   const messages: ThreadMessage[] = (messagesQuery.data ?? []).map((row) => ({
     id: row.id,
@@ -64,27 +72,26 @@ export default function AgentMemoryPage() {
     content: row.content,
     ...(row.run ? { run: row.run as AgentRunResult } : {}),
   }))
-  const memory = memoryQuery.data ?? EMPTY_MEMORY
   const sessionSummary = (sessionsQuery.data ?? []).find(
     (session) => session.id === sessionId,
   )
-  const lastUserMessage = [...messages]
-    .reverse()
-    .find((message) => message.role === 'user')?.content
-  const scriptIndex = useMemo(
-    () => messages.filter((message) => message.role === 'user').length,
-    [messages],
-  )
-  const script =
-    scriptIndex < MEMORY_SESSION_ONE.length
-      ? MEMORY_SESSION_ONE
-      : MEMORY_SESSION_TWO
+  const selectedProfile =
+    profiles.find((profile) => profile.id === selectedProfileId) ?? null
+  const defaultProfile = profiles.find((profile) => profile.isDefault) ?? null
+  const activeProfileName = sessionId
+    ? sessionSummary?.profileName ?? null
+    : (selectedProfile?.name ?? defaultProfile?.name ?? null)
+
+  const scriptIndex = messages.filter((message) => message.role === 'user').length
 
   const busy =
     sendMutation.isPending ||
     deleteSessionMutation.isPending ||
-    saveMemoryMutation.isPending ||
-    deleteMemoryMutation.isPending
+    createProfileMutation.isPending ||
+    updateProfileMutation.isPending ||
+    deleteProfileMutation.isPending ||
+    setDefaultMutation.isPending ||
+    compareMutation.isPending
 
   const lastRun: AgentRunResult | null =
     [...messages].reverse().find((message) => message.run)?.run ?? null
@@ -95,9 +102,12 @@ export default function AgentMemoryPage() {
       return
     }
     sendMutation.reset()
+    compareMutation.reset()
     setActiveToken(token)
     setSessionId(null)
     setDraft('')
+    setSelectedProfileId(null)
+    setCreating(false)
   }
 
   const handleNewSession = () => {
@@ -115,6 +125,9 @@ export default function AgentMemoryPage() {
     }
     setSessionId(id)
     setDraft('')
+    const session = (sessionsQuery.data ?? []).find((item) => item.id === id)
+    setSelectedProfileId(session?.profileId ?? null)
+    setCreating(false)
   }
 
   const handleDeleteSession = (id: number) => {
@@ -144,57 +157,117 @@ export default function AgentMemoryPage() {
         token: activeToken,
         sessionId,
         user: text,
-        strategy: MEMORY_STRATEGY,
-        scenario: DEFAULT_MEMORY_SCENARIO,
+        strategy: PROFILE_STRATEGY,
+        scenario: DEFAULT_PROFILE_SCENARIO,
         memory: true,
+        profileId: sessionId === null ? (selectedProfileId ?? undefined) : undefined,
       },
       { onSuccess: (result) => setSessionId(result.sessionId) },
     )
   }
 
-  const handleSave = (input: {
-    scope: MemoryLayer
-    key: string
-    value: string
-  }) => {
-    if (!activeToken || sessionId === null) {
+  const handleSelectProfile = (id: number) => {
+    setCreating(false)
+    setSelectedProfileId(id)
+  }
+
+  const handleCreateNew = () => {
+    setCreating(true)
+    setSelectedProfileId(null)
+  }
+
+  const handleSaveProfile = (input: ProfileInput) => {
+    if (!activeToken) {
       return
     }
-    saveMemoryMutation.mutate({
-      ...input,
+    if (creating) {
+      createProfileMutation.mutate(
+        { token: activeToken, ...input, isDefault: profiles.length === 0 },
+        {
+          onSuccess: (profile) => {
+            setCreating(false)
+            setSelectedProfileId(profile.id)
+          },
+        },
+      )
+      return
+    }
+    if (selectedProfileId === null) {
+      return
+    }
+    updateProfileMutation.mutate({
       token: activeToken,
-      sessionId,
-      scenario: DEFAULT_MEMORY_SCENARIO,
+      profileId: selectedProfileId,
+      ...input,
     })
   }
 
-  const handleForget = (scope: MemoryLayer, key: string) => {
-    if (!activeToken || sessionId === null) {
+  const handleDeleteProfile = (id: number) => {
+    if (busy) {
       return
     }
-    deleteMemoryMutation.mutate({ scope, key, token: activeToken, sessionId })
+    deleteProfileMutation.mutate(
+      { token: activeToken ?? '', profileId: id },
+      {
+        onSuccess: () => {
+          if (selectedProfileId === id) {
+            setSelectedProfileId(null)
+          }
+        },
+      },
+    )
   }
 
   const sendError = sendMutation.isError ? toError(sendMutation.error) : null
-  let memoryError: string | null = null
-  if (saveMemoryMutation.isError) {
-    memoryError = toError(saveMemoryMutation.error)
-  } else if (deleteMemoryMutation.isError) {
-    memoryError = toError(deleteMemoryMutation.error)
+  const compareError = compareMutation.isError
+    ? toError(compareMutation.error)
+    : null
+  let profilesError: string | null = null
+  if (createProfileMutation.isError) {
+    profilesError = toError(createProfileMutation.error)
+  } else if (updateProfileMutation.isError) {
+    profilesError = toError(updateProfileMutation.error)
+  } else if (deleteProfileMutation.isError) {
+    profilesError = toError(deleteProfileMutation.error)
+  } else if (setDefaultMutation.isError) {
+    profilesError = toError(setDefaultMutation.error)
   }
   const orgError = orgQuery.isError ? toError(orgQuery.error) : null
+
+  const editorInitial: ProfileInput | null = useMemo(
+    () =>
+      selectedProfile
+        ? {
+            name: selectedProfile.name,
+            addressing: selectedProfile.addressing,
+            tone: selectedProfile.tone,
+            language: selectedProfile.language,
+            verbosity: selectedProfile.verbosity,
+            format: selectedProfile.format,
+            constraints: selectedProfile.constraints,
+            instructions: selectedProfile.instructions,
+          }
+        : null,
+    [selectedProfile],
+  )
+
+  const showEditor = creating || selectedProfileId !== null
+
+  let sessionHint: string
+  if (sessionId !== null) {
+    sessionHint = 'Профиль зафиксирован за сессией'
+  } else if (selectedProfileId === null) {
+    sessionHint = 'Будет применён профиль по умолчанию'
+  } else {
+    sessionHint = `Новая сессия с профилем «${selectedProfile?.name ?? ''}»`
+  }
 
   return (
     <div className="mx-auto flex max-w-[1440px] flex-col gap-4 px-4 pb-6 pt-6">
       <header className="mb-1">
-        <p className="island-kicker mb-2">Day 11 · Memory layers</p>
-        <h1 className="demo-title mb-2">Модель памяти агента</h1>
-        <p className="demo-muted m-0 max-w-4xl text-sm">
-          Три слоя хранятся раздельно: краткосрочная (диалог), рабочая (данные
-          задачи, сбрасывается с сессией) и долговременная (профиль и решения,
-          переживает сессии). Агент сам раскладывает сведения по слоям через
-          MemoryRouter, а вы можете писать и забывать записи вручную.
-        </p>
+        <p className="island-kicker mb-2">Day 12 · Personalization</p>
+        <h1 className="demo-title mb-2">Профиль пользователя</h1>
+        <p className="demo-muted m-0 max-w-4xl text-sm">{PROFILE_PAGE_HINT}</p>
       </header>
 
       {orgQuery.isLoading && <p className="demo-muted">Загружаю сотрудников…</p>}
@@ -240,26 +313,15 @@ export default function AgentMemoryPage() {
                 Чат · {activePerson.name}
               </h2>
               <div className="flex items-center gap-2">
-                {sessionSummary?.profileName && (
-                  <Badge>{sessionSummary.profileName}</Badge>
-                )}
+                {activeProfileName && <Badge>{activeProfileName}</Badge>}
                 <span className="demo-muted text-xs">
                   {sessionId ? `сессия #${sessionId}` : 'новая сессия'}
                 </span>
               </div>
             </div>
 
-            {sessionId !== null &&
-              sessionSummary &&
-              !sessionSummary.memoryEnabled && (
-                <p className="demo-muted m-0 text-xs">
-                  В этой сессии память выключена. Начни новую сессию, чтобы
-                  включить слои.
-                </p>
-              )}
-
             <ScenarioChips
-              messages={script}
+              messages={PROFILE_SCRIPT}
               index={scriptIndex}
               disabled={busy}
               onPick={setDraft}
@@ -268,18 +330,14 @@ export default function AgentMemoryPage() {
             <TokenReport
               requestTokens={accounting.requestTokens}
               historyTokens={accounting.historyTokens}
-              historyTokensSent={
-                lastRun ? lastRun.tokens.historyTokensSent : null
-              }
+              historyTokensSent={lastRun ? lastRun.tokens.historyTokensSent : null}
               responseTokens={lastRun ? lastRun.tokens.responseTokens : null}
               contextTokens={lastRun ? lastRun.tokens.contextTokens : null}
             />
 
             <ChatThread messages={messages} running={sendMutation.isPending} />
 
-            {sendError && (
-              <Alert variant="destructive">{sendError}</Alert>
-            )}
+            {sendError && <Alert variant="destructive">{sendError}</Alert>}
 
             <form
               onSubmit={(event) => {
@@ -291,15 +349,13 @@ export default function AgentMemoryPage() {
               <Textarea
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
-                placeholder="Сообщение из сценария «Запуск линии кофе» или своё…"
+                placeholder="Сообщение или запрос из сценария…"
                 className="min-h-0"
                 rows={4}
                 disabled={busy}
               />
               <div className="flex items-center justify-between gap-2">
-                <span className="demo-muted text-xs">
-                  Стратегия контекста — скользящее окно (краткосрочный слой)
-                </span>
+                <span className="demo-muted text-xs">{sessionHint}</span>
                 <Button
                   type="submit"
                   disabled={busy || draft.trim().length === 0}
@@ -314,39 +370,65 @@ export default function AgentMemoryPage() {
 
       {activePerson && (
         <div className="flex items-stretch gap-4">
-          <section className="demo-panel min-w-0 flex-1 p-5">
-            <h2 className="demo-section-title mb-3">Слои памяти</h2>
-            <MemoryInspector
-              working={memory.working}
-              longTerm={memory.longTerm}
-              shortTermCount={messagesQuery.data?.length ?? 0}
-              disabled={busy || sessionId === null}
-              onForget={handleForget}
+          <aside className="demo-panel w-[300px] shrink-0 p-3">
+            <ProfileList
+              profiles={profiles}
+              activeId={selectedProfileId}
+              disabled={busy}
+              onSelect={handleSelectProfile}
+              onCreate={handleCreateNew}
+              onDelete={handleDeleteProfile}
+              onSetDefault={(id) =>
+                setDefaultMutation.mutate({
+                  token: activeToken ?? '',
+                  profileId: id,
+                })
+              }
             />
-            {memoryError && (
+          </aside>
+
+          <section className="min-w-0 flex-1">
+            {showEditor ? (
+              <ProfileEditor
+                profileId={creating ? null : selectedProfileId}
+                initial={editorInitial}
+                disabled={busy}
+                onSave={handleSaveProfile}
+                onCancel={() => {
+                  setCreating(false)
+                  setSelectedProfileId(null)
+                }}
+              />
+            ) : (
+              <section className="flex h-full items-center justify-center rounded-xl border border-dashed border-[var(--line)] p-6">
+                <p className="demo-muted m-0 text-xs">
+                  Выбери профиль слева или создай новый.
+                </p>
+              </section>
+            )}
+            {profilesError && (
               <Alert variant="destructive" className="mt-3">
-                {memoryError}
+                {profilesError}
               </Alert>
             )}
           </section>
-          <div className="flex w-[360px] shrink-0 flex-col gap-3">
-            {sessionId === null ? (
-              <section className="rounded-xl border border-[var(--line)] bg-[var(--surface)] p-3">
-                <p className="island-kicker m-0 text-[10px]">Запомнить явно</p>
-                <p className="demo-muted m-0 mt-1 text-xs">
-                  Отправь первое сообщение — появится сессия, и станут доступны
-                  ручные записи.
-                </p>
-              </section>
-            ) : (
-              <MemoryPanel
-                disabled={busy}
-                lastUserMessage={lastUserMessage}
-                onSave={handleSave}
-              />
-            )}
-          </div>
         </div>
+      )}
+
+      {activePerson && (
+        <ProfileCompare
+          profiles={profiles}
+          disabled={busy}
+          running={compareMutation.isPending}
+          result={compareMutation.data ?? null}
+          error={compareError}
+          onCompare={(profileIds, user) => {
+            if (!activeToken) {
+              return
+            }
+            compareMutation.mutate({ token: activeToken, profileIds, user })
+          }}
+        />
       )}
     </div>
   )

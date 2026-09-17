@@ -55,6 +55,21 @@ function timeToMinutes(time: string): number {
   return hours * 60 + minutes
 }
 
+export type ToolClock = { today: string; minutes: number }
+
+function isoDate(now: Date): string {
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  return `${now.getFullYear()}-${month}-${day}`
+}
+
+function clockFrom(now: Date): ToolClock {
+  return {
+    today: isoDate(now),
+    minutes: now.getHours() * 60 + now.getMinutes(),
+  }
+}
+
 function formatMeetingTime(startMin: number, durationMin: number): string {
   const endMin = startMin + durationMin
   const fmt = (min: number) =>
@@ -113,7 +128,7 @@ type BookingPlan =
     }
   | { ok: false; text: string; reference: null }
 
-function planBooking(args: ToolArgs): BookingPlan {
+function planBooking(args: ToolArgs, clock: ToolClock): BookingPlan {
   const date = pickString(args, 'date')
   const time = pickString(args, 'time')
   const capacity = ROOM_CAPACITY
@@ -141,6 +156,16 @@ function planBooking(args: ToolArgs): BookingPlan {
     return {
       ok: false,
       text: `Время «${time}» не в формате HH:MM.`,
+      reference: null,
+    }
+  }
+  if (
+    date < clock.today ||
+    (date === clock.today && timeToMinutes(time) < clock.minutes)
+  ) {
+    return {
+      ok: false,
+      text: `Нельзя забронировать переговорку в прошлом: ${date} ${time} уже прошло.`,
       reference: null,
     }
   }
@@ -363,8 +388,9 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: 'listBookings',
     description:
-      'показать встречи: свои, встречи, куда вас пригласили, а для руководителя — ещё и команды',
-    argsExample: '{}',
+      'показать встречи: свои, встречи, куда вас пригласили, а для руководителя — ещё и команды; прошедшие встречи скрыты',
+    argsExample:
+      '{ "includePast": true, "from": "YYYY-MM-DD", "to": "YYYY-MM-DD" } (все поля необязательны; по умолчанию только предстоящие)',
     roles: ['employee', 'manager'],
   },
   {
@@ -424,10 +450,10 @@ export const TOOLS_BY_ROLE: Record<AgentRole, string[]> = {
 
 const TOOL_RUNNERS: Record<
   AgentToolName,
-  (store: AgentStore) => AgentTool['run']
+  (store: AgentStore, clock: ToolClock) => AgentTool['run']
 > = {
-  bookMeetingRoom: (store) => async (args, identity) => {
-    const plan = planBooking(args)
+  bookMeetingRoom: (store, clock) => async (args, identity) => {
+    const plan = planBooking(args, clock)
     if (!plan.ok) {
       return bookingOutcome(plan, '')
     }
@@ -478,8 +504,26 @@ const TOOL_RUNNERS: Record<
     })
     return bookingOutcome(plan, room)
   },
-  listBookings: (store) => async (_args, identity) => {
-    const rows = await store.listBookings(identity.name, identity.subordinates)
+  listBookings: (store, clock) => async (args, identity) => {
+    const from = pickString(args, 'from')
+    const to = pickString(args, 'to')
+    const includePast =
+      args.includePast === true || args.includePast === 'true'
+    if ((from && isInvalidDate(from)) || (to && isInvalidDate(to))) {
+      return {
+        ok: false,
+        text: 'Даты диапазона должны быть в формате YYYY-MM-DD.',
+        reference: null,
+      }
+    }
+    const rows = (
+      await store.listBookings(identity.name, identity.subordinates)
+    ).filter((row) => {
+      if (from || to) {
+        return (!from || row.date >= from) && (!to || row.date <= to)
+      }
+      return includePast || row.date >= clock.today
+    })
     if (rows.length === 0) {
       return { ok: true, text: 'Записанных встреч нет.', reference: null }
     }
@@ -826,9 +870,13 @@ const TOOL_RUNNERS: Record<
   },
 }
 
-export function createAgentTools(store: AgentStore): AgentTool[] {
+export function createAgentTools(
+  store: AgentStore,
+  now: Date = new Date(),
+): AgentTool[] {
+  const clock = clockFrom(now)
   return TOOL_DEFINITIONS.map((definition) => ({
     ...definition,
-    run: TOOL_RUNNERS[definition.name](store),
+    run: TOOL_RUNNERS[definition.name](store, clock),
   }))
 }

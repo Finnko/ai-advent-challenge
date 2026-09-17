@@ -9,6 +9,7 @@ import type {
 } from '../domain/agent'
 import { TOOLS_BY_ROLE, createAgentTools } from '../domain/agent-tools'
 import {
+  TEST_NOW,
   createBooking,
   createCapabilities,
   createFakeStore,
@@ -58,18 +59,20 @@ function buildAgent(options: {
   store?: FakeStore
   context?: string
   contextBudgetTokens?: number
+  responseLanguage?: string | null
 }): Agent {
   const identity = options.identity ?? createIdentity()
   const store = options.store ?? createFakeStore()
-  const allowedTools =
-    options.allowedTools ?? createAgentTools(store).map((tool) => tool.name)
+  const tools = createAgentTools(store, TEST_NOW)
+  const allowedTools = options.allowedTools ?? tools.map((tool) => tool.name)
   return new Agent({
     capabilities: createCapabilities(identity, allowedTools),
-    tools: createAgentTools(store),
+    tools,
     judges: AGENT_JUDGES,
     callLLM: options.callLLM,
     model: 'test-model',
     today: '2026-09-10',
+    responseLanguage: options.responseLanguage,
     context: options.context,
     contextBudgetTokens: options.contextBudgetTokens,
   })
@@ -323,6 +326,61 @@ describe('Agent pipeline', () => {
     }
   })
 
+  it('ставит блок профиля перед памятью и историей', async () => {
+    const { callLLM, calls } = scriptedLLM({
+      decide: '{"tool": null, "args": {}}',
+      finalize: 'Ок',
+    })
+    const context: PreparedContext = {
+      history: [
+        { role: 'user', content: 'старая реплика' },
+        { role: 'assistant', content: 'старый ответ' },
+      ],
+      blocks: [
+        {
+          kind: 'profile',
+          content: 'ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ:\n- Тон: деловой',
+        },
+        {
+          kind: 'long-term',
+          content:
+            'ДОЛГОВРЕМЕННАЯ ПАМЯТЬ (профиль, решения, знания):\n- бюджет: 2 миллиона',
+        },
+        {
+          kind: 'working',
+          content: 'РАБОЧАЯ ПАМЯТЬ ЗАДАЧИ:\n- цель: запуск',
+        },
+      ],
+      note: null,
+    }
+    await buildAgent({ callLLM }).run('как дела?', context)
+
+    for (const call of calls) {
+      const profileIndex = call.messages.findIndex((message) =>
+        message.content.includes('ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ:'),
+      )
+      const longTermIndex = call.messages.findIndex((message) =>
+        message.content.includes('ДОЛГОВРЕМЕННАЯ ПАМЯТЬ'),
+      )
+      const workingIndex = call.messages.findIndex((message) =>
+        message.content.includes('РАБОЧАЯ ПАМЯТЬ ЗАДАЧИ'),
+      )
+      const historyIndex = call.messages.findIndex((message) =>
+        message.content.includes('старая реплика'),
+      )
+      const lastUser = [...call.messages]
+        .reverse()
+        .find((message) => message.role === 'user')
+      expect(historyIndex).toBeGreaterThan(-1)
+      expect(profileIndex).toBeGreaterThan(historyIndex)
+      expect(longTermIndex).toBeGreaterThan(profileIndex)
+      expect(workingIndex).toBeGreaterThan(longTermIndex)
+      expect(call.messages[workingIndex + 1]).toBe(lastUser)
+      expect(lastUser?.content).toContain('ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ')
+      expect(lastUser?.content).toContain('доверяй памяти')
+    }
+  })
+
   it('не добавляет директиву приоритета памяти без memory-блоков', async () => {
     const { callLLM, calls } = scriptedLLM({
       decide: '{"tool": null, "args": {}}',
@@ -435,5 +493,48 @@ describe('Agent pipeline', () => {
     const agent = buildAgent({ callLLM })
     expect((await agent.run('   ')).blocked).toBe(true)
     expect((await agent.run('x'.repeat(30_001))).blocked).toBe(true)
+  })
+})
+
+describe('язык ответа', () => {
+  function lastFinalizeUser(calls: CapturedCall[]): string {
+    const finalize = calls.find((call) => !call.isDecide)
+    return finalize?.messages.at(-1)?.content ?? ''
+  }
+
+  it('подчиняется языку профиля и не навязывает русский', async () => {
+    const { callLLM, calls } = scriptedLLM({
+      decide: '{"tool": null, "args": {}}',
+      finalize: 'Bonjour !',
+    })
+    const run = await buildAgent({
+      callLLM,
+      responseLanguage: 'французский',
+    }).run('Привет', {
+      history: [],
+      blocks: [
+        {
+          kind: 'profile',
+          content: 'ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ:\n- Язык: французский',
+        },
+      ],
+      note: null,
+    })
+
+    expect(run.ok).toBe(true)
+    const finalizeUser = lastFinalizeUser(calls)
+    expect(finalizeUser).toContain('французский')
+    expect(finalizeUser).not.toContain('по-русски')
+  })
+
+  it('дефолтом просит отвечать по-русски', async () => {
+    const { callLLM, calls } = scriptedLLM({
+      decide: '{"tool": null, "args": {}}',
+      finalize: 'Привет',
+    })
+    const run = await buildAgent({ callLLM }).run('Привет', prepared())
+
+    expect(run.ok).toBe(true)
+    expect(lastFinalizeUser(calls)).toContain('по-русски')
   })
 })
