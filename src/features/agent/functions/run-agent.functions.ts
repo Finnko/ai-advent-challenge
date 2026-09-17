@@ -6,7 +6,6 @@ import { resolveStrategy } from '../domain/context/registry'
 import type { CompressionMessage } from '../domain/compression'
 import {
   appendMessage as appendMessageToStore,
-  createSession as createSessionFromStore,
   getActiveBranch,
   getLongTermMemory,
   getProfile,
@@ -23,8 +22,7 @@ import {
 import type { StoredMessage } from '../server/store.server'
 import {
   asObject,
-  requireNullableSessionId,
-  requireStrategy,
+  requireSessionId,
   requireToken,
   requireUser,
 } from './validation'
@@ -33,43 +31,21 @@ function toCompressionMessage(row: StoredMessage): CompressionMessage {
   return { id: row.id, role: row.role, content: row.content }
 }
 
-function sessionTitleFrom(text: string): string {
-  const compact = text.replace(/\s+/g, ' ').trim()
-  return compact.length > 40 ? `${compact.slice(0, 40)}…` : compact
-}
-
 export const runAgent = createServerFn({ method: 'POST' })
   .validator(
-    (input: {
-      token: string
-      sessionId: number | null
-      user: string
-      strategy?: ContextStrategyId
-    }) => {
+    (input: { token: string; sessionId: number; user: string }) => {
       const data = asObject(input)
       return {
         token: requireToken(data.token),
-        sessionId: requireNullableSessionId(data.sessionId),
+        sessionId: requireSessionId(data.sessionId),
         user: requireUser(data.user),
-        strategy:
-          data.strategy === undefined
-            ? undefined
-            : requireStrategy(data.strategy),
       }
     },
   )
   .handler(async ({ data }) => {
     const capabilities = await resolveCapabilitiesByToken(data.token)
 
-    let sessionId = data.sessionId
-    if (sessionId === null) {
-      sessionId = await createSessionFromStore(
-        data.token,
-        sessionTitleFrom(data.user),
-        { strategy: data.strategy ?? 'summary' },
-      )
-    }
-    const activeSessionId: number = sessionId
+    const activeSessionId: number = data.sessionId
 
     const session = await getSession(activeSessionId)
     const strategyId: ContextStrategyId = session?.strategy ?? 'summary'
@@ -99,6 +75,7 @@ export const runAgent = createServerFn({ method: 'POST' })
         : null,
       facts,
       branchLabel: activeBranch?.title,
+      windowSize: session?.windowSize,
       profile,
       memory: {
         enabled: memoryEnabled,

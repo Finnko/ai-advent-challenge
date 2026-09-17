@@ -1,6 +1,7 @@
-import { createFileRoute } from '@tanstack/react-router'
-import AgentStrategiesPage from '@/features/agent/pages/AgentStrategiesPage'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/_layout/agent-strategies')({
-  component: AgentStrategiesPage,
+  beforeLoad: () => {
+    throw redirect({ to: '/agent' })
+  },
 })

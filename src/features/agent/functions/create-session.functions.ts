@@ -3,8 +3,11 @@ import type { CreateSessionResult } from '../types'
 import { createSession as createSessionInStore } from '../server/store.server'
 import {
   asObject,
+  optionalBoolean,
+  optionalInvariantSetId,
   optionalProfileId,
   optionalScenario,
+  optionalWindowSize,
   requireStrategy,
   requireToken,
 } from './validation'
@@ -17,14 +20,20 @@ export const createSession = createServerFn({ method: 'POST' })
       scenario?: string | null
       memory?: boolean
       profileId?: number | null
+      windowSize?: number
+      taskStateEnabled?: boolean
+      invariantSetId?: number | null
     }) => {
       const data = asObject(input)
       return {
         token: requireToken(data.token),
         strategy: requireStrategy(data.strategy),
         scenario: optionalScenario(data.scenario),
-        memory: data.memory === true,
+        memory: optionalBoolean(data.memory),
         profileId: optionalProfileId(data.profileId),
+        windowSize: optionalWindowSize(data.windowSize),
+        taskStateEnabled: optionalBoolean(data.taskStateEnabled),
+        invariantSetId: optionalInvariantSetId(data.invariantSetId),
       }
     },
   )
@@ -37,6 +46,9 @@ export const createSession = createServerFn({ method: 'POST' })
         scenario: data.scenario,
         memory: data.memory,
         profileId: data.profileId,
+        windowSize: data.windowSize,
+        taskStateEnabled: data.taskStateEnabled,
+        invariantSetId: data.invariantSetId,
       },
     )
     return { sessionId } satisfies CreateSessionResult

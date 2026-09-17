@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import {
+  optionalBoolean,
+  optionalInvariantSetId,
   optionalProfileField,
   optionalProfileId,
   optionalScenario,
+  optionalWindowSize,
   requireBranchId,
   requireProfileName,
   requireStrategy,
+  requireWindowSize,
 } from './validation'
 
 describe('agent validators', () => {
@@ -52,6 +56,29 @@ describe('agent validators', () => {
     for (const bad of [0, -1, Number.NaN, '3']) {
       expect(() => optionalProfileId(bad)).toThrow('Некорректный profileId')
     }
+  })
+
+  it('валидирует размер скользящего окна', () => {
+    expect(requireWindowSize(2)).toBe(2)
+    expect(requireWindowSize(50)).toBe(50)
+    for (const bad of [1, 51, 3.5, Number.NaN, '10', null]) {
+      expect(() => requireWindowSize(bad)).toThrow('Некорректный размер окна')
+    }
+    expect(optionalWindowSize(undefined)).toBe(10)
+    expect(optionalWindowSize(null)).toBe(10)
+    expect(optionalWindowSize(4)).toBe(4)
+  })
+
+  it('optionalBoolean и optionalInvariantSetId различают отсутствие и null', () => {
+    expect(optionalBoolean(undefined)).toBe(false)
+    expect(optionalBoolean(true)).toBe(true)
+    expect(optionalBoolean(null, true)).toBe(true)
+    expect(() => optionalBoolean('true')).toThrow('Ожидалось булево значение')
+
+    expect(optionalInvariantSetId(undefined)).toBeUndefined()
+    expect(optionalInvariantSetId(null)).toBeNull()
+    expect(optionalInvariantSetId(7)).toBe(7)
+    expect(() => optionalInvariantSetId(0)).toThrow('Некорректный invariantSetId')
   })
 
   it('optionalProfileField тримит, опустошает и ограничивает', () => {

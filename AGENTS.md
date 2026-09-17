@@ -1,6 +1,7 @@
 # Project: AI Advent Challenge
 
-Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 12 (`feature/day12`).
+Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 13 (`feature/day13`),
+which starts by collapsing the agent demos into one workspace (Days 13–14 features not built yet).
 
 ## Stack
 
@@ -18,7 +19,8 @@ Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 
 - `src/lib/` — shared: `llm.ts`/`llm.server.ts` (transport), `functions/*.functions.ts` (Days 1–5 server
   fns + shared `validation.ts`), `day2.ts`…`day5.ts`, `days.ts` (sidebar), `utils.ts` (`cn`).
 - `src/components/` — app shell (`Header`, `Sidebar`, `Chat`) and shared `ui/Tabs.tsx`.
-- `src/routes/` — thin route wrappers; the agent routes just render feature pages.
+- `src/routes/` — thin route wrappers. The unified `/agent` renders `pages/AgentPage`; the old
+  `/agent-strategies|memory|profile` routes are `beforeLoad` redirect stubs to `/agent`.
 
 ## Server & LLM rules
 
@@ -46,12 +48,25 @@ Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 
 - An API failure (e.g. raw 400 on a huge prompt) becomes a graceful blocked `AgentRunResult`, never a
   thrown error.
 
+## Unified agent workspace (post-Day 12)
+
+- One route `/agent` (`pages/AgentPage`) with tabs `Диалог | Задача | Инварианты | Настройки`; the last
+  two are disabled placeholders for Days 13–14. Old routes redirect. One sidebar entry (`lib/days.ts`).
+- **Session config is the backbone** (`sessions.strategy` / `memory_enabled` / `profile_id` /
+  `window_size`): fixed by `createSession`, read by `runAgent`, never switchable mid-session. The client
+  sends only ids and the chosen config; `api/send-message.ts` creates the session then calls `runAgent`.
+- Reserved extension fields (no feature code yet): `sessions.task_state_enabled`, `sessions.invariant_set_id`.
+  Future seams: `SystemBlock.kind` gains `'invariants' | 'task-state'`; invariants go in stable system
+  blocks, task state after history with profile/memory.
+
 ## Context strategies
 
 - Seam in `features/agent/domain/context/`: `ContextStrategyId = 'summary' | 'none' | 'window' | 'facts'
   | 'branch'`, `ContextStrategy.prepare(input)` → `PreparedContext { history, blocks, note }`.
 - **Strategy is fixed per session** (`sessions.strategy`): set by `createSession`, read by `runAgent`;
   never switchable mid-session.
+- Short-term memory is the `window` strategy; the sliding-window size is per session
+  (`sessions.window_size`, `PrepareInput.windowSize`, default `WINDOW_SIZE = 10`).
 - Strategy blocks are inserted as **separate `system` messages** after the base system and before raw
   history, in both `decide` and `finalize`. Profile and memory blocks go **after** the history, in order
   `profile → long-term → working` (last, right before the user turn) so stale prior replies don't override
@@ -84,8 +99,6 @@ Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 
   to the most recent remaining profile; a partial unique index keeps **one default per token**.
 - `SystemBlock.kind` includes `'profile'`; the block is inserted after history and before memory, and
   `PROFILE_PRECEDENCE_LINE` is merged into the last user message alongside `MEMORY_PRECEDENCE_LINE`.
-- `compareProfiles` runs the same request under two profiles with strategy `none`, no memory and no
-  persistence (dry-run) — the only place the client sends `profileIds`.
 - Profile is loaded server-side from the session; the client sends only ids. Limits live in
   `functions/validation.ts` (`requireProfileName`, `optionalProfileField`: name≤60, field≤120,
   constraints≤500, instructions≤1200).
@@ -98,8 +111,9 @@ Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 
   is migrated on first open, and an existing DB is snapshotted to `<db>.backups/` (last 5).
 - Migrations are idempotent (`PRAGMA table_info` + `ALTER`). Branches are copy-on-fork; `loadMessages`
   and `appendMessage` are scoped to the active branch. Sessions carry
-  `strategy`/`scenario`/`memory_enabled`/`profile_id`; memory lives in `working_memory` and
-  `long_term_memory`, profiles in `profiles` (separate from `session_facts`/`session_summaries`).
+  `strategy`/`scenario`/`memory_enabled`/`profile_id`/`window_size` (+ reserved `task_state_enabled` /
+  `invariant_set_id`); memory lives in `working_memory` and `long_term_memory`, profiles in `profiles`
+  (separate from `session_facts`/`session_summaries`).
 
 ## Commands
 

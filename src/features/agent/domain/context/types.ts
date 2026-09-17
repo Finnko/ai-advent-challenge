@@ -27,6 +27,7 @@ export type PrepareInput = {
   extractFacts: ExtractFacts
   saveFacts: (facts: Fact[]) => Promise<void> | void
   branchLabel?: string
+  windowSize?: number
 }
 
 export type PrepareResult = {

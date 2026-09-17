@@ -140,6 +140,7 @@ export type ExecuteOptions = {
   previousSummary: PreviousSummary | null
   facts: Fact[]
   branchLabel?: string
+  windowSize?: number
   memory?: MemoryOptions
   profile?: ProfileRecord | null
   saveSummary: (
@@ -183,6 +184,7 @@ export async function executeAgent(
       extractFacts,
       saveFacts: options.saveFacts,
       branchLabel: options.branchLabel,
+      windowSize: options.windowSize,
     })
     const context: PreparedContext = {
       ...prepared.context,

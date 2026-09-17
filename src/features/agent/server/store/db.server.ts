@@ -160,6 +160,9 @@ CREATE TABLE IF NOT EXISTS sessions (
   active_branch_id INTEGER,
   memory_enabled INTEGER NOT NULL DEFAULT 0,
   profile_id INTEGER,
+  window_size INTEGER NOT NULL DEFAULT 10,
+  task_state_enabled INTEGER NOT NULL DEFAULT 0,
+  invariant_set_id INTEGER,
   created_at TEXT NOT NULL
 );
 
@@ -506,6 +509,17 @@ export function migrateSessions(db: SqliteDatabase): void {
   }
   if (!sessionColumns.includes('profile_id')) {
     db.exec('ALTER TABLE sessions ADD COLUMN profile_id INTEGER')
+  }
+  if (!sessionColumns.includes('window_size')) {
+    db.exec('ALTER TABLE sessions ADD COLUMN window_size INTEGER NOT NULL DEFAULT 10')
+  }
+  if (!sessionColumns.includes('task_state_enabled')) {
+    db.exec(
+      'ALTER TABLE sessions ADD COLUMN task_state_enabled INTEGER NOT NULL DEFAULT 0',
+    )
+  }
+  if (!sessionColumns.includes('invariant_set_id')) {
+    db.exec('ALTER TABLE sessions ADD COLUMN invariant_set_id INTEGER')
   }
   const messageColumns = tableColumns(db, 'messages')
   if (!messageColumns.includes('branch_id')) {

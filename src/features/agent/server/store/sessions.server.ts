@@ -1,5 +1,6 @@
 import type { AgentRunResult } from '../../domain/agent'
 import type { ContextStrategyId } from '../../domain/context/types'
+import { WINDOW_SIZE } from '../../domain/context/window'
 import type { Fact } from '../../domain/facts'
 import type { MemoryEntry, MemoryLayer } from '../../domain/memory/types'
 import { getDb, nowIso, safeParse } from './db.server'
@@ -23,6 +24,9 @@ export type SessionRow = {
   active_branch_id: number | null
   memoryEnabled: boolean
   profileId: number | null
+  windowSize: number
+  taskStateEnabled: boolean
+  invariantSetId: number | null
   created_at: string
 }
 
@@ -52,6 +56,9 @@ export type SessionListItem = {
   memoryEnabled: boolean
   profileId: number | null
   profileName: string | null
+  windowSize: number
+  taskStateEnabled: boolean
+  invariantSetId: number | null
   createdAt: string
   lastMessage: string
   messageCount: number
@@ -118,6 +125,9 @@ export async function createSession(
     scenario?: string | null
     memory?: boolean
     profileId?: number | null
+    windowSize?: number
+    taskStateEnabled?: boolean
+    invariantSetId?: number | null
   } = {},
 ): Promise<number> {
   const db = await getDb()
@@ -128,11 +138,25 @@ export async function createSession(
     options.profileId === undefined
       ? await getDefaultProfileId(token)
       : options.profileId
+  const windowSize = options.windowSize ?? WINDOW_SIZE
+  const taskStateEnabled = options.taskStateEnabled ? 1 : 0
+  const invariantSetId = options.invariantSetId ?? null
   const result = db
     .prepare(
-      'INSERT INTO sessions (token, title, strategy, scenario, memory_enabled, profile_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO sessions (token, title, strategy, scenario, memory_enabled, profile_id, window_size, task_state_enabled, invariant_set_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     )
-    .run(token, title, strategy, scenario, memoryEnabled, profileId, nowIso())
+    .run(
+      token,
+      title,
+      strategy,
+      scenario,
+      memoryEnabled,
+      profileId,
+      windowSize,
+      taskStateEnabled,
+      invariantSetId,
+      nowIso(),
+    )
   const sessionId = Number(result.lastInsertRowid)
   const branch = db
     .prepare(
@@ -150,7 +174,7 @@ export async function getSession(sessionId: number): Promise<SessionRow | null> 
   const db = await getDb()
   const row = db
     .prepare(
-      'SELECT id, token, title, strategy, scenario, active_branch_id, memory_enabled, profile_id, created_at FROM sessions WHERE id = ?',
+      'SELECT id, token, title, strategy, scenario, active_branch_id, memory_enabled, profile_id, window_size, task_state_enabled, invariant_set_id, created_at FROM sessions WHERE id = ?',
     )
     .get(sessionId) as
     | {
@@ -162,6 +186,9 @@ export async function getSession(sessionId: number): Promise<SessionRow | null> 
         active_branch_id: number | null
         memory_enabled: number
         profile_id: number | null
+        window_size: number
+        task_state_enabled: number
+        invariant_set_id: number | null
         created_at: string
       }
     | undefined
@@ -178,6 +205,10 @@ export async function getSession(sessionId: number): Promise<SessionRow | null> 
       row.active_branch_id === null ? null : Number(row.active_branch_id),
     memoryEnabled: Number(row.memory_enabled) === 1,
     profileId: row.profile_id === null ? null : Number(row.profile_id),
+    windowSize: Number(row.window_size),
+    taskStateEnabled: Number(row.task_state_enabled) === 1,
+    invariantSetId:
+      row.invariant_set_id === null ? null : Number(row.invariant_set_id),
     created_at: row.created_at,
   }
 }
@@ -252,27 +283,6 @@ export async function listBranchesDetailed(
     createdAt: branch.created_at,
     isActive: branch.id === session?.active_branch_id,
     messageCount: counts.get(branch.id) ?? 0,
-  }))
-}
-
-export async function listSessionsByScenario(
-  token: string,
-  scenario: string,
-): Promise<Array<{ id: number; title: string; strategy: ContextStrategyId }>> {
-  const db = await getDb()
-  const rows = db
-    .prepare(
-      'SELECT id, title, strategy FROM sessions WHERE token = ? AND scenario = ? ORDER BY id',
-    )
-    .all(token, scenario) as Array<{
-    id: number
-    title: string
-    strategy: string
-  }>
-  return rows.map((row) => ({
-    id: Number(row.id),
-    title: row.title,
-    strategy: row.strategy as ContextStrategyId,
   }))
 }
 
@@ -375,6 +385,9 @@ export async function listSessions(token: string): Promise<SessionListItem[]> {
         s.memory_enabled AS memory_enabled,
         s.profile_id AS profile_id,
         p.name AS profile_name,
+        s.window_size AS window_size,
+        s.task_state_enabled AS task_state_enabled,
+        s.invariant_set_id AS invariant_set_id,
         s.created_at AS created_at,
         (SELECT m.content FROM messages m WHERE m.session_id = s.id AND m.branch_id = s.active_branch_id ORDER BY m.id DESC LIMIT 1) AS last_message,
         (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id AND m.branch_id = s.active_branch_id) AS message_count
@@ -391,6 +404,9 @@ export async function listSessions(token: string): Promise<SessionListItem[]> {
     memory_enabled: number
     profile_id: number | null
     profile_name: string | null
+    window_size: number
+    task_state_enabled: number
+    invariant_set_id: number | null
     created_at: string
     last_message: string | null
     message_count: number
@@ -403,6 +419,10 @@ export async function listSessions(token: string): Promise<SessionListItem[]> {
     memoryEnabled: Number(row.memory_enabled) === 1,
     profileId: row.profile_id === null ? null : Number(row.profile_id),
     profileName: row.profile_name,
+    windowSize: Number(row.window_size),
+    taskStateEnabled: Number(row.task_state_enabled) === 1,
+    invariantSetId:
+      row.invariant_set_id === null ? null : Number(row.invariant_set_id),
     createdAt: row.created_at,
     lastMessage: row.last_message ?? '',
     messageCount: Number(row.message_count),
@@ -647,38 +667,4 @@ export async function deleteMemoryEntry(
       key,
     )
   }
-}
-
-export async function getScenarioChecklist(
-  token: string,
-  scenario: string,
-): Promise<string[]> {
-  const db = await getDb()
-  const row = db
-    .prepare(
-      'SELECT items_json FROM scenario_checklists WHERE token = ? AND scenario = ?',
-    )
-    .get(token, scenario) as { items_json: string } | undefined
-  if (!row) {
-    return []
-  }
-  const parsed = safeParse(row.items_json)
-  return Array.isArray(parsed)
-    ? parsed.filter((item): item is string => typeof item === 'string')
-    : []
-}
-
-export async function saveScenarioChecklist(
-  token: string,
-  scenario: string,
-  items: string[],
-): Promise<void> {
-  const db = await getDb()
-  db.prepare(
-    `INSERT INTO scenario_checklists (token, scenario, items_json, updated_at)
-     VALUES (?, ?, ?, ?)
-     ON CONFLICT(token, scenario) DO UPDATE SET
-       items_json = excluded.items_json,
-       updated_at = excluded.updated_at`,
-  ).run(token, scenario, JSON.stringify(items), nowIso())
 }

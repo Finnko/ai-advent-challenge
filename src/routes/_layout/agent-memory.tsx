@@ -1,6 +1,7 @@
-import { createFileRoute } from '@tanstack/react-router'
-import AgentMemoryPage from '@/features/agent/pages/AgentMemoryPage'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/_layout/agent-memory')({
-  component: AgentMemoryPage,
+  beforeLoad: () => {
+    throw redirect({ to: '/agent' })
+  },
 })

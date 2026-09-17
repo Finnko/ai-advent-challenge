@@ -20,22 +20,15 @@ export type SessionSummary = {
   memoryEnabled: boolean
   profileId: number | null
   profileName: string | null
+  windowSize: number
+  taskStateEnabled: boolean
+  invariantSetId: number | null
   createdAt: string
   lastMessage: string
   messageCount: number
 }
 
 export type ProfileItem = ProfileRecord
-
-export type ProfileComparisonEntry = {
-  profileId: number
-  profileName: string
-  run: AgentRunResult
-}
-
-export type ProfileComparison = {
-  results: ProfileComparisonEntry[]
-}
 
 export type MemoryItem = MemoryEntry
 
@@ -47,12 +40,6 @@ export type MemoryView = {
 export type RunAgentResult = {
   run: AgentRunResult
   sessionId: number
-  auxUsage: SummaryUsage | null
-}
-
-export type CompressionComparison = {
-  compressed: AgentRunResult
-  plain: AgentRunResult
   auxUsage: SummaryUsage | null
 }
 
@@ -74,23 +61,4 @@ export type BranchInfo = {
 export type FactItem = {
   key: string
   value: string
-}
-
-export type ScenarioTraceMessage = {
-  role: 'user' | 'assistant'
-  content: string
-  run: AgentRunResult | null
-}
-
-export type ScenarioTrace = {
-  sessionId: number
-  title: string
-  strategy: ContextStrategyId
-  messages: ScenarioTraceMessage[]
-  facts: FactItem[]
-}
-
-export type ScenarioComparison = {
-  scenario: string
-  traces: ScenarioTrace[]
 }

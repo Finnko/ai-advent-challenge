@@ -16,6 +16,9 @@ export type SendMessageInput = {
   scenario?: string | null
   memory?: boolean
   profileId?: number | null
+  windowSize?: number
+  taskStateEnabled?: boolean
+  invariantSetId?: number | null
 }
 
 export async function sendMessage(
@@ -30,6 +33,9 @@ export async function sendMessage(
         scenario: input.scenario ?? null,
         memory: input.memory ?? false,
         profileId: input.profileId,
+        windowSize: input.windowSize,
+        taskStateEnabled: input.taskStateEnabled,
+        invariantSetId: input.invariantSetId,
       },
     })
     sessionId = created.sessionId

@@ -158,6 +158,16 @@ describe('windowStrategy', () => {
     expect(result.context.history).toHaveLength(6)
     expect(result.context.note).toBeNull()
   })
+
+  it('уважает размер окна из сессии', async () => {
+    const result = await windowStrategy.prepare(
+      baseInput({ rows: history(20), windowSize: 4 }),
+    )
+
+    expect(result.context.history).toHaveLength(4)
+    expect(result.context.note?.text).toContain('последние 4')
+    expect(result.context.note?.messages).toBe(16)
+  })
 })
 
 describe('factsStrategy', () => {
