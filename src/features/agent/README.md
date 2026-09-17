@@ -14,8 +14,8 @@ src/features/agent/
   pages/       # AgentPage — единственная публичная поверхность (табы Диалог/Задача/Инварианты/Настройки)
   api/         # клиентские хуки react-query (bulletproof-стиль): queryOptions + useX/mutations
   functions/   # createServerFn-обёртки (сетевой шов)
-  server/      # *.server.ts — глубокие server-only модули (agent-service, store)
-  domain/      # изоморфная логика без env/fetch (agent, tools, контекст, факты, память, токены)
+  server/      # *.server.ts — глубокие server-only модули (agent-turn, agent-service, store)
+  domain/      # изоморфная логика без env/fetch (agent, tools, контекст, память, профиль, session, токены)
   data/        # клиентские данные без env (примеры, подписи инструментов)
   components/  # UI фичи
   tests/       # офлайн-тесты (vitest, node env)
@@ -33,18 +33,39 @@ src/features/agent/
 - Поток: настроил конфиг во вкладке «Настройки» → создал сессию первым сообщением → работаешь в
   «Диалоге». Конфиг фиксируется за сессией; чтобы изменить — новая сессия.
 
+## Выполнение Хода
+
+`server/agent-turn.server.ts` — глубокий модуль Хода. `runAgentTurn({ token, sessionId, user }, deps)`
+сам гидрирует способности, сессию, активную ветку, историю, сводку, факты, память и профиль,
+запускает `executeAgent` и сохраняет обе реплики. `functions/run-agent.functions.ts` — тонкий
+adapter: `validator → runAgentTurn`.
+
+Шов `TurnDeps = { resolveCapabilities, store: TurnStore, runtime: AgentRuntime, now }`;
+`defaultTurnDeps` — продакшн-проводка, офлайн-тесты (`tests/agent-turn.test.ts`) подставляют фейки.
+`AgentRuntime` (`agent-service.server.ts`) держит транспорт и инструменты: `executeAgent(options,
+runtime = defaultAgentRuntime)` не собирает их сам.
+
 ## Конфиг сессии
 
-`createSession` принимает `{ strategy, windowSize, memory, profileId }` (+ зарезервированные
-`taskStateEnabled`, `invariantSetId`), хранит их в таблице `sessions` и дальше не меняет:
+`domain/session/config.ts` — единственный дом Конфигурации сессии: типы `SessionConfig` /
+`SessionConfigInput` / `SessionConfigDraft`, дефолты, разрешение профиля по умолчанию, превращение
+драфта во вход и правило неизменности (`resolveActiveSessionConfig`). Wire-форма валидируется
+`parseSessionConfigInput` (`functions/validation.ts`).
+
+`createSession` принимает `Partial<SessionConfigInput>` (`strategy`, `scenario`, `windowSize`,
+`memoryEnabled`, `profileId`, + зарезервированные `taskStateEnabled`, `invariantSetId`), хранит их в
+таблице `sessions` и дальше не меняет. Правила defaulting живут в модуле, а store делегирует ему
+разрешение конфигурации и выполняет server-side lookup default profile:
 
 - `strategy` — одна из пяти стратегий контекста;
-- `windowSize` — размер скользящего окна для стратегии `window` (default `WINDOW_SIZE = 10`,
+- `windowSize` — размер скользящего окна для стратегии `window` (default `DEFAULT_WINDOW_SIZE = 10`,
   допустимо 2–50, валидатор `requireWindowSize`);
-- `memory` — включает авто-извлечение и блоки памяти;
-- `profileId` — профиль пользователя (явный id, `null` или дефолт токена).
+- `memoryEnabled` — включает авто-извлечение и блоки памяти;
+- `profileId` — профиль пользователя: `undefined` (в draft это `null`) → дефолт токена, id → явный.
+  Режим «без профиля» UI не предлагает.
 
-Клиент шлёт только ids и выбранный конфиг. `runAgent` читает всё из сессии и прокидывает в
+Клиент шлёт только ids и выбранный конфиг (`api/send-message.ts`, `{ config: SessionConfigInput }`),
+`AgentPage` держит один `SessionConfigDraft`. `runAgentTurn` читает конфиг из сессии и прокидывает в
 `executeAgent`; `windowSize` уходит в `ContextStrategy.prepare` через `PrepareInput.windowSize`.
 
 ## Модель памяти

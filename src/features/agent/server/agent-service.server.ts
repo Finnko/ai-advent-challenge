@@ -6,21 +6,22 @@ import type {
   AgentCapabilities,
   AgentRunResult,
   AgentStore,
+  AgentTool,
   CallLLM,
   PreparedContext,
 } from '../domain/agent'
 import { TOOLS_BY_ROLE, createAgentTools } from '../domain/agent-tools'
 import type { ContextStrategy } from '../domain/context/types'
-import type { Fact } from '../domain/facts'
+import type { ExtractFacts } from '../domain/facts'
 import { createExtractFacts } from '../domain/facts'
 import type {
   CompressionMessage,
-  PreviousSummary,
   Summarize,
   SummaryUsage,
 } from '../domain/compression'
 import { toLlmMessages } from '../domain/compression'
 import { createExtractMemories } from '../domain/memory/extract'
+import type { ExtractMemories } from '../domain/memory/extract'
 import type { MemoryEntry } from '../domain/memory/types'
 import {
   applyLongTermLimit,
@@ -118,8 +119,23 @@ const summarizeHistory: Summarize = async (messages) => {
   return { content: reply.content, usage: reply.usage }
 }
 
-const extractFacts = createExtractFacts(callFlash)
-const extractMemories = createExtractMemories(callFlash)
+export type AgentRuntime = {
+  callLLM: CallLLM
+  summarize: Summarize
+  extractFacts: ExtractFacts
+  extractMemories: ExtractMemories
+  store: AgentStore
+  createTools: (store: AgentStore, now: Date) => AgentTool[]
+}
+
+export const defaultAgentRuntime: AgentRuntime = {
+  callLLM: callFlash,
+  summarize: summarizeHistory,
+  extractFacts: createExtractFacts(callFlash),
+  extractMemories: createExtractMemories(callFlash),
+  store: createAgentStore(),
+  createTools: createAgentTools,
+}
 
 export type MemoryOptions = {
   enabled: boolean
@@ -137,17 +153,11 @@ export type ExecuteOptions = {
   user: string
   strategy: ContextStrategy
   rows: CompressionMessage[]
-  previousSummary: PreviousSummary | null
-  facts: Fact[]
   branchLabel?: string
   windowSize?: number
   memory?: MemoryOptions
   profile?: ProfileRecord | null
-  saveSummary: (
-    summary: string,
-    throughMessageId: number,
-  ) => Promise<void> | void
-  saveFacts: (facts: Fact[]) => Promise<void> | void
+  now?: Date
 }
 
 export type AgentExecution = {
@@ -157,32 +167,27 @@ export type AgentExecution = {
 
 export async function executeAgent(
   options: ExecuteOptions,
+  runtime: AgentRuntime = defaultAgentRuntime,
 ): Promise<AgentExecution> {
-  const now = new Date()
-  const store = createAgentStore()
+  const now = options.now ?? new Date()
+  const store = runtime.store
   const context = await buildAgentContext(store, options.capabilities)
   const agent = new Agent({
     capabilities: options.capabilities,
-    tools: createAgentTools(store, now),
+    tools: runtime.createTools(store, now),
     judges: AGENT_JUDGES,
-    callLLM: callFlash,
+    callLLM: runtime.callLLM,
     model: TIER_ENDPOINTS.medium.model,
     today: todayIso(now),
     responseLanguage: options.profile?.language ?? null,
     context,
   })
   try {
-    const memoryBlocks = await prepareMemoryBlocks(options)
+    const memoryBlocks = await prepareMemoryBlocks(options, runtime.extractMemories)
     const profileBlocks = buildProfileBlocks(options.profile ?? null)
     const prepared = await options.strategy.prepare({
       rows: options.rows,
       request: options.user,
-      previousSummary: options.previousSummary,
-      summarize: summarizeHistory,
-      saveSummary: options.saveSummary,
-      facts: options.facts,
-      extractFacts,
-      saveFacts: options.saveFacts,
       branchLabel: options.branchLabel,
       windowSize: options.windowSize,
     })
@@ -206,6 +211,7 @@ export async function executeAgent(
 
 async function prepareMemoryBlocks(
   options: ExecuteOptions,
+  extractMemories: ExtractMemories,
 ): Promise<{ blocks: PreparedContext['blocks']; usage: SummaryUsage | null }> {
   const memory = options.memory
   if (!memory?.enabled) {

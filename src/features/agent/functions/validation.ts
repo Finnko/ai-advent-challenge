@@ -17,9 +17,14 @@ import type { MemoryLayer } from '../domain/memory/types'
 import { MAX_MEMORY_VALUE_CHARS } from '../domain/memory/types'
 import type { ProfileField, ProfileInput } from '../domain/profile/types'
 import { PROFILE_NAME_MAX, profileFieldMax } from '../domain/profile/types'
+import {
+  DEFAULT_WINDOW_SIZE,
+  WINDOW_SIZE_MAX,
+  WINDOW_SIZE_MIN,
+} from '../domain/session/config'
+import type { SessionConfigInput } from '../domain/session/config'
 
-export const WINDOW_SIZE_MIN = 2
-export const WINDOW_SIZE_MAX = 50
+export { WINDOW_SIZE_MAX, WINDOW_SIZE_MIN }
 
 export function requireWindowSize(value: unknown): number {
   if (
@@ -37,7 +42,7 @@ export function requireWindowSize(value: unknown): number {
 
 export function optionalWindowSize(value: unknown): number {
   if (value === undefined || value === null) {
-    return 10
+    return DEFAULT_WINDOW_SIZE
   }
   return requireWindowSize(value)
 }
@@ -168,6 +173,19 @@ export function optionalProfileField(
     throw new Error(`Значение поля «${field}» длиннее ${max} символов`)
   }
   return trimmed
+}
+
+export function parseSessionConfigInput(value: unknown): SessionConfigInput {
+  const data = asObject(value)
+  return {
+    strategy: requireStrategy(data.strategy),
+    scenario: optionalScenario(data.scenario),
+    windowSize: optionalWindowSize(data.windowSize),
+    memoryEnabled: optionalBoolean(data.memoryEnabled),
+    profileId: optionalProfileId(data.profileId),
+    taskStateEnabled: optionalBoolean(data.taskStateEnabled),
+    invariantSetId: optionalInvariantSetId(data.invariantSetId),
+  }
 }
 
 export function requireProfileInput(value: unknown): ProfileInput {

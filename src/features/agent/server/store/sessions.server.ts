@@ -1,8 +1,12 @@
 import type { AgentRunResult } from '../../domain/agent'
 import type { ContextStrategyId } from '../../domain/context/types'
-import { WINDOW_SIZE } from '../../domain/context/window'
 import type { Fact } from '../../domain/facts'
 import type { MemoryEntry, MemoryLayer } from '../../domain/memory/types'
+import {
+  resolveSessionConfig,
+  sessionConfigInput,
+} from '../../domain/session/config'
+import type { SessionConfigInput } from '../../domain/session/config'
 import { getDb, nowIso, safeParse } from './db.server'
 import { getDefaultProfileId } from './profiles.server'
 
@@ -120,27 +124,13 @@ export async function listSubordinates(token: string): Promise<PersonRow[]> {
 export async function createSession(
   token: string,
   title: string,
-  options: {
-    strategy?: ContextStrategyId
-    scenario?: string | null
-    memory?: boolean
-    profileId?: number | null
-    windowSize?: number
-    taskStateEnabled?: boolean
-    invariantSetId?: number | null
-  } = {},
+  input: Partial<SessionConfigInput> = {},
 ): Promise<number> {
   const db = await getDb()
-  const strategy = options.strategy ?? 'summary'
-  const scenario = options.scenario ?? null
-  const memoryEnabled = options.memory ? 1 : 0
-  const profileId =
-    options.profileId === undefined
-      ? await getDefaultProfileId(token)
-      : options.profileId
-  const windowSize = options.windowSize ?? WINDOW_SIZE
-  const taskStateEnabled = options.taskStateEnabled ? 1 : 0
-  const invariantSetId = options.invariantSetId ?? null
+  const full = sessionConfigInput(input)
+  const defaultProfileId =
+    full.profileId === undefined ? await getDefaultProfileId(token) : null
+  const config = resolveSessionConfig(full, defaultProfileId)
   const result = db
     .prepare(
       'INSERT INTO sessions (token, title, strategy, scenario, memory_enabled, profile_id, window_size, task_state_enabled, invariant_set_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
@@ -148,13 +138,13 @@ export async function createSession(
     .run(
       token,
       title,
-      strategy,
-      scenario,
-      memoryEnabled,
-      profileId,
-      windowSize,
-      taskStateEnabled,
-      invariantSetId,
+      config.strategy,
+      config.scenario,
+      config.memoryEnabled ? 1 : 0,
+      config.profileId,
+      config.windowSize,
+      config.taskStateEnabled ? 1 : 0,
+      config.invariantSetId,
       nowIso(),
     )
   const sessionId = Number(result.lastInsertRowid)

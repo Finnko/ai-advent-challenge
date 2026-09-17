@@ -5,9 +5,6 @@ export const WINDOW_SIZE = 10
 
 export const windowStrategy: ContextStrategy = {
   id: 'window',
-  label: 'Скользящее окно',
-  description:
-    'В запрос уходят только последние сообщения, старое отбрасывается без следа.',
   async prepare({ rows, windowSize }) {
     const size = windowSize ?? WINDOW_SIZE
     const { agedOut, recent } = splitHistory(rows, size)

@@ -14,8 +14,9 @@ which starts by collapsing the agent demos into one workspace (Days 13–14 feat
 
 - `src/features/agent/` — the agent feature, self-contained for porting (see its `README.md`):
   `pages/` (only public surface), `api/` (react-query hooks), `functions/` (`createServerFn`),
-  `server/` (`.server.ts` deep modules), `domain/` (isomorphic logic), `data/` (client-safe data),
-  `components/`, `tests/`.
+  `server/` (`.server.ts` deep modules: `agent-turn`, `agent-service`, `store`), `domain/` (isomorphic
+  logic: `agent`, `agent-tools`, `context/`, `memory/`, `profile/`, `session/`, `tokens`),
+  `data/` (client-safe data), `components/`, `tests/`.
 - `src/lib/` — shared: `llm.ts`/`llm.server.ts` (transport), `functions/*.functions.ts` (Days 1–5 server
   fns + shared `validation.ts`), `day2.ts`…`day5.ts`, `days.ts` (sidebar), `utils.ts` (`cn`).
 - `src/components/` — app shell (`Header`, `Sidebar`, `Chat`) and shared `ui/Tabs.tsx`.
@@ -33,13 +34,34 @@ which starts by collapsing the agent demos into one workspace (Days 13–14 feat
   in `functions/` or `.server.ts`.
 - The client sends only ids (tier / strategy / session), never model or prompt strings.
 
+## Turn execution & session config (Day 13 refactor)
+
+- `features/agent/server/agent-turn.server.ts` — deep module of a Turn: `runAgentTurn({ token,
+  sessionId, user }, deps)` hydrates capabilities/session/active branch/history/summary/facts/
+  memory/profile, runs `executeAgent`, then appends the user and assistant messages.
+  `functions/run-agent.functions.ts` is only `validator → runAgentTurn(data)`.
+- Injectable seam: `TurnDeps = { resolveCapabilities, store: TurnStore, runtime: AgentRuntime,
+  now }`; `defaultTurnDeps` is the production wiring. Offline tests pass fakes (`tests/agent-turn.test.ts`).
+- `AgentRuntime` (in `agent-service.server.ts`): `{ callLLM, summarize, extractFacts, extractMemories,
+  store, createTools }`; `defaultAgentRuntime` wires the DeepSeek transport + `createAgentTools`.
+  `executeAgent(options, runtime = defaultAgentRuntime)` no longer builds transport/store itself.
+- **Session config is one module**: `domain/session/config.ts` owns `SessionConfig` /
+  `SessionConfigInput` / `SessionConfigDraft`, defaults (`sessionConfigInput`,
+  `DEFAULT_SESSION_CONFIG_DRAFT`), default-profile resolution (`resolveSessionConfig`),
+  draft→input (`sessionConfigDraftToInput`), immutability (`resolveActiveSessionConfig`) and
+  `clampWindowSize`. `parseSessionConfigInput` (`functions/validation.ts`) validates the wire shape.
+- `store.createSession(token, title, input: Partial<SessionConfigInput>)` delegates configuration
+  defaults to `domain/session/config.ts`; profile lookup remains server-side. `api/send-message.ts`
+  sends `{ config: SessionConfigInput }`; `pages/AgentPage.tsx` keeps a single `SessionConfigDraft`.
+  `null` in the draft means the token's default profile; the UI does not start no-profile sessions.
+
 ## Agent behavior
 
 - Tools live in `features/agent/domain/agent-tools.ts`; `TOOLS_BY_ROLE` is derived from each tool's
   `roles`, so capabilities, the decide prompt and `isPermitted` can't drift.
 - **One tool per message** (`decide → act → finalize`).
-- `runAgent` builds a small `context` string (last managed booking / pending vacation) and passes it as
-  `AgentConfig.context`; `decide` retries once with a nudge when it returns `tool: null` for an
+- `executeAgent` builds a small `context` string (last managed booking / pending vacation) and passes it
+  as `AgentConfig.context`; `decide` retries once with a nudge when it returns `tool: null` for an
   action-like request.
 - Room names resolve case/prefix-insensitively; groups over `ROOM_CAPACITY` are refused; `listVacations`
   output omits reference codes.
@@ -53,8 +75,9 @@ which starts by collapsing the agent demos into one workspace (Days 13–14 feat
 - One route `/agent` (`pages/AgentPage`) with tabs `Диалог | Задача | Инварианты | Настройки`; the last
   two are disabled placeholders for Days 13–14. Old routes redirect. One sidebar entry (`lib/days.ts`).
 - **Session config is the backbone** (`sessions.strategy` / `memory_enabled` / `profile_id` /
-  `window_size`): fixed by `createSession`, read by `runAgent`, never switchable mid-session. The client
-  sends only ids and the chosen config; `api/send-message.ts` creates the session then calls `runAgent`.
+  `window_size`): fixed by `createSession`, read by `runAgentTurn`, never switchable mid-session. The
+  client sends only ids and the chosen config; `api/send-message.ts` creates the session then calls
+  `runAgent` (→ `runAgentTurn`).
 - Reserved extension fields (no feature code yet): `sessions.task_state_enabled`, `sessions.invariant_set_id`.
   Future seams: `SystemBlock.kind` gains `'invariants' | 'task-state'`; invariants go in stable system
   blocks, task state after history with profile/memory.
@@ -63,8 +86,8 @@ which starts by collapsing the agent demos into one workspace (Days 13–14 feat
 
 - Seam in `features/agent/domain/context/`: `ContextStrategyId = 'summary' | 'none' | 'window' | 'facts'
   | 'branch'`, `ContextStrategy.prepare(input)` → `PreparedContext { history, blocks, note }`.
-- **Strategy is fixed per session** (`sessions.strategy`): set by `createSession`, read by `runAgent`;
-  never switchable mid-session.
+- **Strategy is fixed per session** (`sessions.strategy`): set by `createSession`, read by
+  `runAgentTurn`; never switchable mid-session.
 - Short-term memory is the `window` strategy; the sliding-window size is per session
   (`sessions.window_size`, `PrepareInput.windowSize`, default `WINDOW_SIZE = 10`).
 - Strategy blocks are inserted as **separate `system` messages** after the base system and before raw
@@ -86,7 +109,8 @@ which starts by collapsing the agent demos into one workspace (Days 13–14 feat
   strategy's blocks and the history (last, right before the user turn). `SystemBlock.kind` covers
   `'working' | 'long-term'`. A precedence line (`MEMORY_PRECEDENCE_LINE`) is added to the last user
   message when memory blocks are present: memory is authoritative over earlier history.
-- Memory is fixed per session via `sessions.memory_enabled` (set by `createSession`, read by `runAgent`).
+- Memory is fixed per session via `sessions.memory_enabled` (set by `createSession`, read by
+  `runAgentTurn`).
   Auto-extraction runs each turn; manual entries (`source='manual'`) survive auto overwrites; long-term
   is capped at `LONG_TERM_LIMIT`.
 
@@ -94,8 +118,8 @@ which starts by collapsing the agent demos into one workspace (Days 13–14 feat
 
 - Seam in `features/agent/domain/profile/`: `types.ts` (fields, limits, labels) and `read.ts`
   (`formatProfileBlock` / `buildProfileBlocks`); stored in the `profiles` table keyed by `token`.
-- Profile is **fixed per session** (`sessions.profile_id`): set by `createSession` (explicit id,
-  `null`, or default), read by `runAgent`. `deleteProfile` nulls the sessions and transfers the default
+- Profile is **fixed per session** (`sessions.profile_id`): set by `createSession` (explicit id or
+  default), read by `runAgentTurn`. `deleteProfile` nulls the sessions and transfers the default
   to the most recent remaining profile; a partial unique index keeps **one default per token**.
 - `SystemBlock.kind` includes `'profile'`; the block is inserted after history and before memory, and
   `PROFILE_PRECEDENCE_LINE` is merged into the last user message alongside `MEMORY_PRECEDENCE_LINE`.

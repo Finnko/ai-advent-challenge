@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import type { RunAgentResult } from '../types'
+import type { SessionConfigInput } from '../domain/session/config'
 import { createSession } from '../functions/create-session.functions'
 import { runAgent } from '../functions/run-agent.functions'
 import { sessionsQueryOptions } from './get-sessions'
@@ -12,13 +13,7 @@ export type SendMessageInput = {
   token: string
   sessionId: number | null
   user: string
-  strategy: string
-  scenario?: string | null
-  memory?: boolean
-  profileId?: number | null
-  windowSize?: number
-  taskStateEnabled?: boolean
-  invariantSetId?: number | null
+  config: SessionConfigInput
 }
 
 export async function sendMessage(
@@ -27,16 +22,7 @@ export async function sendMessage(
   let sessionId = input.sessionId
   if (sessionId === null) {
     const created = await createSession({
-      data: {
-        token: input.token,
-        strategy: input.strategy,
-        scenario: input.scenario ?? null,
-        memory: input.memory ?? false,
-        profileId: input.profileId,
-        windowSize: input.windowSize,
-        taskStateEnabled: input.taskStateEnabled,
-        invariantSetId: input.invariantSetId,
-      },
+      data: { token: input.token, config: input.config },
     })
     sessionId = created.sessionId
   }

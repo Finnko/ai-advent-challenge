@@ -1,34 +1,22 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo } from 'react'
 import type { AgentRunResult } from '../domain/agent'
 import type { ContextStrategyId } from '../domain/context/types'
-import type { MemoryLayer } from '../domain/memory/types'
 import type { ProfileInput } from '../domain/profile/types'
 import {
   CONTEXT_STRATEGIES,
   CONTEXT_STRATEGY_IDS,
 } from '../domain/context/registry'
 import { accountSession } from '../domain/accounting'
+import {
+  WINDOW_SIZE_MAX,
+  WINDOW_SIZE_MIN,
+  clampWindowSize,
+} from '../domain/session/config'
 import { CONTEXT_BUDGET_TOKENS, MODEL_CONTEXT_TOKENS } from '../domain/tokens'
 import { EXAMPLES, TOOL_INFO, TOKEN_SCENARIOS } from '../data/agent-ui'
 import type { Example, PersonaKind, ToolInfo } from '../data/agent-ui'
-import { useOrg } from '../api/get-org'
-import { useSessions } from '../api/get-sessions'
-import { useCapabilities } from '../api/get-capabilities'
-import { useSessionMessages } from '../api/get-session-messages'
-import { useSessionFacts } from '../api/get-facts'
-import { useSessionBranches } from '../api/get-branches'
-import { useMemory } from '../api/get-memory'
-import { useProfiles } from '../api/get-profiles'
-import { useSendMessage } from '../api/send-message'
-import { useDeleteSession } from '../api/delete-session'
-import { useCreateBranch } from '../api/create-branch'
-import { useSwitchBranch } from '../api/switch-branch'
-import { useSaveMemory } from '../api/save-memory'
-import { useDeleteMemory } from '../api/delete-memory'
-import { useCreateProfile } from '../api/create-profile'
-import { useUpdateProfile } from '../api/update-profile'
-import { useDeleteProfile } from '../api/delete-profile'
-import { useSetDefaultProfile } from '../api/set-default-profile'
+import { useAgentWorkspace } from '../api/use-agent-workspace'
+import type { ProfileItem } from '../types'
 import PersonaPicker from '../components/PersonaPicker'
 import CapabilitiesPanel from '../components/CapabilitiesPanel'
 import ExampleChips from '../components/ExampleChips'
@@ -65,36 +53,44 @@ import {
   SelectValue,
 } from '@/components/ui/Select'
 
-export const WINDOW_SIZE_MIN = 2
-export const WINDOW_SIZE_MAX = 50
-export const DEFAULT_WINDOW_SIZE = 10
-
 const STRATEGY_CHOICES = CONTEXT_STRATEGY_IDS.map((id) => ({
   id,
   label: CONTEXT_STRATEGIES[id].label,
   description: CONTEXT_STRATEGIES[id].description,
 }))
 
-const EMPTY_MEMORY = { working: [], longTerm: [] }
-
 export default function AgentPage() {
-  const [activeToken, setActiveToken] = useState<string | null>(null)
-  const [sessionId, setSessionId] = useState<number | null>(null)
-  const [draft, setDraft] = useState('')
-  const [strategy, setStrategy] = useState<ContextStrategyId>('window')
-  const [windowSize, setWindowSize] = useState(DEFAULT_WINDOW_SIZE)
-  const [memory, setMemory] = useState(true)
-  const [selectedProfileId, setSelectedProfileId] = useState<number | null>(null)
-  const [editingProfileId, setEditingProfileId] = useState<number | null>(null)
-  const [creatingProfile, setCreatingProfile] = useState(false)
-  const autoPickRef = useRef(false)
+  const workspace = useAgentWorkspace()
+  const {
+    sessionId,
+    draft,
+    config,
+    editingProfileId,
+    creatingProfile,
+    active,
+    manager,
+    employees,
+    activePerson,
+    sessions,
+    facts,
+    branches,
+    memoryView,
+    profiles,
+    selectedProfile,
+    defaultProfile,
+    messagesData,
+    capabilities,
+    capabilitiesError,
+    orgLoading,
+    orgError,
+    sendError,
+    branchError,
+    settingsError,
+    busy,
+    sending,
+    actions,
+  } = workspace
 
-  const orgQuery = useOrg()
-  const people = orgQuery.data ?? []
-  const manager = people.find((person) => person.role === 'manager') ?? null
-  const employees = people.filter((person) => person.role === 'employee')
-  const activePerson =
-    people.find((person) => person.token === activeToken) ?? manager ?? null
   const kind: PersonaKind = activePerson?.role ?? 'employee'
   const roleExamples: Example[] = EXAMPLES.filter(
     (example) => example.kind === kind,
@@ -103,287 +99,28 @@ export default function AgentPage() {
     tool.roles.includes(kind),
   )
 
-  useEffect(() => {
-    if (!activeToken && manager) {
-      setActiveToken(manager.token)
-    }
-  }, [activeToken, manager])
-
-  const capabilitiesQuery = useCapabilities(activeToken)
-  const sessionsQuery = useSessions(activeToken)
-  const messagesQuery = useSessionMessages(sessionId)
-  const factsQuery = useSessionFacts(sessionId)
-  const branchesQuery = useSessionBranches(sessionId)
-  const memoryQuery = useMemory(sessionId, activeToken)
-  const profilesQuery = useProfiles(activeToken)
-  const profiles = profilesQuery.data ?? []
-
-  const sendMutation = useSendMessage()
-  const deleteMutation = useDeleteSession()
-  const branchMutation = useCreateBranch()
-  const switchMutation = useSwitchBranch()
-  const saveMemoryMutation = useSaveMemory()
-  const deleteMemoryMutation = useDeleteMemory()
-  const createProfileMutation = useCreateProfile()
-  const updateProfileMutation = useUpdateProfile()
-  const deleteProfileMutation = useDeleteProfile()
-  const setDefaultMutation = useSetDefaultProfile()
-
-  const messages: ThreadMessage[] = (messagesQuery.data ?? []).map((row) => ({
-    id: row.id,
-    role: row.role,
-    content: row.content,
-    ...(row.run ? { run: row.run as AgentRunResult } : {}),
-  }))
-
-  const sessionSummary = (sessionsQuery.data ?? []).find(
-    (session) => session.id === sessionId,
+  const messages: ThreadMessage[] = useMemo(
+    () =>
+      messagesData.map((row) => ({
+        id: row.id,
+        role: row.role,
+        content: row.content,
+        ...(row.run ? { run: row.run as AgentRunResult } : {}),
+      })),
+    [messagesData],
   )
-  const facts = factsQuery.data ?? []
-  const branches = branchesQuery.data ?? []
-  const memoryView = memoryQuery.data ?? EMPTY_MEMORY
-  const selectedProfile =
-    profiles.find((profile) => profile.id === selectedProfileId) ?? null
-  const defaultProfile = profiles.find((profile) => profile.isDefault) ?? null
 
-  const busy =
-    sendMutation.isPending ||
-    deleteMutation.isPending ||
-    branchMutation.isPending ||
-    switchMutation.isPending ||
-    saveMemoryMutation.isPending ||
-    deleteMemoryMutation.isPending ||
-    createProfileMutation.isPending ||
-    updateProfileMutation.isPending ||
-    deleteProfileMutation.isPending ||
-    setDefaultMutation.isPending ||
-    capabilitiesQuery.isLoading
-
-  const activeStrategy: ContextStrategyId = sessionSummary?.strategy ?? strategy
-  const activeWindowSize = sessionSummary?.windowSize ?? windowSize
-  const activeMemory = sessionSummary?.memoryEnabled ?? memory
-  const activeProfileName = sessionSummary
-    ? (sessionSummary.profileName ?? null)
+  const activeStrategy: ContextStrategyId = active.strategy
+  const activeWindowSize = active.windowSize
+  const activeMemory = active.memoryEnabled
+  const activeProfileName = workspace.sessionSummary
+    ? (workspace.sessionSummary.profileName ?? null)
     : (selectedProfile?.name ?? defaultProfile?.name ?? null)
 
   const lastRun: AgentRunResult | null =
     [...messages].reverse().find((message) => message.run)?.run ?? null
   const noteState = lastRun?.contextNote ?? null
   const accounting = accountSession(messages, draft)
-
-  const openSession = (id: number) => {
-    if (busy || id === sessionId) {
-      return
-    }
-    sendMutation.reset()
-    setSessionId(id)
-    setDraft('')
-    setEditingProfileId(null)
-    setCreatingProfile(false)
-  }
-
-  useEffect(() => {
-    if (!autoPickRef.current) {
-      return
-    }
-    if (sessionsQuery.isSuccess) {
-      autoPickRef.current = false
-      const first = sessionsQuery.data[0]
-      if (first) {
-        openSession(first.id)
-      }
-    }
-  }, [sessionsQuery.isSuccess, sessionsQuery.data])
-
-  const handlePickPerson = (token: string) => {
-    if (token === activeToken || busy) {
-      return
-    }
-    sendMutation.reset()
-    setActiveToken(token)
-    setSessionId(null)
-    setDraft('')
-    setSelectedProfileId(null)
-    setEditingProfileId(null)
-    setCreatingProfile(false)
-    autoPickRef.current = true
-  }
-
-  const handleNewSession = () => {
-    if (busy) {
-      return
-    }
-    sendMutation.reset()
-    setSessionId(null)
-    setDraft('')
-    setEditingProfileId(null)
-    setCreatingProfile(false)
-  }
-
-  const handleDeleteSession = (id: number) => {
-    if (busy) {
-      return
-    }
-    deleteMutation.mutate(
-      { token: activeToken ?? '', sessionId: id },
-      {
-        onSuccess: () => {
-          if (id === sessionId) {
-            setSessionId(null)
-          }
-        },
-      },
-    )
-  }
-
-  const handleSend = () => {
-    const text = draft.trim()
-    if (text.length === 0 || busy || !activeToken) {
-      return
-    }
-    setDraft('')
-    sendMutation.mutate(
-      {
-        token: activeToken,
-        sessionId,
-        user: text,
-        strategy,
-        windowSize,
-        memory,
-        profileId:
-          sessionId === null ? (selectedProfileId ?? undefined) : undefined,
-      },
-      { onSuccess: (result) => setSessionId(result.sessionId) },
-    )
-  }
-
-  const handleFork = (messageId: number) => {
-    if (busy || sessionId === null) {
-      return
-    }
-    branchMutation.mutate({ sessionId, fromMessageId: messageId })
-  }
-
-  const handleSwitchBranch = (branchId: number) => {
-    if (busy || sessionId === null) {
-      return
-    }
-    switchMutation.mutate({ sessionId, branchId })
-  }
-
-  const handleForkCheckpoint = (
-    parentBranchId: number,
-    forkMessageId: number,
-  ) => {
-    if (busy || sessionId === null) {
-      return
-    }
-    branchMutation.mutate({
-      sessionId,
-      fromMessageId: forkMessageId,
-      parentBranchId,
-    })
-  }
-
-  const handleSaveMemory = (input: {
-    scope: MemoryLayer
-    key: string
-    value: string
-  }) => {
-    if (!activeToken || sessionId === null) {
-      return
-    }
-    saveMemoryMutation.mutate({
-      ...input,
-      token: activeToken,
-      sessionId,
-      scenario: sessionSummary?.scenario ?? null,
-    })
-  }
-
-  const handleForgetMemory = (scope: MemoryLayer, key: string) => {
-    if (!activeToken || sessionId === null) {
-      return
-    }
-    deleteMemoryMutation.mutate({ scope, key, token: activeToken, sessionId })
-  }
-
-  const handleSelectProfile = (id: number) => {
-    setCreatingProfile(false)
-    setEditingProfileId(id)
-    setSelectedProfileId(id)
-  }
-
-  const handleCreateProfile = () => {
-    setCreatingProfile(true)
-    setEditingProfileId(null)
-  }
-
-  const handleSaveProfile = (input: ProfileInput) => {
-    if (!activeToken) {
-      return
-    }
-    if (creatingProfile) {
-      createProfileMutation.mutate(
-        { token: activeToken, ...input, isDefault: profiles.length === 0 },
-        {
-          onSuccess: (profile) => {
-            setCreatingProfile(false)
-            setEditingProfileId(profile.id)
-            setSelectedProfileId(profile.id)
-          },
-        },
-      )
-      return
-    }
-    if (editingProfileId === null) {
-      return
-    }
-    updateProfileMutation.mutate({
-      token: activeToken,
-      profileId: editingProfileId,
-      ...input,
-    })
-  }
-
-  const handleDeleteProfile = (id: number) => {
-    if (busy) {
-      return
-    }
-    deleteProfileMutation.mutate(
-      { token: activeToken ?? '', profileId: id },
-      {
-        onSuccess: () => {
-          if (editingProfileId === id) {
-            setEditingProfileId(null)
-          }
-          if (selectedProfileId === id) {
-            setSelectedProfileId(null)
-          }
-        },
-      },
-    )
-  }
-
-  const sendError = sendMutation.isError ? toError(sendMutation.error) : null
-  const branchError = branchMutation.isError
-    ? toError(branchMutation.error)
-    : null
-  const orgError = orgQuery.isError ? toError(orgQuery.error) : null
-  let settingsError: string | null = null
-  if (saveMemoryMutation.isError) {
-    settingsError = toError(saveMemoryMutation.error)
-  } else if (deleteMemoryMutation.isError) {
-    settingsError = toError(deleteMemoryMutation.error)
-  } else if (createProfileMutation.isError) {
-    settingsError = toError(createProfileMutation.error)
-  } else if (updateProfileMutation.isError) {
-    settingsError = toError(updateProfileMutation.error)
-  } else if (deleteProfileMutation.isError) {
-    settingsError = toError(deleteProfileMutation.error)
-  } else if (setDefaultMutation.isError) {
-    settingsError = toError(setDefaultMutation.error)
-  }
 
   const editorInitial: ProfileInput | null = useMemo(
     () =>
@@ -403,10 +140,10 @@ export default function AgentPage() {
   )
 
   let capsPanel: Parameters<typeof CapabilitiesPanel>[0] = { status: 'loading' }
-  if (capabilitiesQuery.data) {
-    capsPanel = { status: 'ready', caps: capabilitiesQuery.data }
-  } else if (capabilitiesQuery.isError) {
-    capsPanel = { status: 'error', message: toError(capabilitiesQuery.error) }
+  if (capabilities) {
+    capsPanel = { status: 'ready', caps: capabilities }
+  } else if (capabilitiesError) {
+    capsPanel = { status: 'error', message: capabilitiesError }
   }
 
   const sessionLocked = sessionId !== null
@@ -415,7 +152,7 @@ export default function AgentPage() {
   let sessionHint: string
   if (sessionLocked) {
     sessionHint = 'Конфиг зафиксирован за сессией'
-  } else if (selectedProfileId === null) {
+  } else if (config.profileId === null) {
     sessionHint = 'Будет применён профиль по умолчанию'
   } else {
     sessionHint = `Новая сессия с профилем «${selectedProfile?.name ?? ''}»`
@@ -434,7 +171,7 @@ export default function AgentPage() {
         </p>
       </header>
 
-      {orgQuery.isLoading && <p className="demo-muted">Загружаю сотрудников…</p>}
+      {orgLoading && <p className="demo-muted">Загружаю сотрудников…</p>}
       {orgError && <Alert variant="destructive">{orgError}</Alert>}
 
       {activePerson && manager && (
@@ -450,7 +187,7 @@ export default function AgentPage() {
             employees={employees}
             activeToken={activePerson.token}
             disabled={busy}
-            onPick={handlePickPerson}
+            onPick={actions.pickPerson}
           />
           <CapabilitiesPanel {...capsPanel} />
         </section>
@@ -467,12 +204,12 @@ export default function AgentPage() {
             </div>
             <div className="min-h-0 flex-1 py-2">
               <SessionList
-                sessions={sessionsQuery.data ?? []}
+                sessions={sessions}
                 activeId={sessionId}
                 disabled={busy}
-                onOpen={openSession}
-                onDelete={handleDeleteSession}
-                onNew={handleNewSession}
+                onOpen={actions.openSession}
+                onDelete={actions.deleteSession}
+                onNew={actions.newSession}
               />
             </div>
           </aside>
@@ -516,7 +253,7 @@ export default function AgentPage() {
                   <ExampleChips
                     examples={roleExamples}
                     disabled={busy}
-                    onPick={setDraft}
+                    onPick={actions.setDraft}
                   />
                   {availableTools.length > 0 && (
                     <div className="flex flex-wrap gap-1.5">
@@ -557,7 +294,7 @@ export default function AgentPage() {
                         key={scenario.id}
                         variant="secondary"
                         size="sm"
-                        onClick={() => setDraft(scenario.text)}
+                        onClick={() => actions.setDraft(scenario.text)}
                         disabled={busy}
                         title={scenario.hint}
                       >
@@ -572,15 +309,15 @@ export default function AgentPage() {
                     <BranchPanel
                       branches={branches}
                       disabled={busy}
-                      onSwitch={handleSwitchBranch}
-                      onForkCheckpoint={handleForkCheckpoint}
+                      onSwitch={actions.switchBranch}
+                      onForkCheckpoint={actions.forkCheckpoint}
                     />
                   )}
 
                   <ChatThread
                     messages={messages}
-                    running={sendMutation.isPending}
-                    onFork={activeStrategy === 'branch' ? handleFork : undefined}
+                    running={sending}
+                    onFork={activeStrategy === 'branch' ? actions.fork : undefined}
                     forkDisabled={busy}
                   />
 
@@ -592,13 +329,13 @@ export default function AgentPage() {
                   <form
                     onSubmit={(event) => {
                       event.preventDefault()
-                      handleSend()
+                      actions.send()
                     }}
                     className="flex flex-col gap-3"
                   >
                     <Textarea
                       value={draft}
-                      onChange={(event) => setDraft(event.target.value)}
+                      onChange={(event) => actions.setDraft(event.target.value)}
                       placeholder="Например: забронируй переговорку на завтра на 15:00 на 6 человек…"
                       className="min-h-0"
                       rows={6}
@@ -626,12 +363,16 @@ export default function AgentPage() {
                     memory={activeMemory}
                     profileName={activeProfileName}
                     profiles={profiles}
-                    selectedProfileId={selectedProfileId}
+                    selectedProfileId={config.profileId}
                     busy={busy}
-                    onStrategy={setStrategy}
-                    onWindowSize={setWindowSize}
-                    onMemory={setMemory}
-                    onProfile={(id) => setSelectedProfileId(id)}
+                    onStrategy={(id) => actions.patchConfig({ strategy: id })}
+                    onWindowSize={(size) =>
+                      actions.patchConfig({ windowSize: size })
+                    }
+                    onMemory={(value) =>
+                      actions.patchConfig({ memoryEnabled: value })
+                    }
+                    onProfile={(id) => actions.patchConfig({ profileId: id })}
                   />
 
                   <div className="flex items-stretch gap-4">
@@ -640,15 +381,10 @@ export default function AgentPage() {
                         profiles={profiles}
                         activeId={editingProfileId}
                         disabled={busy}
-                        onSelect={handleSelectProfile}
-                        onCreate={handleCreateProfile}
-                        onDelete={handleDeleteProfile}
-                        onSetDefault={(id) =>
-                          setDefaultMutation.mutate({
-                            token: activeToken ?? '',
-                            profileId: id,
-                          })
-                        }
+                        onSelect={actions.selectProfile}
+                        onCreate={actions.startCreateProfile}
+                        onDelete={actions.deleteProfile}
+                        onSetDefault={actions.setDefaultProfile}
                       />
                     </aside>
                     <div className="min-w-0 flex-1">
@@ -657,11 +393,8 @@ export default function AgentPage() {
                           profileId={creatingProfile ? null : editingProfileId}
                           initial={editorInitial}
                           disabled={busy}
-                          onSave={handleSaveProfile}
-                          onCancel={() => {
-                            setCreatingProfile(false)
-                            setEditingProfileId(null)
-                          }}
+                          onSave={actions.saveProfile}
+                          onCancel={actions.finishProfileEdit}
                         />
                       ) : (
                         <section className="flex h-full items-center justify-center rounded-xl border border-dashed border-[var(--line)] p-6">
@@ -688,16 +421,16 @@ export default function AgentPage() {
                           <MemoryInspector
                             working={memoryView.working}
                             longTerm={memoryView.longTerm}
-                            shortTermCount={messagesQuery.data?.length ?? 0}
+                            shortTermCount={messagesData.length}
                             disabled={busy}
-                            onForget={handleForgetMemory}
+                            onForget={actions.forgetMemory}
                           />
                         </div>
                         <div className="w-[360px] shrink-0">
                           <MemoryPanel
                             disabled={busy}
                             lastUserMessage={lastUserMessage(messages)}
-                            onSave={handleSaveMemory}
+                            onSave={actions.saveMemory}
                           />
                         </div>
                       </div>
@@ -723,7 +456,7 @@ type SessionConfigProps = {
   windowSize: number
   memory: boolean
   profileName: string | null
-  profiles: ReturnType<typeof useProfiles>['data']
+  profiles: ProfileItem[]
   selectedProfileId: number | null
   busy: boolean
   onStrategy: (id: ContextStrategyId) => void
@@ -860,17 +593,6 @@ function lastUserMessage(messages: ThreadMessage[]): string | undefined {
     .find((message) => message.role === 'user')?.content
 }
 
-function clampWindowSize(value: number): number {
-  if (!Number.isFinite(value)) {
-    return DEFAULT_WINDOW_SIZE
-  }
-  return Math.min(WINDOW_SIZE_MAX, Math.max(WINDOW_SIZE_MIN, Math.round(value)))
-}
-
 function strategyLabel(id: ContextStrategyId): string {
   return CONTEXT_STRATEGIES[id]?.label ?? id
-}
-
-function toError(err: unknown): string {
-  return err instanceof Error ? err.message : String(err)
 }
