@@ -31,6 +31,7 @@ import FactsPanel from '../components/FactsPanel'
 import BranchPanel from '../components/BranchPanel'
 import MemoryInspector from '../components/MemoryInspector'
 import MemoryPanel from '../components/MemoryPanel'
+import TaskStatePanel from '../components/TaskStatePanel'
 import ProfileList from '../components/ProfileList'
 import ProfileEditor from '../components/ProfileEditor'
 import {
@@ -75,6 +76,7 @@ export default function AgentPage() {
     facts,
     branches,
     memoryView,
+    taskState,
     profiles,
     selectedProfile,
     defaultProfile,
@@ -86,6 +88,7 @@ export default function AgentPage() {
     sendError,
     branchError,
     settingsError,
+    taskError,
     busy,
     sending,
     actions,
@@ -165,9 +168,9 @@ export default function AgentPage() {
         <h1 className="demo-title mb-2">Корпоративный агент</h1>
         <p className="demo-muted m-0 max-w-4xl text-sm">
           Все доработки в одном месте: стратегии контекста (скользящее окно —
-          краткосрочная память), слои памяти, профиль пользователя. Настрой конфиг
-          во вкладке «Настройки», создай сессию и работай во вкладке «Диалог».
-          Задача и инварианты — точки расширения для следующих дней.
+          краткосрочная память), слои памяти, профиль пользователя и состояние
+          задачи. Настрой конфиг во вкладке «Настройки», создай сессию и работай
+          во вкладке «Диалог». Инварианты — точка расширения для следующего дня.
         </p>
       </header>
 
@@ -225,6 +228,9 @@ export default function AgentPage() {
                   <Badge>окно {activeWindowSize}</Badge>
                 )}
                 <Badge>{activeMemory ? 'память вкл.' : 'память выкл.'}</Badge>
+                <Badge>
+                  {active.taskStateEnabled ? 'задача вкл.' : 'задача выкл.'}
+                </Badge>
                 {activeProfileName && <Badge>{activeProfileName}</Badge>}
                 <span className="demo-muted text-xs">
                   {sessionId ? `сессия #${sessionId}` : 'новая сессия'}
@@ -235,9 +241,7 @@ export default function AgentPage() {
             <Tabs defaultValue="dialog">
               <TabsList>
                 <TabsTrigger value="dialog">Диалог</TabsTrigger>
-                <TabsTrigger value="task" disabled title="Day 13 — Task state machine">
-                  Задача
-                </TabsTrigger>
+                <TabsTrigger value="task">Задача</TabsTrigger>
                 <TabsTrigger
                   value="invariants"
                   disabled
@@ -354,6 +358,26 @@ export default function AgentPage() {
                 </div>
               </TabsContent>
 
+              <TabsContent value="task">
+                <div className="flex flex-col gap-3">
+                  <p className="demo-muted m-0 text-sm">
+                    Агент ведёт состояние задачи как конечный автомат: этап,
+                    текущий шаг и ожидаемое действие. Задача фиксируется за
+                    сессией — пауза и продолжение сохраняются.
+                  </p>
+                  <TaskStatePanel
+                    state={taskState}
+                    enabled={active.taskStateEnabled}
+                    hasSession={sessionLocked}
+                    busy={busy}
+                    onPause={actions.pauseTask}
+                    onResume={actions.resumeTask}
+                    onCancel={actions.cancelTask}
+                  />
+                  {taskError && <Alert variant="destructive">{taskError}</Alert>}
+                </div>
+              </TabsContent>
+
               <TabsContent value="settings">
                 <div className="flex flex-col gap-4">
                   <SessionConfig
@@ -361,6 +385,8 @@ export default function AgentPage() {
                     strategy={activeStrategy}
                     windowSize={activeWindowSize}
                     memory={activeMemory}
+                    taskState={config.taskStateEnabled}
+                    activeTaskState={active.taskStateEnabled}
                     profileName={activeProfileName}
                     profiles={profiles}
                     selectedProfileId={config.profileId}
@@ -371,6 +397,9 @@ export default function AgentPage() {
                     }
                     onMemory={(value) =>
                       actions.patchConfig({ memoryEnabled: value })
+                    }
+                    onTaskState={(value) =>
+                      actions.patchConfig({ taskStateEnabled: value })
                     }
                     onProfile={(id) => actions.patchConfig({ profileId: id })}
                   />
@@ -455,6 +484,8 @@ type SessionConfigProps = {
   strategy: ContextStrategyId
   windowSize: number
   memory: boolean
+  taskState: boolean
+  activeTaskState: boolean
   profileName: string | null
   profiles: ProfileItem[]
   selectedProfileId: number | null
@@ -462,6 +493,7 @@ type SessionConfigProps = {
   onStrategy: (id: ContextStrategyId) => void
   onWindowSize: (size: number) => void
   onMemory: (value: boolean) => void
+  onTaskState: (value: boolean) => void
   onProfile: (id: number | null) => void
 }
 
@@ -470,6 +502,8 @@ function SessionConfig({
   strategy,
   windowSize,
   memory,
+  taskState,
+  activeTaskState,
   profileName,
   profiles,
   selectedProfileId,
@@ -477,6 +511,7 @@ function SessionConfig({
   onStrategy,
   onWindowSize,
   onMemory,
+  onTaskState,
   onProfile,
 }: SessionConfigProps) {
   const list = profiles ?? []
@@ -492,6 +527,7 @@ function SessionConfig({
           <Badge>{strategyLabel(strategy)}</Badge>
           {strategy === 'window' && <Badge>окно {windowSize}</Badge>}
           <Badge>{memory ? 'память вкл.' : 'память выкл.'}</Badge>
+          <Badge>{activeTaskState ? 'задача вкл.' : 'задача выкл.'}</Badge>
           <Badge>{profileName ?? 'профиль по умолчанию'}</Badge>
         </div>
       </section>
@@ -576,6 +612,15 @@ function SessionConfig({
             disabled={busy}
           />
           слои памяти (рабочая и долговременная)
+        </label>
+
+        <label className="demo-muted flex items-center gap-2 self-end text-xs">
+          <Checkbox
+            checked={taskState}
+            onCheckedChange={(checked) => onTaskState(checked === true)}
+            disabled={busy}
+          />
+          состояние задачи (этап, шаг, ожидаемое действие)
         </label>
       </div>
 

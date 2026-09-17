@@ -22,6 +22,10 @@ import type {
 import { toLlmMessages } from '../domain/compression'
 import { createExtractMemories } from '../domain/memory/extract'
 import type { ExtractMemories } from '../domain/memory/extract'
+import { createAnalyzeTaskState } from '../domain/task/analyze'
+import type { AnalyzeTaskState } from '../domain/task/analyze'
+import { buildTaskStateBlocks } from '../domain/task/read'
+import type { TaskState } from '../domain/task/types'
 import type { MemoryEntry } from '../domain/memory/types'
 import {
   applyLongTermLimit,
@@ -124,6 +128,7 @@ export type AgentRuntime = {
   summarize: Summarize
   extractFacts: ExtractFacts
   extractMemories: ExtractMemories
+  analyzeTaskState: AnalyzeTaskState
   store: AgentStore
   createTools: (store: AgentStore, now: Date) => AgentTool[]
 }
@@ -133,6 +138,7 @@ export const defaultAgentRuntime: AgentRuntime = {
   summarize: summarizeHistory,
   extractFacts: createExtractFacts(callFlash),
   extractMemories: createExtractMemories(callFlash),
+  analyzeTaskState: createAnalyzeTaskState(callFlash),
   store: createAgentStore(),
   createTools: createAgentTools,
 }
@@ -157,12 +163,14 @@ export type ExecuteOptions = {
   windowSize?: number
   memory?: MemoryOptions
   profile?: ProfileRecord | null
+  taskState?: TaskState | null
   now?: Date
 }
 
 export type AgentExecution = {
   run: AgentRunResult
   auxUsage: SummaryUsage | null
+  taskState: TaskState | null
 }
 
 export async function executeAgent(
@@ -172,6 +180,7 @@ export async function executeAgent(
   const now = options.now ?? new Date()
   const store = runtime.store
   const context = await buildAgentContext(store, options.capabilities)
+  const taskState = options.taskState ?? null
   const agent = new Agent({
     capabilities: options.capabilities,
     tools: runtime.createTools(store, now),
@@ -181,10 +190,12 @@ export async function executeAgent(
     today: todayIso(now),
     responseLanguage: options.profile?.language ?? null,
     context,
+    taskState,
   })
   try {
     const memoryBlocks = await prepareMemoryBlocks(options, runtime.extractMemories)
     const profileBlocks = buildProfileBlocks(options.profile ?? null)
+    const taskBlocks = buildTaskStateBlocks(taskState)
     const prepared = await options.strategy.prepare({
       rows: options.rows,
       request: options.user,
@@ -196,6 +207,7 @@ export async function executeAgent(
       blocks: [
         ...profileBlocks,
         ...memoryBlocks.blocks,
+        ...taskBlocks,
         ...prepared.context.blocks,
       ],
     }
@@ -203,9 +215,10 @@ export async function executeAgent(
     return {
       run,
       auxUsage: sumSummaryUsage(prepared.auxUsage, memoryBlocks.usage),
+      taskState,
     }
   } catch (error) {
-    return { run: blockedRun(options, error), auxUsage: null }
+    return { run: blockedRun(options, error), auxUsage: null, taskState }
   }
 }
 

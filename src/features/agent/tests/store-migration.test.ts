@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite'
 import { describe, expect, it } from 'vitest'
-import { migrateSessions } from '../server/store.server'
+import { migrateSessions, migrateTaskStates } from '../server/store.server'
 
 function legacyDatabase(): DatabaseSync {
   const db = new DatabaseSync(':memory:')
@@ -116,5 +116,32 @@ describe('migrateSessions', () => {
     expect(session.window_size).toBe(10)
     expect(session.task_state_enabled).toBe(0)
     expect(session.invariant_set_id).toBeNull()
+  })
+})
+
+describe('migrateTaskStates', () => {
+  it('создаёт таблицу task_states и идемпотентна', () => {
+    const db = new DatabaseSync(':memory:')
+    migrateTaskStates(db)
+    migrateTaskStates(db)
+
+    const columns = (
+      db.prepare('PRAGMA table_info(task_states)').all() as Array<{
+        name: string
+      }>
+    ).map((column) => column.name)
+    expect(columns).toEqual(
+      expect.arrayContaining([
+        'session_id',
+        'title',
+        'stage',
+        'previous_stage',
+        'step',
+        'expected_actor',
+        'expected_description',
+        'history_json',
+        'updated_at',
+      ]),
+    )
   })
 })

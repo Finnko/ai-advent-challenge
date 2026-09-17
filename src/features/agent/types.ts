@@ -3,6 +3,7 @@ import type { SummaryUsage } from './domain/compression'
 import type { ContextStrategyId } from './domain/context/types'
 import type { MemoryEntry } from './domain/memory/types'
 import type { ProfileRecord } from './domain/profile/types'
+import type { TaskState } from './domain/task/types'
 
 export type OrgPerson = {
   token: string
@@ -41,6 +42,11 @@ export type RunAgentResult = {
   run: AgentRunResult
   sessionId: number
   auxUsage: SummaryUsage | null
+  taskState: TaskState | null
+}
+
+export type TaskStateResult = {
+  taskState: TaskState | null
 }
 
 export type CreateSessionResult = {

@@ -18,5 +18,6 @@ export const runAgent = createServerFn({ method: 'POST' })
       run: execution.run,
       sessionId: data.sessionId,
       auxUsage: execution.auxUsage,
+      taskState: execution.taskState,
     } satisfies RunAgentResult
   })

@@ -17,7 +17,7 @@ describe('session config', () => {
       windowSize: 10,
       memoryEnabled: false,
       profileId: undefined,
-      taskStateEnabled: false,
+      taskStateEnabled: true,
       invariantSetId: undefined,
     })
     expect(DEFAULT_SESSION_CONFIG_DRAFT).toEqual({
@@ -25,6 +25,7 @@ describe('session config', () => {
       windowSize: 10,
       memoryEnabled: true,
       profileId: null,
+      taskStateEnabled: true,
     })
   })
 
@@ -46,6 +47,7 @@ describe('session config', () => {
         windowSize: 4,
         memoryEnabled: true,
         profileId: null,
+        taskStateEnabled: false,
       }),
     ).toEqual({
       strategy: 'facts',
@@ -69,12 +71,14 @@ describe('session config', () => {
       windowSize: 10,
       memoryEnabled: false,
       profileId: 5,
+      taskStateEnabled: true,
     })
     expect(resolveActiveSessionConfig(null, draft)).toEqual({
       strategy: 'window',
       windowSize: 10,
       memoryEnabled: true,
       profileId: null,
+      taskStateEnabled: true,
     })
   })
 
@@ -92,7 +96,7 @@ describe('session config', () => {
       windowSize: 10,
       memoryEnabled: false,
       profileId: undefined,
-      taskStateEnabled: false,
+      taskStateEnabled: true,
       invariantSetId: undefined,
     })
 

@@ -3,7 +3,9 @@ export {
   getDb,
   migrateBookings,
   migrateSessions,
+  migrateTaskStates,
 } from './store/db.server'
+export { getTaskState, saveTaskState } from './store/tasks.server'
 export {
   appendMessage,
   countMessagesByBranch,

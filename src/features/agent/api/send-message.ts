@@ -8,6 +8,7 @@ import { sessionMessagesQueryOptions } from './get-session-messages'
 import { sessionBranchesQueryOptions } from './get-branches'
 import { sessionFactsQueryOptions } from './get-facts'
 import { memoryQueryOptions } from './get-memory'
+import { taskStateQueryOptions } from './task-state'
 
 export type SendMessageInput = {
   token: string
@@ -51,6 +52,9 @@ export function useSendMessage() {
       })
       queryClient.invalidateQueries({
         queryKey: memoryQueryOptions(sessionId, vars.token).queryKey,
+      })
+      queryClient.invalidateQueries({
+        queryKey: taskStateQueryOptions(sessionId).queryKey,
       })
     },
     mutationFn: sendMessage,

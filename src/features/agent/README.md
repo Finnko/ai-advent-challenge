@@ -2,7 +2,8 @@
 
 Корпоративный LLM-агент: инструменты по ролям, персистентность в SQLite, управление контекстом
 стратегиями (`summary` / `none` / `window` / `facts` / `branch`), явная модель памяти
-(краткосрочная = скользящее окно, рабочая, долговременная) и профиль пользователя (Day 12).
+(краткосрочная = скользящее окно, рабочая, долговременная), профиль пользователя (Day 12) и
+состояние задачи как конечный автомат (Day 13).
 
 Всё собрано в **один рабочий экран** `/agent` с табами. Фича спроектирована так, чтобы её можно
 было перенести в другой TanStack Start проект.
@@ -15,7 +16,7 @@ src/features/agent/
   api/         # клиентские хуки react-query (bulletproof-стиль): queryOptions + useX/mutations
   functions/   # createServerFn-обёртки (сетевой шов)
   server/      # *.server.ts — глубокие server-only модули (agent-turn, agent-service, store)
-  domain/      # изоморфная логика без env/fetch (agent, tools, контекст, память, профиль, session, токены)
+  domain/      # изоморфная логика без env/fetch (agent, tools, контекст, память, профиль, задача, session, токены)
   data/        # клиентские данные без env (примеры, подписи инструментов)
   components/  # UI фичи
   tests/       # офлайн-тесты (vitest, node env)
@@ -53,7 +54,7 @@ runtime = defaultAgentRuntime)` не собирает их сам.
 `parseSessionConfigInput` (`functions/validation.ts`).
 
 `createSession` принимает `Partial<SessionConfigInput>` (`strategy`, `scenario`, `windowSize`,
-`memoryEnabled`, `profileId`, + зарезервированные `taskStateEnabled`, `invariantSetId`), хранит их в
+`memoryEnabled`, `profileId`, `taskStateEnabled`, + зарезервированный `invariantSetId`), хранит их в
 таблице `sessions` и дальше не меняет. Правила defaulting живут в модуле, а store делегирует ему
 разрешение конфигурации и выполняет server-side lookup default profile:
 
@@ -61,6 +62,7 @@ runtime = defaultAgentRuntime)` не собирает их сам.
 - `windowSize` — размер скользящего окна для стратегии `window` (default `DEFAULT_WINDOW_SIZE = 10`,
   допустимо 2–50, валидатор `requireWindowSize`);
 - `memoryEnabled` — включает авто-извлечение и блоки памяти;
+- `taskStateEnabled` — ведёт ли агент состояние задачи (default `true`, тумблер в «Настройках»);
 - `profileId` — профиль пользователя: `undefined` (в draft это `null`) → дефолт токена, id → явный.
   Режим «без профиля» UI не предлагает.
 
@@ -96,13 +98,27 @@ user-ходом. Дедуп — last-write-wins, ручная запись не 
 - Лимиты — в `functions/validation.ts` (`requireProfileName`, `optionalProfileField`: имя ≤60,
   поле ≤120, ограничения ≤500, инструкции ≤1200).
 
-## Точки расширения (Day 13/14, ещё не реализовано)
+## Состояние задачи (Day 13)
 
-- Зарезервированы поля сессии `task_state_enabled`, `invariant_set_id` (миграция идемпотентна).
-- `SystemBlock.kind` расширится до `'invariants' | 'task-state'`: инварианты — в стабильные
-  system-блоки после base system, состояние задачи — после истории, рядом с profile/memory.
-- Day 13: домен `domain/task/`, стадия анализа состояния, таблица `task_states`, граф переходов
-  `planning → execution → validation → done` (плюс paused/cancelled).
+Задача ведётся как конечный автомат: **этап → текущий шаг → ожидаемое действие**. Граф
+`planning → execution → validation → done` плюс `paused` (помнит `previousStage`) и `cancelled`.
+
+- Шов — `domain/task/`: `types.ts` (стадии, актор, лимиты), `state.ts` (чистый reducer переходов,
+  pause/resume/cancel, отклонение нелегальных переходов), `analyze.ts` (LLM-анализатор состояния),
+  `read.ts` (system-блок и volatile-строка про этап/ожидаемое действие).
+- Фича гейтится `sessions.task_state_enabled` (по умолчанию **включена**), фиксируется за сессией.
+- Анализатор гоняется раз в Ход **до** `executeAgent`; при сбое состояние не меняется, usage → `auxUsage`.
+- Snapshot живёт в таблице `task_states` (keyed by `session_id`, bounded `history_json`); пауза и
+  продолжение переживают сессию. Кнопки в табе «Задача» и естественный язык («пауза», «продолжим»)
+  ведут к одному reducer'у.
+- Блок `kind: 'task-state'` вставляется последним system-блоком в оба этапа (decide/finalize);
+  при `paused` вызов инструментов жёстко блокируется.
+
+## Точки расширения (Day 14, ещё не реализовано)
+
+- Зарезервировано поле сессии `invariant_set_id` (миграция идемпотентна).
+- `SystemBlock.kind` расширится до `'invariants'`: инварианты — в стабильные system-блоки после
+  base system.
 - Day 14: домен `domain/invariants/`, таблицы наборов/правил, pre-act guard + post-finalize judge,
   расширение `JudgeContext` и `AgentRunResult` списком нарушений.
 

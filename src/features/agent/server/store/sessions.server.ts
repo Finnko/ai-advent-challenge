@@ -355,6 +355,7 @@ export async function deleteSession(sessionId: number): Promise<void> {
       sessionId,
     )
     db.prepare('DELETE FROM working_memory WHERE session_id = ?').run(sessionId)
+    db.prepare('DELETE FROM task_states WHERE session_id = ?').run(sessionId)
     db.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId)
     db.exec('COMMIT')
   } catch (error) {

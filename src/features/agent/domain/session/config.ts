@@ -30,6 +30,7 @@ export type SessionConfigDraft = {
   windowSize: number
   memoryEnabled: boolean
   profileId: number | null
+  taskStateEnabled: boolean
 }
 
 export type ResolvedSessionConfig = {
@@ -37,6 +38,7 @@ export type ResolvedSessionConfig = {
   windowSize: number
   memoryEnabled: boolean
   profileId: number | null
+  taskStateEnabled: boolean
 }
 
 export const DEFAULT_SESSION_CONFIG_DRAFT: SessionConfigDraft = {
@@ -44,6 +46,7 @@ export const DEFAULT_SESSION_CONFIG_DRAFT: SessionConfigDraft = {
   windowSize: DEFAULT_WINDOW_SIZE,
   memoryEnabled: true,
   profileId: null,
+  taskStateEnabled: true,
 }
 
 export function sessionConfigInput(
@@ -55,7 +58,7 @@ export function sessionConfigInput(
     windowSize: DEFAULT_WINDOW_SIZE,
     memoryEnabled: false,
     profileId: undefined,
-    taskStateEnabled: false,
+    taskStateEnabled: true,
     invariantSetId: undefined,
     ...overrides,
   }
@@ -85,6 +88,7 @@ export function sessionConfigDraftToInput(
     windowSize: draft.windowSize,
     memoryEnabled: draft.memoryEnabled,
     profileId: draft.profileId ?? undefined,
+    taskStateEnabled: draft.taskStateEnabled,
   })
 }
 
@@ -98,6 +102,7 @@ export function resolveActiveSessionConfig(
       windowSize: session.windowSize,
       memoryEnabled: session.memoryEnabled,
       profileId: session.profileId,
+      taskStateEnabled: session.taskStateEnabled,
     }
   }
   return {
@@ -105,6 +110,7 @@ export function resolveActiveSessionConfig(
     windowSize: draft.windowSize,
     memoryEnabled: draft.memoryEnabled,
     profileId: draft.profileId,
+    taskStateEnabled: draft.taskStateEnabled,
   }
 }
 

@@ -1,5 +1,5 @@
 import type { AgentCapabilities } from '../domain/agent'
-import type { CompressionMessage } from '../domain/compression'
+import type { CompressionMessage, SummaryUsage } from '../domain/compression'
 import { resolveStrategy } from '../domain/context/registry'
 import type { ContextStrategyId } from '../domain/context/types'
 import type { Fact } from '../domain/facts'
@@ -8,6 +8,9 @@ import type { ProfileRecord } from '../domain/profile/types'
 import {
   resolveSessionConfig,
 } from '../domain/session/config'
+import { applyAnalysis, createTaskState } from '../domain/task/state'
+import type { AnalyzeTaskState } from '../domain/task/analyze'
+import type { TaskState } from '../domain/task/types'
 import type { AgentExecution, AgentRuntime } from './agent-service.server'
 import {
   defaultAgentRuntime,
@@ -22,10 +25,12 @@ import {
   getSession,
   getSessionFacts,
   getSessionSummary,
+  getTaskState,
   getWorkingMemory,
   loadMessages as loadMessagesFromStore,
   saveLongTermMemory,
   saveSessionFacts,
+  saveTaskState,
   saveWorkingMemory,
   upsertSessionSummary,
 } from './store.server'
@@ -62,6 +67,8 @@ export type TurnStore = {
   saveWorkingMemory(sessionId: number, entries: MemoryEntry[]): Promise<void>
   saveLongTermMemory(token: string, entries: MemoryEntry[]): Promise<void>
   getProfile(profileId: number): Promise<ProfileRecord | null>
+  getTaskState(sessionId: number): Promise<TaskState | null>
+  saveTaskState(sessionId: number, state: TaskState): Promise<void>
   appendMessage(
     sessionId: number,
     role: 'user' | 'assistant',
@@ -97,6 +104,8 @@ const defaultTurnStore: TurnStore = {
   saveWorkingMemory,
   saveLongTermMemory,
   getProfile,
+  getTaskState,
+  saveTaskState,
   appendMessage: appendMessageToStore,
 }
 
@@ -113,6 +122,60 @@ function toCompressionMessage(row: {
   content: string
 }): CompressionMessage {
   return { id: row.id, role: row.role, content: row.content }
+}
+
+function mergeUsage(
+  left: SummaryUsage | null,
+  right: SummaryUsage | null,
+): SummaryUsage | null {
+  if (!left) {
+    return right
+  }
+  if (!right) {
+    return left
+  }
+  return {
+    prompt_tokens: left.prompt_tokens + right.prompt_tokens,
+    completion_tokens: left.completion_tokens + right.completion_tokens,
+  }
+}
+
+async function resolveTaskState(
+  input: {
+    enabled: boolean
+    sessionId: number
+    rows: Array<{ role: 'user' | 'assistant'; content: string }>
+    user: string
+    at: string
+  },
+  store: TurnStore,
+  analyze: AnalyzeTaskState,
+): Promise<{ taskState: TaskState | null; usage: SummaryUsage | null }> {
+  if (!input.enabled) {
+    return { taskState: null, usage: null }
+  }
+  const current = await store.getTaskState(input.sessionId)
+  let analysis = null
+  let usage: SummaryUsage | null = null
+  try {
+    const result = await analyze({
+      current,
+      history: input.rows,
+      userMessage: input.user,
+    })
+    analysis = result.analysis
+    usage = result.usage
+  } catch {
+    return { taskState: current, usage: null }
+  }
+  if (!analysis) {
+    return { taskState: current, usage }
+  }
+  const next = current
+    ? applyAnalysis(current, analysis, input.at)
+    : createTaskState(analysis, input.at)
+  await store.saveTaskState(input.sessionId, next)
+  return { taskState: next, usage }
 }
 
 export async function runAgentTurn(
@@ -160,6 +223,19 @@ export async function runAgentTurn(
     },
   })
 
+  const now = deps.now()
+  const taskOutcome = await resolveTaskState(
+    {
+      enabled: config.taskStateEnabled,
+      sessionId,
+      rows: rows.map((row) => ({ role: row.role, content: row.content })),
+      user: input.user,
+      at: now.toISOString(),
+    },
+    deps.store,
+    deps.runtime.analyzeTaskState,
+  )
+
   const execution = await executeAgent(
     {
       capabilities,
@@ -169,6 +245,7 @@ export async function runAgentTurn(
       branchLabel: branchTitle,
       windowSize: config.windowSize,
       profile,
+      taskState: taskOutcome.taskState,
       memory: {
         enabled: config.memoryEnabled,
         token,
@@ -181,18 +258,24 @@ export async function runAgentTurn(
         saveLongTerm: (entries) =>
           deps.store.saveLongTermMemory(token, entries),
       },
-      now: deps.now(),
+      now,
     },
     deps.runtime,
   )
+
+  const run = { ...execution.run, taskState: taskOutcome.taskState }
 
   await deps.store.appendMessage(sessionId, 'user', input.user)
   await deps.store.appendMessage(
     sessionId,
     'assistant',
-    execution.run.answer,
-    execution.run,
+    run.answer,
+    run,
   )
 
-  return execution
+  return {
+    run,
+    auxUsage: mergeUsage(execution.auxUsage, taskOutcome.usage),
+    taskState: taskOutcome.taskState,
+  }
 }

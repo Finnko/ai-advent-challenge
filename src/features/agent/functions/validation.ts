@@ -183,7 +183,7 @@ export function parseSessionConfigInput(value: unknown): SessionConfigInput {
     windowSize: optionalWindowSize(data.windowSize),
     memoryEnabled: optionalBoolean(data.memoryEnabled),
     profileId: optionalProfileId(data.profileId),
-    taskStateEnabled: optionalBoolean(data.taskStateEnabled),
+    taskStateEnabled: optionalBoolean(data.taskStateEnabled, true),
     invariantSetId: optionalInvariantSetId(data.invariantSetId),
   }
 }

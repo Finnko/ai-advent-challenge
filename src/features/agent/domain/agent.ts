@@ -5,6 +5,8 @@ import {
   estimateTokens,
 } from './tokens'
 import { ROOMS, normalizeName, pickString } from './agent-tools'
+import { buildTaskStateLine } from './task/read'
+import type { TaskState } from './task/types'
 
 export type AgentRole = 'employee' | 'manager'
 
@@ -65,7 +67,7 @@ export type CallLLM = (params: {
 }) => Promise<LlmReply>
 
 export type SystemBlock = {
-  kind: 'summary' | 'facts' | 'working' | 'long-term' | 'profile'
+  kind: 'summary' | 'facts' | 'working' | 'long-term' | 'profile' | 'task-state'
   content: string
 }
 
@@ -235,6 +237,7 @@ export type AgentRunResult = {
   model: string
   tokens: TokenBreakdown
   contextNote: ContextNote | null
+  taskState?: TaskState | null
 }
 
 export type AgentConfig = {
@@ -246,6 +249,7 @@ export type AgentConfig = {
   today: string
   responseLanguage?: string | null
   context?: string
+  taskState?: TaskState | null
   contextBudgetTokens?: number
 }
 
@@ -405,6 +409,7 @@ function buildDecideUser(
   tools: AgentTool[],
   context: string | undefined,
   precedenceLine: string | null,
+  taskLine: string | null,
 ): string {
   const available = caps.allowedTools
     .map((name) => tools.find((t) => t.name === name))
@@ -450,6 +455,7 @@ function buildDecideUser(
       : []),
     ...(context ? ['', 'Контекст:', context] : []),
     ...(precedenceLine ? ['', precedenceLine] : []),
+    ...(taskLine ? ['', taskLine] : []),
     '',
     'Ответь ровно одним json-объектом вида {"tool": "имя_инструмента" | null, "args": { ... }}. Без текста до "{" и после "}", без markdown.',
   ]
@@ -475,6 +481,7 @@ function buildFinalizeUser(
   precedenceLine: string | null,
   responseLanguage: string | null,
   hasProfileBlocks: boolean,
+  taskLine: string | null,
 ): string {
   return [
     `Запрос пользователя:\n${request}`,
@@ -482,6 +489,7 @@ function buildFinalizeUser(
     report,
     '',
     ...(precedenceLine ? [precedenceLine, ''] : []),
+    ...(taskLine ? [taskLine, ''] : []),
     'Отвечай по фактам из отчёта инструмента. Если в отчёте есть «Код подтверждения: …» — включи этот код в ответ дословно. Не выдумывай выполненные действия, которых нет в отчёте.',
     'Если инструмент не вызывался — просто ответь на запрос.',
     'Вопросы вроде «кому я согласовал отпуск?» решаются через listVacations — не отвечай по памяти модели, используй данные отчёта.',
@@ -554,6 +562,10 @@ function isProfileBlock(block: SystemBlock): boolean {
   return block.kind === 'profile'
 }
 
+function isTaskStateBlock(block: SystemBlock): boolean {
+  return block.kind === 'task-state'
+}
+
 function asSystemMessage(block: SystemBlock): LlmMessage {
   return { role: 'system', content: block.content }
 }
@@ -575,8 +587,12 @@ export class Agent {
     const blocks = prepared.blocks
     const profileBlocks = blocks.filter(isProfileBlock)
     const memoryBlocks = blocks.filter(isMemoryBlock)
+    const taskStateBlocks = blocks.filter(isTaskStateBlock)
     const contextBlocks = blocks.filter(
-      (block) => !isMemoryBlock(block) && !isProfileBlock(block),
+      (block) =>
+        !isMemoryBlock(block) &&
+        !isProfileBlock(block) &&
+        !isTaskStateBlock(block),
     )
     const hasMemoryBlocks = memoryBlocks.length > 0
     const hasProfileBlocks = profileBlocks.length > 0
@@ -584,6 +600,9 @@ export class Agent {
       hasProfileBlocks,
       hasMemoryBlocks,
     )
+    const taskState = this.config.taskState ?? null
+    const taskLine = buildTaskStateLine(taskState)
+    const taskPaused = taskState?.stage === 'paused'
     const requestTokens = estimateTokens(request)
     const historyTokens = estimateMessagesTokens(history)
     const contextTokens = estimateMessagesTokens(
@@ -659,6 +678,7 @@ export class Agent {
         tools,
         this.config.context,
         precedenceLine,
+        taskLine,
       )
       const reply = await callLLM({
         messages: [
@@ -667,6 +687,7 @@ export class Agent {
           ...history,
           ...profileBlocks.map(asSystemMessage),
           ...memoryBlocks.map(asSystemMessage),
+          ...taskStateBlocks.map(asSystemMessage),
           { role: 'user', content: decideUser },
           ...(nudge ? [{ role: 'user' as const, content: nudge }] : []),
         ],
@@ -687,19 +708,20 @@ export class Agent {
     }
 
     let decided = await runDecide()
-    if (!decided.tool && looksLikeAction(request)) {
+    if (!taskPaused && !decided.tool && looksLikeAction(request)) {
       decided = await runDecide(DECIDE_NUDGE)
     }
 
+    const requestedToolName = taskPaused ? null : decided.tool
     let outcome: ToolOutcome | null = null
     let requestedTool: AgentTool | null = null
     let actRefusal: string | undefined
 
-    if (decided.tool) {
-      requestedTool = tools.find((t) => t.name === decided.tool) ?? null
+    if (requestedToolName) {
+      requestedTool = tools.find((t) => t.name === requestedToolName) ?? null
       const denied: ToolOutcome = {
         ok: false,
-        text: `Инструмент ${decided.tool} недоступен для роли ${capabilities.identity.role}.`,
+        text: `Инструмент ${requestedToolName} недоступен для роли ${capabilities.identity.role}.`,
         reference: null,
       }
       if (!requestedTool || !isPermitted(capabilities, requestedTool)) {
@@ -713,7 +735,7 @@ export class Agent {
       }
       trace.push({
         stage: 'act',
-        tool: decided.tool,
+        tool: requestedToolName,
         args: decided.args,
         outcome,
       })
@@ -724,7 +746,7 @@ export class Agent {
       answer = outcome.text
     } else {
       const report = outcome
-        ? `ОТЧЁТ ИНСТРУМЕНТА (${decided.tool ?? ''}):\n${outcome.text}${
+        ? `ОТЧЁТ ИНСТРУМЕНТА (${requestedToolName ?? ''}):\n${outcome.text}${
             outcome.reference ? `\nКод подтверждения: ${outcome.reference}` : ''
           }`
         : '(инструменты не вызывались)'
@@ -734,6 +756,7 @@ export class Agent {
         precedenceLine,
         this.config.responseLanguage ?? null,
         hasProfileBlocks,
+        taskLine,
       )
       const finalizeReply = await callLLM({
         messages: [
@@ -742,6 +765,7 @@ export class Agent {
           ...(outcome ? [] : history),
           ...profileBlocks.map(asSystemMessage),
           ...memoryBlocks.map(asSystemMessage),
+          ...taskStateBlocks.map(asSystemMessage),
           { role: 'user', content: finalizeUser },
         ],
         temperature: FINALIZE_TEMPERATURE,
@@ -759,7 +783,7 @@ export class Agent {
     const verdicts = judges.map((j) =>
       j.evaluate({
         request,
-        toolRequested: decided.tool,
+        toolRequested: requestedToolName,
         args: decided.args,
         outcome,
         answer,

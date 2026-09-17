@@ -5,6 +5,7 @@ import type {
   LlmMessage,
 } from '../domain/agent'
 import type { MemoryEntry } from '../domain/memory/types'
+import type { TaskState } from '../domain/task/types'
 import type { AgentRuntime } from '../server/agent-service.server'
 import { runAgentTurn } from '../server/agent-turn.server'
 import type { TurnDeps, TurnSession, TurnStore } from '../server/agent-turn.server'
@@ -30,10 +31,28 @@ function turnSession(overrides: Partial<TurnSession> = {}): TurnSession {
   }
 }
 
-function createTurnStore(session: TurnSession) {
+function taskState(overrides: Partial<TaskState> = {}): TaskState {
+  return {
+    title: 'Задача',
+    stage: 'execution',
+    previousStage: null,
+    step: 'шаг',
+    expectedAction: { actor: 'agent', description: 'действие' },
+    updatedAt: TEST_NOW.toISOString(),
+    history: [],
+    ...overrides,
+  }
+}
+
+function createTurnStore(
+  session: TurnSession,
+  initialTask: TaskState | null = null,
+) {
   const appended: AppendedMessage[] = []
   const savedWorking: MemoryEntry[][] = []
   const savedLongTerm: MemoryEntry[][] = []
+  const savedTask: TaskState[] = []
+  let task: TaskState | null = initialTask
   const store: TurnStore = {
     async getSession() {
       return session
@@ -67,11 +86,25 @@ function createTurnStore(session: TurnSession) {
     async getProfile() {
       return null
     },
+    async getTaskState() {
+      return task
+    },
+    async saveTaskState(_sessionId, state) {
+      task = state
+      savedTask.push(state)
+    },
     async appendMessage(_sessionId, role, content, run) {
       appended.push({ role, content, run })
     },
   }
-  return { store, appended, savedWorking, savedLongTerm }
+  return {
+    store,
+    appended,
+    savedWorking,
+    savedLongTerm,
+    savedTask,
+    getTask: () => task,
+  }
 }
 
 function scriptedCallLLM(captured: LlmMessage[][]): CallLLM {
@@ -98,6 +131,7 @@ function makeRuntime(overrides: Partial<AgentRuntime> = {}): {
     summarize: unused,
     extractFacts: unused,
     extractMemories: async () => ({ candidates: [], usage: null }),
+    analyzeTaskState: async () => ({ analysis: null, usage: null }),
     store: createFakeStore(),
     createTools: () => [],
     ...overrides,
@@ -192,5 +226,105 @@ describe('runAgentTurn', () => {
         content.includes('РАБОЧАЯ ПАМЯТЬ ЗАДАЧИ:'),
       ),
     ).toBe(true)
+  })
+
+  it('ведёт состояние задачи и кладёт блок в промпт', async () => {
+    const { store, savedTask } = createTurnStore(
+      turnSession({ taskStateEnabled: true }),
+    )
+    const { runtime, captured } = makeRuntime({
+      analyzeTaskState: async () => ({
+        analysis: {
+          title: 'Забронировать переговорку',
+          stage: 'planning',
+          step: 'Собираем параметры',
+          expectedAction: {
+            actor: 'user',
+            description: 'Указать число участников',
+          },
+          reason: 'Новая задача',
+        },
+        usage: null,
+      }),
+    })
+
+    const result = await runAgentTurn(
+      { token: 'tok-test', sessionId: 7, user: 'нужна переговорка' },
+      deps(store, runtime),
+    )
+
+    expect(result.taskState?.stage).toBe('planning')
+    expect(result.run.taskState?.title).toBe('Забронировать переговорку')
+    expect(savedTask).toHaveLength(1)
+    const flat = captured.flat()
+    expect(
+      flat.some((message) => message.content.includes('СОСТОЯНИЕ ЗАДАЧИ:')),
+    ).toBe(true)
+    expect(
+      flat.some(
+        (message) =>
+          message.role === 'user' &&
+          message.content.includes('Ожидается ход пользователя'),
+      ),
+    ).toBe(true)
+  })
+
+  it('продолжает с прежней стадии после паузы без повторных объяснений', async () => {
+    const paused = taskState({ stage: 'paused', previousStage: 'planning' })
+    const { store, getTask } = createTurnStore(
+      turnSession({ taskStateEnabled: true }),
+      paused,
+    )
+    const { runtime, captured } = makeRuntime({
+      analyzeTaskState: async () => ({
+        analysis: {
+          stage: 'planning',
+          step: 'Ждём параметры',
+          expectedAction: { actor: 'user', description: 'Назвать дату' },
+          reason: 'Продолжение после паузы',
+        },
+        usage: null,
+      }),
+    })
+
+    const result = await runAgentTurn(
+      { token: 'tok-test', sessionId: 7, user: 'продолжим' },
+      deps(store, runtime),
+    )
+
+    expect(result.taskState?.stage).toBe('planning')
+    expect(getTask()?.previousStage).toBeNull()
+    expect(
+      captured
+        .flat()
+        .some(
+          (message) =>
+            message.role === 'user' &&
+            message.content.includes('Текущий этап задачи: planning'),
+        ),
+    ).toBe(true)
+  })
+
+  it('при выключенном состоянии задачи не зовёт анализатор и не кладёт блок', async () => {
+    const { store, savedTask } = createTurnStore(turnSession())
+    let called = false
+    const { runtime, captured } = makeRuntime({
+      analyzeTaskState: async () => {
+        called = true
+        return { analysis: null, usage: null }
+      },
+    })
+
+    const result = await runAgentTurn(
+      { token: 'tok-test', sessionId: 7, user: 'привет' },
+      deps(store, runtime),
+    )
+
+    expect(called).toBe(false)
+    expect(savedTask).toEqual([])
+    expect(result.taskState).toBeNull()
+    expect(
+      captured.flat().some((message) => message.content.includes('СОСТОЯНИЕ ЗАДАЧИ:')),
+    ).toBe(false)
   })
 })

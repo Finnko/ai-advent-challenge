@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useReducer } from 'react'
+import { useIsMutating } from '@tanstack/react-query'
 import type { AgentCapabilities } from '../domain/agent'
 import type { MemoryLayer } from '../domain/memory/types'
 import type { ProfileInput } from '../domain/profile/types'
@@ -37,6 +38,12 @@ import { useCreateProfile } from './create-profile'
 import { useUpdateProfile } from './update-profile'
 import { useDeleteProfile } from './delete-profile'
 import { useSetDefaultProfile } from './set-default-profile'
+import {
+  useCancelTask,
+  usePauseTask,
+  useResumeTask,
+  useTaskState,
+} from './task-state'
 
 const EMPTY_MEMORY: MemoryView = { working: [], longTerm: [] }
 
@@ -62,6 +69,7 @@ export function useAgentWorkspace() {
   const factsQuery = useSessionFacts(state.sessionId)
   const branchesQuery = useSessionBranches(state.sessionId)
   const memoryQuery = useMemory(state.sessionId, state.activeToken)
+  const taskStateQuery = useTaskState(state.sessionId)
   const profilesQuery = useProfiles(state.activeToken)
   const profiles = profilesQuery.data ?? []
 
@@ -75,19 +83,11 @@ export function useAgentWorkspace() {
   const updateProfileMutation = useUpdateProfile()
   const deleteProfileMutation = useDeleteProfile()
   const setDefaultMutation = useSetDefaultProfile()
+  const pauseTaskMutation = usePauseTask()
+  const resumeTaskMutation = useResumeTask()
+  const cancelTaskMutation = useCancelTask()
 
-  const busy =
-    sendMutation.isPending ||
-    deleteMutation.isPending ||
-    branchMutation.isPending ||
-    switchMutation.isPending ||
-    saveMemoryMutation.isPending ||
-    deleteMemoryMutation.isPending ||
-    createProfileMutation.isPending ||
-    updateProfileMutation.isPending ||
-    deleteProfileMutation.isPending ||
-    setDefaultMutation.isPending ||
-    capabilitiesQuery.isLoading
+  const busy = useIsMutating() > 0 || capabilitiesQuery.isLoading
 
   const dispatchIntent = useCallback(
     (intent: WorkspaceIntent) => {
@@ -283,6 +283,24 @@ export function useAgentWorkspace() {
       }
       setDefaultMutation.mutate({ token: state.activeToken, profileId: id })
     },
+    pauseTask() {
+      if (busy || state.sessionId === null) {
+        return
+      }
+      pauseTaskMutation.mutate(state.sessionId)
+    },
+    resumeTask() {
+      if (busy || state.sessionId === null) {
+        return
+      }
+      resumeTaskMutation.mutate(state.sessionId)
+    },
+    cancelTask() {
+      if (busy || state.sessionId === null) {
+        return
+      }
+      cancelTaskMutation.mutate(state.sessionId)
+    },
   }
 
   let settingsError: string | null = null
@@ -298,6 +316,15 @@ export function useAgentWorkspace() {
     settingsError = toError(deleteProfileMutation.error)
   } else if (setDefaultMutation.isError) {
     settingsError = toError(setDefaultMutation.error)
+  }
+
+  let taskError: string | null = null
+  if (pauseTaskMutation.isError) {
+    taskError = toError(pauseTaskMutation.error)
+  } else if (resumeTaskMutation.isError) {
+    taskError = toError(resumeTaskMutation.error)
+  } else if (cancelTaskMutation.isError) {
+    taskError = toError(cancelTaskMutation.error)
   }
 
   return {
@@ -317,6 +344,7 @@ export function useAgentWorkspace() {
     facts,
     branches,
     memoryView,
+    taskState: taskStateQuery.data?.taskState ?? null,
     profiles,
     selectedProfile,
     defaultProfile,
@@ -331,6 +359,7 @@ export function useAgentWorkspace() {
     sendError: sendMutation.isError ? toError(sendMutation.error) : null,
     branchError: branchMutation.isError ? toError(branchMutation.error) : null,
     settingsError,
+    taskError,
     busy,
     sending: sendMutation.isPending,
     actions,

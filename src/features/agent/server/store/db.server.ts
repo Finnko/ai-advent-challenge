@@ -208,6 +208,18 @@ CREATE TABLE IF NOT EXISTS session_summaries (
   updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS task_states (
+  session_id INTEGER PRIMARY KEY,
+  title TEXT NOT NULL,
+  stage TEXT NOT NULL,
+  previous_stage TEXT,
+  step TEXT NOT NULL,
+  expected_actor TEXT NOT NULL,
+  expected_description TEXT NOT NULL,
+  history_json TEXT NOT NULL DEFAULT '[]',
+  updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS working_memory (
   session_id INTEGER NOT NULL,
   key TEXT NOT NULL,
@@ -373,6 +385,7 @@ async function openDatabase(): Promise<SqliteDatabase> {
   migrateBookings(db)
   migrateSessions(db)
   migrateProfiles(db)
+  migrateTaskStates(db)
   seedPeople(db)
   seedBookings(db)
   seedProfiles(db)
@@ -553,6 +566,22 @@ export function migrateSessions(db: SqliteDatabase): void {
     setActive.run(branchId, session.id)
     backfill.run(branchId, session.id)
   }
+}
+
+export function migrateTaskStates(db: SqliteDatabase): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS task_states (
+      session_id INTEGER PRIMARY KEY,
+      title TEXT NOT NULL,
+      stage TEXT NOT NULL,
+      previous_stage TEXT,
+      step TEXT NOT NULL,
+      expected_actor TEXT NOT NULL,
+      expected_description TEXT NOT NULL,
+      history_json TEXT NOT NULL DEFAULT '[]',
+      updated_at TEXT NOT NULL
+    );
+  `)
 }
 
 export function migrateProfiles(db: SqliteDatabase): void {
