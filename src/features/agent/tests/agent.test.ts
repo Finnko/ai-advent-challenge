@@ -8,6 +8,7 @@ import type {
   PreparedContext,
 } from '../domain/agent'
 import { TOOLS_BY_ROLE, createAgentTools } from '../domain/agent-tools'
+import type { TaskState } from '../domain/task/types'
 import {
   TEST_NOW,
   createBooking,
@@ -60,6 +61,9 @@ function buildAgent(options: {
   context?: string
   contextBudgetTokens?: number
   responseLanguage?: string | null
+  taskState?: TaskState
+  maxActionsPerTurn?: number
+  isPaused?: () => boolean | Promise<boolean>
 }): Agent {
   const identity = options.identity ?? createIdentity()
   const store = options.store ?? createFakeStore()
@@ -75,7 +79,25 @@ function buildAgent(options: {
     responseLanguage: options.responseLanguage,
     context: options.context,
     contextBudgetTokens: options.contextBudgetTokens,
+    taskState: options.taskState,
+    maxActionsPerTurn: options.maxActionsPerTurn,
+    isPaused: options.isPaused,
   })
+}
+
+function buildTaskState(overrides: Partial<TaskState> = {}): TaskState {
+  return {
+    title: 'Задача',
+    stage: 'execution',
+    previousStage: null,
+    step: 'шаг',
+    steps: [],
+    stepIndex: 0,
+    expectedAction: { actor: 'agent', description: 'действие' },
+    updatedAt: TEST_NOW.toISOString(),
+    history: [],
+    ...overrides,
+  }
 }
 
 describe('Agent pipeline', () => {
@@ -131,7 +153,7 @@ describe('Agent pipeline', () => {
     const run = await buildAgent({ store, callLLM }).run('Позови Ивана')
 
     expect(run.ok).toBe(true)
-    expect(calls.filter((call) => call.isDecide)).toHaveLength(2)
+    expect(calls.filter((call) => call.isDecide)).toHaveLength(3)
     expect(store.bookings[0].participants).toEqual(['Иван'])
   })
 
@@ -473,8 +495,8 @@ describe('Agent pipeline', () => {
     })
     const run = await buildAgent({ store, callLLM }).run('Позови Ивана')
 
-    expect(run.tokens.responseTokens).toBe(10)
-    expect(run.tokens.promptTokensActual).toBe(20)
+    expect(run.tokens.responseTokens).toBe(15)
+    expect(run.tokens.promptTokensActual).toBe(30)
   })
 
   it('отклоняет запрос, не влезающий в контекстный бюджет', async () => {
@@ -493,6 +515,290 @@ describe('Agent pipeline', () => {
     const agent = buildAgent({ callLLM })
     expect((await agent.run('   ')).blocked).toBe(true)
     expect((await agent.run('x'.repeat(30_001))).blocked).toBe(true)
+  })
+})
+
+describe('этап planning и мульти-действия', () => {
+  it('в planning скрывает изменяющие инструменты из decide', async () => {
+    const { callLLM, calls } = scriptedLLM({
+      decide: '{"tool": null, "args": {}}',
+      finalize: 'Предлагаю забронировать «Ладогу». Приступаем?',
+    })
+    await buildAgent({
+      callLLM,
+      taskState: buildTaskState({ stage: 'planning' }),
+    }).run('Забронируй Ладогу завтра')
+
+    const decideUser = calls.find((call) => call.isDecide)?.messages.at(-1)
+      ?.content
+    expect(decideUser).not.toContain('bookMeetingRoom')
+    expect(decideUser).not.toContain('inviteToMeeting')
+    expect(decideUser).toContain('listBookings')
+  })
+
+  it('в planning не выполняет изменяющий инструмент, даже если он выбран', async () => {
+    const store = createFakeStore()
+    const { callLLM } = scriptedLLM({
+      decide: JSON.stringify({
+        tool: 'bookMeetingRoom',
+        args: {
+          room: 'Иртыш',
+          date: '2026-09-11',
+          time: '16:00',
+          title: 'Синк',
+        },
+      }),
+      finalize: 'Приступаем?',
+    })
+    const run = await buildAgent({
+      store,
+      callLLM,
+      taskState: buildTaskState({ stage: 'planning' }),
+    }).run('Забронируй Иртыш')
+
+    expect(store.bookings).toHaveLength(0)
+    expect(run.answer).toContain('planning')
+  })
+
+  it('в planning разрешает справочные инструменты', async () => {
+    const store = createFakeStore({ bookings: [createBooking()] })
+    const { callLLM } = scriptedLLM({
+      decide: JSON.stringify({ tool: 'listBookings', args: {} }),
+      finalize: 'Вот ваши встречи.',
+    })
+    const run = await buildAgent({
+      store,
+      callLLM,
+      taskState: buildTaskState({ stage: 'planning' }),
+    }).run('Какие у меня встречи?')
+
+    const acts = run.trace.filter((step) => step.stage === 'act')
+    expect(acts).toHaveLength(1)
+    expect(run.ok).toBe(true)
+  })
+
+  it('в validation не выполняет изменяющий инструмент', async () => {
+    const store = createFakeStore()
+    const { callLLM } = scriptedLLM({
+      decide: JSON.stringify({
+        tool: 'bookMeetingRoom',
+        args: { room: 'Иртыш', date: '2026-09-11', time: '16:00' },
+      }),
+      finalize: 'Проверка.',
+    })
+    const run = await buildAgent({
+      store,
+      callLLM,
+      taskState: buildTaskState({ stage: 'validation' }),
+    }).run('Забронируй ещё одну')
+
+    expect(store.bookings).toHaveLength(0)
+    expect(run.answer).toContain('validation')
+  })
+
+  it('в validation разрешает справочные инструменты', async () => {
+    const store = createFakeStore({ bookings: [createBooking()] })
+    const { callLLM } = scriptedLLM({
+      decide: JSON.stringify({ tool: 'listBookings', args: {} }),
+      finalize: 'Проверено: встреча на месте.',
+    })
+    const run = await buildAgent({
+      store,
+      callLLM,
+      taskState: buildTaskState({ stage: 'validation' }),
+    }).run('Проверь бронь')
+
+    expect(run.trace.filter((step) => step.stage === 'act')).toHaveLength(1)
+    expect(run.ok).toBe(true)
+  })
+
+  it('останавливает цикл по паузе между действиями', async () => {
+    const store = createFakeStore({ bookings: [createBooking()] })
+    const { callLLM } = scriptedLLM({
+      decide: [
+        JSON.stringify({
+          tool: 'inviteToMeeting',
+          args: { participants: ['Иван'] },
+        }),
+        JSON.stringify({
+          tool: 'inviteToMeeting',
+          args: { participants: ['Мария'] },
+        }),
+        '{"tool": null, "args": {}}',
+      ],
+      finalize: 'Иван приглашён, дальше пауза. Код подтверждения: BOOK-TEST01',
+    })
+    const run = await buildAgent({
+      store,
+      callLLM,
+      maxActionsPerTurn: 5,
+      isPaused: () => store.bookings[0].participants.length > 0,
+    }).run('Позови всех')
+
+    expect(run.trace.filter((step) => step.stage === 'act')).toHaveLength(1)
+    expect(store.bookings[0].participants).toEqual(['Иван'])
+    expect(run.ok).toBe(true)
+  })
+
+  it('на паузе не зовёт LLM и не отвечает', async () => {
+    const store = createFakeStore({ bookings: [createBooking()] })
+    const { callLLM, calls } = scriptedLLM({
+      decide: JSON.stringify({
+        tool: 'inviteToMeeting',
+        args: { participants: ['Иван'] },
+      }),
+      finalize: 'Выполнение приостановлено.',
+    })
+    const run = await buildAgent({ store, callLLM, isPaused: () => true }).run(
+      'Позови Ивана',
+    )
+
+    expect(calls).toEqual([])
+    expect(run.trace.some((step) => step.stage === 'act')).toBe(false)
+    expect(store.bookings[0].participants).toEqual([])
+    expect(run.answer).toBe('')
+  })
+
+  it('не выполняет действие и не отвечает, если пауза пришла во время decide', async () => {
+    const store = createFakeStore({ bookings: [createBooking()] })
+    const { callLLM, calls } = scriptedLLM({
+      decide: JSON.stringify({
+        tool: 'inviteToMeeting',
+        args: { participants: ['Иван'] },
+      }),
+      finalize: 'Выполнение приостановлено.',
+    })
+    let paused = false
+    const run = await buildAgent({
+      store,
+      callLLM: async (options) => {
+        paused = true
+        return callLLM(options)
+      },
+      isPaused: () => paused,
+    }).run('Позови Ивана')
+
+    expect(calls.filter((call) => call.isDecide)).toHaveLength(1)
+    expect(run.trace.some((step) => step.stage === 'act')).toBe(false)
+    expect(store.bookings[0].participants).toEqual([])
+    expect(run.answer).toBe('')
+  })
+
+  it('не отвечает, если пауза пришла во время decide без действий', async () => {
+    const store = createFakeStore({ bookings: [createBooking()] })
+    let paused = false
+    const received: boolean[] = []
+    const run = await buildAgent({
+      store,
+      callLLM: async ({ response_format }) => {
+        received.push(Boolean(response_format))
+        paused = true
+        return {
+          content: '{"tool": null, "args": {}}',
+          usage: { prompt_tokens: 10, completion_tokens: 5 },
+          latencyMs: 1,
+        }
+      },
+      isPaused: () => paused,
+    }).run('давай ладогу')
+
+    expect(received).toEqual([true])
+    expect(run.answer).toBe('')
+    expect(run.trace.some((step) => step.stage === 'finalize')).toBe(false)
+  })
+
+  it('выполняет несколько действий за ход и собирает все коды', async () => {
+    const store = createFakeStore({ bookings: [createBooking()] })
+    const { callLLM } = scriptedLLM({
+      decide: [
+        JSON.stringify({
+          tool: 'inviteToMeeting',
+          args: { participants: ['Иван'] },
+        }),
+        JSON.stringify({
+          tool: 'inviteToMeeting',
+          args: { participants: ['Мария'] },
+        }),
+        '{"tool": null, "args": {}}',
+      ],
+      finalize: 'Иван и Мария приглашены. Код подтверждения: BOOK-TEST01',
+    })
+    const run = await buildAgent({ store, callLLM, maxActionsPerTurn: 5 }).run(
+      'Позови Ивана и Марию',
+    )
+
+    expect(run.ok).toBe(true)
+    expect(store.bookings[0].participants).toEqual(['Иван', 'Мария'])
+    expect(run.trace.filter((step) => step.stage === 'act')).toHaveLength(2)
+    expect(run.answer).toContain('BOOK-TEST01')
+  })
+
+  it('останавливает цикл на maxActionsPerTurn', async () => {
+    let index = 0
+    const callLLM: CallLLM = async ({ response_format }) => {
+      if (!response_format) {
+        return {
+          content: 'Готово.',
+          usage: { prompt_tokens: 10, completion_tokens: 5 },
+          latencyMs: 1,
+        }
+      }
+      index += 1
+      return {
+        content: JSON.stringify({
+          tool: 'listAvailableRooms',
+          args: {
+            date: `2026-09-${String(index).padStart(2, '0')}`,
+            time: '10:00',
+          },
+        }),
+        usage: { prompt_tokens: 10, completion_tokens: 5 },
+        latencyMs: 1,
+      }
+    }
+    const run = await buildAgent({ callLLM, maxActionsPerTurn: 3 }).run(
+      'Покажи свободные комнаты на несколько дат',
+    )
+
+    expect(run.trace.filter((step) => step.stage === 'act')).toHaveLength(3)
+  })
+
+  it('не повторяет одно и то же действие', async () => {
+    const store = createFakeStore({ bookings: [createBooking()] })
+    const { callLLM } = scriptedLLM({
+      decide: JSON.stringify({
+        tool: 'inviteToMeeting',
+        args: { participants: ['Иван'] },
+      }),
+      finalize: 'Иван приглашён. Код подтверждения: BOOK-TEST01',
+    })
+    const run = await buildAgent({ store, callLLM }).run('Позови Ивана')
+
+    expect(run.trace.filter((step) => step.stage === 'act')).toHaveLength(1)
+  })
+
+  it('блокирует ответ, приписывающий невыполненное приглашение', async () => {
+    const store = createFakeStore({ bookings: [createBooking()] })
+    const { callLLM } = scriptedLLM({
+      decide: JSON.stringify({ tool: 'listBookings', args: {} }),
+      finalize: 'Приглашения отправлены: Иван.',
+    })
+    const run = await buildAgent({ store, callLLM }).run('Позови Ивана')
+
+    expect(run.blocked).toBe(true)
+    expect(run.reason).toContain('приглашени')
+  })
+
+  it('не блокирует справочный ответ о существующей встрече', async () => {
+    const store = createFakeStore({ bookings: [createBooking()] })
+    const { callLLM } = scriptedLLM({
+      decide: JSON.stringify({ tool: 'listBookings', args: {} }),
+      finalize:
+        'У вас забронирована встреча 2026-09-11 в 16:00. Иван приглашён.',
+    })
+    const run = await buildAgent({ store, callLLM }).run('Какие у меня встречи?')
+
+    expect(run.blocked).toBe(false)
   })
 })
 

@@ -1,13 +1,18 @@
 import { describe, expect, it } from 'vitest'
 import { branchStrategy } from '../domain/context/branch'
-import { factsStrategy } from '../domain/context/facts'
+import { createFactsStrategy } from '../domain/context/facts'
 import { noneStrategy } from '../domain/context/none'
-import { summaryStrategy } from '../domain/context/summary'
+import { createSummaryStrategy } from '../domain/context/summary'
 import {
   CONTEXT_STRATEGY_IDS,
   resolveStrategy,
 } from '../domain/context/registry'
-import type { PrepareInput } from '../domain/context/types'
+import type {
+  ContextCapabilities,
+  FactsCapability,
+  PrepareInput,
+  SummaryCapability,
+} from '../domain/context/types'
 import { WINDOW_SIZE, windowStrategy } from '../domain/context/window'
 import type { CompressionMessage, Summarize } from '../domain/compression'
 import type { ExtractFacts, Fact } from '../domain/facts'
@@ -41,13 +46,29 @@ function baseInput(overrides: Partial<PrepareInput> = {}): PrepareInput {
   return {
     rows: history(20),
     request: 'новый запрос',
-    previousSummary: null,
-    summarize: fakeSummarizer().summarize,
-    saveSummary: () => {},
-    facts: [],
-    extractFacts: async () => ({ facts: [], usage: null }),
-    saveFacts: () => {},
     ...overrides,
+  }
+}
+
+function fakeCapabilities(
+  overrides: {
+    summary?: Partial<SummaryCapability>
+    facts?: Partial<FactsCapability>
+  } = {},
+): ContextCapabilities {
+  return {
+    summary: {
+      previousSummary: null,
+      summarize: fakeSummarizer().summarize,
+      saveSummary: () => {},
+      ...overrides.summary,
+    },
+    facts: {
+      facts: [],
+      extractFacts: async () => ({ facts: [], usage: null }),
+      saveFacts: () => {},
+      ...overrides.facts,
+    },
   }
 }
 
@@ -57,14 +78,14 @@ describe('реестр стратегий', () => {
       expect.arrayContaining(['summary', 'none', 'window', 'facts', 'branch']),
     )
     for (const id of CONTEXT_STRATEGY_IDS) {
-      expect(resolveStrategy(id).id).toBe(id)
+      expect(resolveStrategy(id, fakeCapabilities()).id).toBe(id)
     }
   })
 
   it('падает на неизвестной стратегии', () => {
-    expect(() => resolveStrategy('unknown' as never)).toThrow(
-      'Неизвестная стратегия',
-    )
+    expect(() =>
+      resolveStrategy('unknown' as never, fakeCapabilities()),
+    ).toThrow('Неизвестная стратегия')
   })
 })
 
@@ -83,15 +104,15 @@ describe('summaryStrategy', () => {
   it('сворачивает старую историю и сохраняет сводку через saveSummary', async () => {
     const { summarize, calls } = fakeSummarizer(['первая сводка'])
     const saved: Array<{ summary: string; through: number }> = []
-    const result = await summaryStrategy.prepare(
-      baseInput({
-        previousSummary: null,
-        summarize,
-        saveSummary: (summary, throughMessageId) => {
-          saved.push({ summary, through: throughMessageId })
-        },
-      }),
-    )
+    const strategy = createSummaryStrategy({
+      previousSummary: null,
+      summarize,
+      saveSummary: (summary, throughMessageId) => {
+        saved.push({ summary, through: throughMessageId })
+      },
+    })
+
+    const result = await strategy.prepare(baseInput())
 
     expect(calls).toHaveLength(1)
     expect(result.context.history).toHaveLength(6)
@@ -118,16 +139,15 @@ describe('summaryStrategy', () => {
   it('не сворачивает и не сохраняет, пока не накопился порог', async () => {
     const { summarize } = fakeSummarizer()
     const saved: unknown[] = []
-    const result = await summaryStrategy.prepare(
-      baseInput({
-        rows: history(14),
-        previousSummary: null,
-        summarize,
-        saveSummary: (...args) => {
-          saved.push(args)
-        },
-      }),
-    )
+    const strategy = createSummaryStrategy({
+      previousSummary: null,
+      summarize,
+      saveSummary: (...args) => {
+        saved.push(args)
+      },
+    })
+
+    const result = await strategy.prepare(baseInput({ rows: history(14) }))
 
     expect(result.context.blocks).toHaveLength(0)
     expect(result.context.note).toBeNull()
@@ -158,6 +178,16 @@ describe('windowStrategy', () => {
     expect(result.context.history).toHaveLength(6)
     expect(result.context.note).toBeNull()
   })
+
+  it('уважает размер окна из сессии', async () => {
+    const result = await windowStrategy.prepare(
+      baseInput({ rows: history(20), windowSize: 4 }),
+    )
+
+    expect(result.context.history).toHaveLength(4)
+    expect(result.context.note?.text).toContain('последние 4')
+    expect(result.context.note?.messages).toBe(16)
+  })
 })
 
 describe('factsStrategy', () => {
@@ -181,16 +211,15 @@ describe('factsStrategy', () => {
   it('обновляет факты, сохраняет их и добавляет facts-блок', async () => {
     const { extractFacts, calls } = fakeExtractor()
     const saved: Fact[][] = []
-    const result = await factsStrategy.prepare(
-      baseInput({
-        request: 'бюджет 100к',
-        facts: [{ key: 'Цель', value: 'собрать ТЗ' }],
-        extractFacts,
-        saveFacts: (next) => {
-          saved.push(next)
-        },
-      }),
-    )
+    const strategy = createFactsStrategy({
+      facts: [{ key: 'Цель', value: 'собрать ТЗ' }],
+      extractFacts,
+      saveFacts: (next) => {
+        saved.push(next)
+      },
+    })
+
+    const result = await strategy.prepare(baseInput({ request: 'бюджет 100к' }))
 
     expect(calls).toEqual(['бюджет 100к'])
     expect(saved).toHaveLength(1)
@@ -208,17 +237,17 @@ describe('factsStrategy', () => {
 
   it('переживает падение экстрактора и оставляет прежние факты', async () => {
     const saved: Fact[][] = []
-    const result = await factsStrategy.prepare(
-      baseInput({
-        facts: [{ key: 'Цель', value: 'собрать ТЗ' }],
-        extractFacts: async () => {
-          throw new Error('boom')
-        },
-        saveFacts: (next) => {
-          saved.push(next)
-        },
-      }),
-    )
+    const strategy = createFactsStrategy({
+      facts: [{ key: 'Цель', value: 'собрать ТЗ' }],
+      extractFacts: async () => {
+        throw new Error('boom')
+      },
+      saveFacts: (next) => {
+        saved.push(next)
+      },
+    })
+
+    const result = await strategy.prepare(baseInput())
 
     expect(saved).toHaveLength(0)
     expect(result.context.blocks[0].content).toContain('собрать ТЗ')

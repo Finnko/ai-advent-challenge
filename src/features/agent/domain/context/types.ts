@@ -17,16 +17,28 @@ export type ContextStrategyId =
 export type PrepareInput = {
   rows: CompressionMessage[]
   request: string
+  branchLabel?: string
+  windowSize?: number
+}
+
+export type SummaryCapability = {
   previousSummary: PreviousSummary | null
   summarize: Summarize
   saveSummary: (
     summary: string,
     throughMessageId: number,
   ) => Promise<void> | void
+}
+
+export type FactsCapability = {
   facts: Fact[]
   extractFacts: ExtractFacts
   saveFacts: (facts: Fact[]) => Promise<void> | void
-  branchLabel?: string
+}
+
+export type ContextCapabilities = {
+  summary: SummaryCapability
+  facts: FactsCapability
 }
 
 export type PrepareResult = {
@@ -36,7 +48,5 @@ export type PrepareResult = {
 
 export type ContextStrategy = {
   id: ContextStrategyId
-  label: string
-  description: string
   prepare(input: PrepareInput): Promise<PrepareResult>
 }

@@ -5,11 +5,9 @@ export const WINDOW_SIZE = 10
 
 export const windowStrategy: ContextStrategy = {
   id: 'window',
-  label: 'Скользящее окно',
-  description:
-    'В запрос уходят только последние сообщения, старое отбрасывается без следа.',
-  async prepare({ rows }) {
-    const { agedOut, recent } = splitHistory(rows, WINDOW_SIZE)
+  async prepare({ rows, windowSize }) {
+    const size = windowSize ?? WINDOW_SIZE
+    const { agedOut, recent } = splitHistory(rows, size)
     return {
       context: {
         history: toLlmMessages(recent),
@@ -19,7 +17,7 @@ export const windowStrategy: ContextStrategy = {
             ? {
                 kind: 'window',
                 label: 'Скользящее окно',
-                text: `Отброшено ${agedOut.length} сообщ.; в запрос уходят последние ${WINDOW_SIZE}.`,
+                text: `Отброшено ${agedOut.length} сообщ.; в запрос уходят последние ${size}.`,
                 messages: agedOut.length,
                 throughMessageId: null,
               }

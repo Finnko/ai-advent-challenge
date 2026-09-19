@@ -1,6 +1,7 @@
 # Project: AI Advent Challenge
 
-Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 12 (`feature/day12`).
+Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 13 (`feature/day13`),
+which starts by collapsing the agent demos into one workspace (Days 13–14 features not built yet).
 
 ## Stack
 
@@ -13,12 +14,14 @@ Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 
 
 - `src/features/agent/` — the agent feature, self-contained for porting (see its `README.md`):
   `pages/` (only public surface), `api/` (react-query hooks), `functions/` (`createServerFn`),
-  `server/` (`.server.ts` deep modules), `domain/` (isomorphic logic), `data/` (client-safe data),
-  `components/`, `tests/`.
+  `server/` (`.server.ts` deep modules: `agent-turn`, `agent-service`, `store`), `domain/` (isomorphic
+  logic: `agent`, `agent-tools`, `context/`, `memory/`, `profile/`, `session/`, `tokens`),
+  `data/` (client-safe data), `components/`, `tests/`.
 - `src/lib/` — shared: `llm.ts`/`llm.server.ts` (transport), `functions/*.functions.ts` (Days 1–5 server
   fns + shared `validation.ts`), `day2.ts`…`day5.ts`, `days.ts` (sidebar), `utils.ts` (`cn`).
 - `src/components/` — app shell (`Header`, `Sidebar`, `Chat`) and shared `ui/Tabs.tsx`.
-- `src/routes/` — thin route wrappers; the agent routes just render feature pages.
+- `src/routes/` — thin route wrappers. The unified `/agent` renders `pages/AgentPage`; the old
+  `/agent-strategies|memory|profile` routes are `beforeLoad` redirect stubs to `/agent`.
 
 ## Server & LLM rules
 
@@ -31,13 +34,51 @@ Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 
   in `functions/` or `.server.ts`.
 - The client sends only ids (tier / strategy / session), never model or prompt strings.
 
+## Turn execution & session config (Day 13 refactor)
+
+- `features/agent/server/agent-turn.server.ts` — deep module of a Turn: `runAgentTurn({ token,
+  sessionId, user }, deps)` hydrates capabilities/session/active branch/history/summary/facts/
+  memory/profile, runs `executeAgent`, then appends the user and assistant messages.
+  `functions/run-agent.functions.ts` is only `validator → runAgentTurn(data)`.
+- Injectable seam: `TurnDeps = { resolveCapabilities, store: TurnStore, runtime: AgentRuntime,
+  now }`; `defaultTurnDeps` is the production wiring. Offline tests pass fakes (`tests/agent-turn.test.ts`).
+- `AgentRuntime` (in `agent-service.server.ts`): `{ callLLM, summarize, extractFacts, extractMemories,
+  store, createTools }`; `defaultAgentRuntime` wires the DeepSeek transport + `createAgentTools`.
+  `executeAgent(options, runtime = defaultAgentRuntime)` no longer builds transport/store itself.
+- **Session config is one module**: `domain/session/config.ts` owns `SessionConfig` /
+  `SessionConfigInput` / `SessionConfigDraft`, defaults (`sessionConfigInput`,
+  `DEFAULT_SESSION_CONFIG_DRAFT`), default-profile resolution (`resolveSessionConfig`),
+  draft→input (`sessionConfigDraftToInput`), immutability (`resolveActiveSessionConfig`) and
+  `clampWindowSize`. `parseSessionConfigInput` (`functions/validation.ts`) validates the wire shape.
+- `store.createSession(token, title, input: Partial<SessionConfigInput>)` delegates configuration
+  defaults to `domain/session/config.ts`; profile lookup remains server-side. The session is created
+  **upfront** via `api/create-session.ts` (`useCreateSession`) when the user clicks «Новая сессия»;
+  the dialog (chat + state bar + input) renders only with an active session.
+  `api/send-message.ts` sends only `{ token, sessionId, user }`. `pages/AgentPage.tsx` keeps a single
+  `SessionConfigDraft` for the **next** session (editable while a session is active) and shows the
+  active session's config read-only. `null` in the draft means the token's default profile; the UI
+  does not start no-profile sessions.
+
 ## Agent behavior
 
 - Tools live in `features/agent/domain/agent-tools.ts`; `TOOLS_BY_ROLE` is derived from each tool's
   `roles`, so capabilities, the decide prompt and `isPermitted` can't drift.
-- **One tool per message** (`decide → act → finalize`).
-- `runAgent` builds a small `context` string (last managed booking / pending vacation) and passes it as
-  `AgentConfig.context`; `decide` retries once with a nudge when it returns `tool: null` for an
+- **Actions per turn**: `decide → act` loops up to `maxActionsPerTurn` (default 5) while the model
+  picks another tool, then one `finalize` over all tool reports. The loop stops on `tool: null`, a
+  failed tool, a repeated `tool+args`, or the cap. The `no-fabricated-actions` judge blocks answers
+  that claim an action absent from the reports.
+- **`planning` is propose-and-wait**: mutating tools (`isMutatingTool` in `agent-tools.ts`) are hidden
+  from `decide` and hard-denied at `act`; read-only `list*` tools stay available. Mutations run only in
+  `execution`; `validation` (like `planning`) keeps only read-only `list*`.
+- **Auto transitions** (`domain/task/advance.ts`): `runAgentTurn` advances `execution → validation`
+  after a successful mutating turn, and `validation → done` after a real read-only verification
+  (`list*`) with no correction signal. A correction message (`looksLikeCorrection`) deterministically
+  returns `validation → execution`. `done` is also reachable by explicit confirmation (analyzer).
+- **Cooperative pause**: `AgentConfig.isPaused` is checked at the top of each action-loop iteration
+  (after the first), so a pause issued mid-run stops before the next action. `runAgentTurn` supplies a
+  probe reading `task_states`.
+- `executeAgent` builds a small `context` string (last managed booking / pending vacation) and passes it
+  as `AgentConfig.context`; `decide` retries once with a nudge when it returns `tool: null` for an
   action-like request.
 - Room names resolve case/prefix-insensitively; groups over `ROOM_CAPACITY` are refused; `listVacations`
   output omits reference codes.
@@ -46,12 +87,27 @@ Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 
 - An API failure (e.g. raw 400 on a huge prompt) becomes a graceful blocked `AgentRunResult`, never a
   thrown error.
 
+## Unified agent workspace (post-Day 12)
+
+- One route `/agent` (`pages/AgentPage`) with tabs `Диалог | Задача | Инварианты | Настройки`; the last
+  two are disabled placeholders for Days 13–14. Old routes redirect. One sidebar entry (`lib/days.ts`).
+- **Session config is the backbone** (`sessions.strategy` / `memory_enabled` / `profile_id` /
+  `window_size`): fixed by `createSession`, read by `runAgentTurn`, never switchable mid-session. The
+  session is created upfront (`api/create-session.ts`); `api/send-message.ts` then calls `runAgent`
+  (→ `runAgentTurn`) with only ids and text.
+- Reserved extension fields (no feature code yet): `sessions.invariant_set_id` (`task_state_enabled`
+  is live).
+  Future seams: `SystemBlock.kind` gains `'invariants' | 'task-state'`; invariants go in stable system
+  blocks, task state after history with profile/memory.
+
 ## Context strategies
 
 - Seam in `features/agent/domain/context/`: `ContextStrategyId = 'summary' | 'none' | 'window' | 'facts'
   | 'branch'`, `ContextStrategy.prepare(input)` → `PreparedContext { history, blocks, note }`.
-- **Strategy is fixed per session** (`sessions.strategy`): set by `createSession`, read by `runAgent`;
-  never switchable mid-session.
+- **Strategy is fixed per session** (`sessions.strategy`): set by `createSession`, read by
+  `runAgentTurn`; never switchable mid-session.
+- Short-term memory is the `window` strategy; the sliding-window size is per session
+  (`sessions.window_size`, `PrepareInput.windowSize`, default `WINDOW_SIZE = 10`).
 - Strategy blocks are inserted as **separate `system` messages** after the base system and before raw
   history, in both `decide` and `finalize`. Profile and memory blocks go **after** the history, in order
   `profile → long-term → working` (last, right before the user turn) so stale prior replies don't override
@@ -71,7 +127,8 @@ Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 
   strategy's blocks and the history (last, right before the user turn). `SystemBlock.kind` covers
   `'working' | 'long-term'`. A precedence line (`MEMORY_PRECEDENCE_LINE`) is added to the last user
   message when memory blocks are present: memory is authoritative over earlier history.
-- Memory is fixed per session via `sessions.memory_enabled` (set by `createSession`, read by `runAgent`).
+- Memory is fixed per session via `sessions.memory_enabled` (set by `createSession`, read by
+  `runAgentTurn`).
   Auto-extraction runs each turn; manual entries (`source='manual'`) survive auto overwrites; long-term
   is capped at `LONG_TERM_LIMIT`.
 
@@ -79,13 +136,11 @@ Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 
 
 - Seam in `features/agent/domain/profile/`: `types.ts` (fields, limits, labels) and `read.ts`
   (`formatProfileBlock` / `buildProfileBlocks`); stored in the `profiles` table keyed by `token`.
-- Profile is **fixed per session** (`sessions.profile_id`): set by `createSession` (explicit id,
-  `null`, or default), read by `runAgent`. `deleteProfile` nulls the sessions and transfers the default
+- Profile is **fixed per session** (`sessions.profile_id`): set by `createSession` (explicit id or
+  default), read by `runAgentTurn`. `deleteProfile` nulls the sessions and transfers the default
   to the most recent remaining profile; a partial unique index keeps **one default per token**.
 - `SystemBlock.kind` includes `'profile'`; the block is inserted after history and before memory, and
   `PROFILE_PRECEDENCE_LINE` is merged into the last user message alongside `MEMORY_PRECEDENCE_LINE`.
-- `compareProfiles` runs the same request under two profiles with strategy `none`, no memory and no
-  persistence (dry-run) — the only place the client sends `profileIds`.
 - Profile is loaded server-side from the session; the client sends only ids. Limits live in
   `functions/validation.ts` (`requireProfileName`, `optionalProfileField`: name≤60, field≤120,
   constraints≤500, instructions≤1200).
@@ -98,8 +153,9 @@ Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 
   is migrated on first open, and an existing DB is snapshotted to `<db>.backups/` (last 5).
 - Migrations are idempotent (`PRAGMA table_info` + `ALTER`). Branches are copy-on-fork; `loadMessages`
   and `appendMessage` are scoped to the active branch. Sessions carry
-  `strategy`/`scenario`/`memory_enabled`/`profile_id`; memory lives in `working_memory` and
-  `long_term_memory`, profiles in `profiles` (separate from `session_facts`/`session_summaries`).
+  `strategy`/`scenario`/`memory_enabled`/`profile_id`/`window_size` (+ reserved `task_state_enabled` /
+  `invariant_set_id`); memory lives in `working_memory` and `long_term_memory`, profiles in `profiles`
+  (separate from `session_facts`/`session_summaries`).
 
 ## Commands
 

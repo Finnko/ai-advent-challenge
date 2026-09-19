@@ -2,62 +2,149 @@
 
 Корпоративный LLM-агент: инструменты по ролям, персистентность в SQLite, управление контекстом
 стратегиями (`summary` / `none` / `window` / `facts` / `branch`), явная модель памяти
-(`short-term` / `working` / `long-term`), профиль пользователя (Day 12) и UI на четырёх роутах.
+(краткосрочная = скользящее окно, рабочая, долговременная), профиль пользователя (Day 12) и
+состояние задачи как конечный автомат (Day 13).
 
-Фича спроектирована так, чтобы её можно было перенести в другой TanStack Start проект.
+Всё собрано в **один рабочий экран** `/agent` с табами. Фича спроектирована так, чтобы её можно
+было перенести в другой TanStack Start проект.
 
 ## Структура
 
 ```
 src/features/agent/
-  pages/       # AgentPage (Day 9), AgentStrategiesPage (Day 10), AgentMemoryPage (Day 11), AgentProfilePage (Day 12) — единственная публичная поверхность
+  pages/       # AgentPage — единственная публичная поверхность (табы Диалог/Задача/Инварианты/Настройки)
   api/         # клиентские хуки react-query (bulletproof-стиль): queryOptions + useX/mutations
   functions/   # createServerFn-обёртки (сетевой шов)
-  server/      # *.server.ts — глубокие server-only модули (agent-service, store)
-  domain/      # изоморфная логика без env/fetch (agent, tools, контекст, факты, память, токены)
-  data/        # клиентские данные без env (примеры, мок сценария)
+  server/      # *.server.ts — глубокие server-only модули (agent-turn, agent-service, store)
+  domain/      # изоморфная логика без env/fetch (agent, tools, контекст, память, профиль, задача, session, токены)
+  data/        # клиентские данные без env (примеры, подписи инструментов)
   components/  # UI фичи
   tests/       # офлайн-тесты (vitest, node env)
   types.ts     # wire-типы ответов API
 ```
 
-Слои: `pages` → `api` → `functions` (`createServerFn`) → `server`/`domain`. Роуты приложения —
-тонкие обёртки: `src/routes/_layout/agent.tsx`, `src/routes/_layout/agent-strategies.tsx`,
-`src/routes/_layout/agent-memory.tsx`, `src/routes/_layout/agent-profile.tsx`.
+Слои: `pages` → `api` → `functions` (`createServerFn`) → `server`/`domain`. Роутов приложения два
+уровня: `src/routes/_layout/agent.tsx` рендерит `pages/AgentPage`; `agent-strategies.tsx`,
+`agent-memory.tsx`, `agent-profile.tsx` — `beforeLoad`-редиректы на `/agent` (старые закладки живы).
 
-## Модель памяти (Day 11)
+## Единый рабочий экран
 
-Три слоя, каждый — отдельное хранилище:
+- Табы `Диалог | Задача | Инварианты | Настройки`. `Задача`/`Инварианты` — disabled-заглушки
+  (точки расширения под Day 13/14), `Настройки` — конфиг новой сессии, CRUD профилей и слои памяти.
+- Поток: настроил черновик конфига во вкладке «Настройки» → нажал «Новая сессия» (сессия создаётся
+  сразу с этим конфигом) или выбрал существующую → работаешь в «Диалоге». Пока сессия не выбрана,
+  чата нет. Конфиг фиксируется за сессией; чтобы изменить — новая сессия.
 
-- **short-term** — текущий диалог, таблица `messages` (branch-scoped); в промпт уходит как история
-  (стратегия `window`).
-- **working** — данные текущей задачи, таблица `working_memory` (keyed by `session_id`); сбрасывается
-  вместе с сессией.
-- **long-term** — профиль, решения, знания, таблица `long_term_memory` (keyed by `token`); переживает
-  сессии и сценарии.
+## Выполнение Хода
 
-`MemoryRouter` (`domain/memory/router.ts`) явно раскладывает кандидатов от `createExtractMemories` по
-слоям (валидация ключа/значения, fallback по категории). Слои вставляются отдельными `system`-блоками
-`long-term → working` после истории и перед user-ходом. Дедуп — last-write-wins, ручная запись
-не перетирается авто, долговременная память ограничена 50 записями.
+`server/agent-turn.server.ts` — глубокий модуль Хода. `runAgentTurn({ token, sessionId, user }, deps)`
+сам гидрирует способности, сессию, активную ветку, историю, сводку, факты, память и профиль,
+запускает `executeAgent` и сохраняет обе реплики. `functions/run-agent.functions.ts` — тонкий
+adapter: `validator → runAgentTurn`.
+
+Шов `TurnDeps = { resolveCapabilities, store: TurnStore, runtime: AgentRuntime, now }`;
+`defaultTurnDeps` — продакшн-проводка, офлайн-тесты (`tests/agent-turn.test.ts`) подставляют фейки.
+`AgentRuntime` (`agent-service.server.ts`) держит транспорт и инструменты: `executeAgent(options,
+runtime = defaultAgentRuntime)` не собирает их сам.
+
+## Конфиг сессии
+
+`domain/session/config.ts` — единственный дом Конфигурации сессии: типы `SessionConfig` /
+`SessionConfigInput` / `SessionConfigDraft`, дефолты, разрешение профиля по умолчанию, превращение
+драфта во вход и правило неизменности (`resolveActiveSessionConfig`). Wire-форма валидируется
+`parseSessionConfigInput` (`functions/validation.ts`).
+
+`createSession` принимает `Partial<SessionConfigInput>` (`strategy`, `scenario`, `windowSize`,
+`memoryEnabled`, `profileId`, `taskStateEnabled`, + зарезервированный `invariantSetId`), хранит их в
+таблице `sessions` и дальше не меняет. Правила defaulting живут в модуле, а store делегирует ему
+разрешение конфигурации и выполняет server-side lookup default profile:
+
+- `strategy` — одна из пяти стратегий контекста;
+- `windowSize` — размер скользящего окна для стратегии `window` (default `DEFAULT_WINDOW_SIZE = 10`,
+  допустимо 2–50, валидатор `requireWindowSize`);
+- `memoryEnabled` — включает авто-извлечение и блоки памяти;
+- `taskStateEnabled` — ведёт ли агент состояние задачи (default `true`, тумблер в «Настройках»);
+- `profileId` — профиль пользователя: `undefined` (в draft это `null`) → дефолт токена, id → явный.
+  Режим «без профиля» UI не предлагает.
+
+Клиент шлёт только ids и выбранный конфиг (`api/send-message.ts`, `{ config: SessionConfigInput }`),
+`AgentPage` держит один `SessionConfigDraft`. `runAgentTurn` читает конфиг из сессии и прокидывает в
+`executeAgent`; `windowSize` уходит в `ContextStrategy.prepare` через `PrepareInput.windowSize`.
+
+## Модель памяти
+
+Слои раздельны:
+
+- **краткосрочная** — активная ветка `messages`, в промпт уходит как скользящее окно (стратегия
+  `window`); размер окна — per-session.
+- **рабочая** — `working_memory` (keyed by `session_id`), сбрасывается с сессией.
+- **долговременная** — `long_term_memory` (keyed by `token`), переживает сессии.
+
+`MemoryRouter` (`domain/memory/router.ts`) раскладывает кандидатов от `createExtractMemories` по
+слоям. Слои вставляются отдельными `system`-блоками `long-term → working` после истории и перед
+user-ходом. Дедуп — last-write-wins, ручная запись не перетирается авто, долговременная память
+ограничена `LONG_TERM_LIMIT`.
 
 ## Профиль пользователя (Day 12)
 
 Структурированный профиль (обращение, тон, язык, длина, формат, ограничения, свободные инструкции)
-редактируется на `/agent-profile` и хранится в таблице `profiles` по `token`.
+хранится в таблице `profiles` по `token` и фиксируется за сессией (`sessions.profile_id`).
 
 - Шов — `domain/profile/`: `types.ts` (поля, лимиты, подписи) и `read.ts`
   (`formatProfileBlock` / `buildProfileBlocks`).
-- Профиль **фиксируется за сессией** (`sessions.profile_id`): задаёт `createSession` (явный id,
-  `null` или дефолт), читает `runAgent`. `deleteProfile` обнуляет сессии и переносит дефолт; частичный
-  уникальный индекс держит **один дефолт на token**.
-- Блок вставляется отдельным `system`-сообщением `profile` после истории и перед памятью, порядок
+- `deleteProfile` обнуляет сессии и переносит дефолт; частичный уникальный индекс держит **один
+  дефолт на token**.
+- Блок вставляется system-сообщением после истории и перед памятью, порядок
   `profile → long-term → working`; строка приоритета идёт в последнее user-сообщение.
-- `compareProfiles` — dry-run одного запроса под двумя профилями (стратегия `none`, без памяти и
-  записи) — единственное место, где клиент шлёт `profileIds`.
 - Лимиты — в `functions/validation.ts` (`requireProfileName`, `optionalProfileField`: имя ≤60,
-  поле ≤120, ограничения ≤500, инструкции ≤1200). Профиль грузится на сервере из сессии — клиент шлёт
-  только id.
+  поле ≤120, ограничения ≤500, инструкции ≤1200).
+
+## Состояние задачи (Day 13)
+
+Задача ведётся как конечный автомат: **этап → текущий шаг → ожидаемое действие**. Граф
+`planning → execution → validation → done` плюс `paused` (помнит `previousStage`) и `cancelled`.
+
+- Шов — `domain/task/`: `types.ts` (стадии, актор, лимиты), `state.ts` (чистый reducer переходов,
+  pause/resume/cancel, отклонение нелегальных переходов), `advance.ts` (авто-переходы после хода),
+  `analyze.ts` (LLM-анализатор состояния), `read.ts` (system-блок и volatile-строка про
+  этап/ожидаемое действие).
+- Фича гейтится `sessions.task_state_enabled` (по умолчанию **включена**), фиксируется за сессией.
+- Анализатор гоняется раз в Ход **до** `executeAgent`; при сбое состояние не меняется, usage → `auxUsage`.
+- Snapshot живёт в таблице `task_states` (keyed by `session_id`, bounded `history_json`); пауза и
+  продолжение переживают сессию. Кнопки и естественный язык («пауза», «продолжим») ведут к одному
+  reducer'у.
+- Блок `kind: 'task-state'` вставляется последним system-блоком в оба этапа (decide/finalize);
+  при `paused` вызов инструментов жёстко блокируется.
+- **`planning` = предложи и жди**: изменяющие инструменты (`isMutatingTool` в `agent-tools.ts`)
+  скрыты из decide и жёстко отклоняются на act; справочные `list*` доступны. Мутации выполняются
+  только на `execution`, куда задача уходит по явному согласию пользователя; на `validation` тоже
+  только `list*`.
+- **Авто-переходы** (`domain/task/advance.ts`): `execution → validation` после успешного мутирующего
+  действия и `validation → done` **только после реальной справочной проверки** (`list*`) и без
+  признаков правки; `done` также по явному подтверждению (анализатор). Если пользователь сообщает,
+  что результат неверен (`looksLikeCorrection`), задача детерминированно возвращается
+  `validation → execution` для переделки. Переходы пишут `task`-событие и переживают перезагрузку.
+- **Кооперативная пауза**: `AgentConfig.isPaused` проверяется в начале каждой итерации цикла действий
+  (после первого), поэтому пауза, поставленная во время хода, останавливает цикл между действиями;
+  `runAgentTurn` даёт пробу по `task_states`.
+- **Действия за Ход**: `decide → act` повторяется в пределах `maxActionsPerTurn` (default 5), пока
+  модель выбирает следующий инструмент. Решения и отчёты возвращаются в decide, финализация собирает
+  все `ОТЧЁТЫ` и требует все коды подтверждения. Цикл останавливается на `tool: null`, ошибке,
+  повторе `tool+args` или лимите; судья `no-fabricated-actions` не даёт ответу приписать
+  невыполненное действие.
+- UI: переходы рисуются **inline в ленте чата** (`ChatThread` + `TaskEventRow`) как персистентные
+  `task`-сообщения (`messages.role = 'task'`, событие в `run_json`). Их пишут и анализатор
+  (`runAgentTurn`, между репликами user/assistant), и кнопки (`applyTaskAction`). `task`-сообщения
+  не попадают в историю LLM. Текущие этап/шаг/ожидаемое действие и кнопки Пауза/Продолжить/Отменить —
+  компактной строкой `TaskStateBar` над полем ввода; отдельного таба «Задача» нет.
+
+## Точки расширения (Day 14, ещё не реализовано)
+
+- Зарезервировано поле сессии `invariant_set_id` (миграция идемпотентна).
+- `SystemBlock.kind` расширится до `'invariants'`: инварианты — в стабильные system-блоки после
+  base system.
+- Day 14: домен `domain/invariants/`, таблицы наборов/правил, pre-act guard + post-finalize judge,
+  расширение `JudgeContext` и `AgentRunResult` списком нарушений.
 
 ## Внешние зависимости (общие, не входят в фичу)
 
@@ -67,11 +154,12 @@ src/features/agent/
 - `src/lib/functions/validation.ts` — базовые `requireToken` / `requireUser` / `requireSessionId`
   (агентские валидаторы лежат в `functions/validation.ts` фичи).
 - `src/lib/utils.ts` (`cn`).
-- `src/components/ui/Tabs.tsx` — shadcn-совместимые табы на `@radix-ui/react-tabs`.
+- `src/components/ui/Tabs.tsx` и остальной shadcn-совместимый UI-кит на Radix.
 - `src/routes/__root.tsx` — `QueryClientProvider` (react-query).
 
 npm-зависимости: `@tanstack/react-query`, `@tanstack/react-router`, `@tanstack/react-start`,
-`gpt-tokenizer` (токены), `@radix-ui/react-tabs`, `clsx`, `tailwind-merge`, `react`, `react-dom`.
+`gpt-tokenizer` (токены), `@radix-ui/react-tabs`, `@radix-ui/react-select`, `clsx`, `tailwind-merge`,
+`react`, `react-dom`.
 
 Env: `DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL`, `HUGGING_FACE_TOKEN`; путь БД — `AGENT_DB_PATH`
 (по умолчанию `~/.ai-advent-challenge/agent.sqlite`).
@@ -80,7 +168,7 @@ Env: `DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL`, `HUGGING_FACE_TOKEN`; путь БД �
 
 1. Скопировать `src/features/agent/` целиком.
 2. Скопировать внешние зависимости из списка выше.
-3. Завести роуты, которые рендерят `pages/AgentPage`, `pages/AgentStrategiesPage`, `pages/AgentMemoryPage` и `pages/AgentProfilePage`.
+3. Завести роут `/agent`, рендерящий `pages/AgentPage` (и, при желании, редиректы со старых путей).
 4. Прописать env и поднять `QueryClientProvider`.
 5. Прогнать `npm run test` — тесты фичи офлайн (мокают LLM через `tests/agent-testkit.ts`).
 

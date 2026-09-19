@@ -17,6 +17,63 @@ import type { MemoryLayer } from '../domain/memory/types'
 import { MAX_MEMORY_VALUE_CHARS } from '../domain/memory/types'
 import type { ProfileField, ProfileInput } from '../domain/profile/types'
 import { PROFILE_NAME_MAX, profileFieldMax } from '../domain/profile/types'
+import {
+  DEFAULT_WINDOW_SIZE,
+  WINDOW_SIZE_MAX,
+  WINDOW_SIZE_MIN,
+} from '../domain/session/config'
+import type { SessionConfigInput } from '../domain/session/config'
+
+export { WINDOW_SIZE_MAX, WINDOW_SIZE_MIN }
+
+export function requireWindowSize(value: unknown): number {
+  if (
+    typeof value !== 'number' ||
+    !Number.isInteger(value) ||
+    value < WINDOW_SIZE_MIN ||
+    value > WINDOW_SIZE_MAX
+  ) {
+    throw new Error(
+      `Некорректный размер окна: нужно целое от ${WINDOW_SIZE_MIN} до ${WINDOW_SIZE_MAX}`,
+    )
+  }
+  return value
+}
+
+export function optionalWindowSize(value: unknown): number {
+  if (value === undefined || value === null) {
+    return DEFAULT_WINDOW_SIZE
+  }
+  return requireWindowSize(value)
+}
+
+export function optionalBoolean(
+  value: unknown,
+  fallback = false,
+): boolean {
+  if (value === undefined || value === null) {
+    return fallback
+  }
+  if (typeof value !== 'boolean') {
+    throw new Error('Ожидалось булево значение')
+  }
+  return value
+}
+
+export function optionalInvariantSetId(
+  value: unknown,
+): number | null | undefined {
+  if (value === undefined) {
+    return undefined
+  }
+  if (value === null) {
+    return null
+  }
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    throw new Error('Некорректный invariantSetId')
+  }
+  return value
+}
 
 export function requireBranchId(value: unknown): number {
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
@@ -116,6 +173,19 @@ export function optionalProfileField(
     throw new Error(`Значение поля «${field}» длиннее ${max} символов`)
   }
   return trimmed
+}
+
+export function parseSessionConfigInput(value: unknown): SessionConfigInput {
+  const data = asObject(value)
+  return {
+    strategy: requireStrategy(data.strategy),
+    scenario: optionalScenario(data.scenario),
+    windowSize: optionalWindowSize(data.windowSize),
+    memoryEnabled: optionalBoolean(data.memoryEnabled),
+    profileId: optionalProfileId(data.profileId),
+    taskStateEnabled: optionalBoolean(data.taskStateEnabled, true),
+    invariantSetId: optionalInvariantSetId(data.invariantSetId),
+  }
 }
 
 export function requireProfileInput(value: unknown): ProfileInput {

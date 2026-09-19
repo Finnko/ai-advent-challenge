@@ -6,21 +6,26 @@ import type {
   AgentCapabilities,
   AgentRunResult,
   AgentStore,
+  AgentTool,
   CallLLM,
   PreparedContext,
 } from '../domain/agent'
 import { TOOLS_BY_ROLE, createAgentTools } from '../domain/agent-tools'
 import type { ContextStrategy } from '../domain/context/types'
-import type { Fact } from '../domain/facts'
+import type { ExtractFacts } from '../domain/facts'
 import { createExtractFacts } from '../domain/facts'
 import type {
   CompressionMessage,
-  PreviousSummary,
   Summarize,
   SummaryUsage,
 } from '../domain/compression'
 import { toLlmMessages } from '../domain/compression'
 import { createExtractMemories } from '../domain/memory/extract'
+import type { ExtractMemories } from '../domain/memory/extract'
+import { createAnalyzeTaskState } from '../domain/task/analyze'
+import type { AnalyzeTaskState } from '../domain/task/analyze'
+import { buildTaskStateBlocks } from '../domain/task/read'
+import type { TaskState } from '../domain/task/types'
 import type { MemoryEntry } from '../domain/memory/types'
 import {
   applyLongTermLimit,
@@ -118,8 +123,25 @@ const summarizeHistory: Summarize = async (messages) => {
   return { content: reply.content, usage: reply.usage }
 }
 
-const extractFacts = createExtractFacts(callFlash)
-const extractMemories = createExtractMemories(callFlash)
+export type AgentRuntime = {
+  callLLM: CallLLM
+  summarize: Summarize
+  extractFacts: ExtractFacts
+  extractMemories: ExtractMemories
+  analyzeTaskState: AnalyzeTaskState
+  store: AgentStore
+  createTools: (store: AgentStore, now: Date) => AgentTool[]
+}
+
+export const defaultAgentRuntime: AgentRuntime = {
+  callLLM: callFlash,
+  summarize: summarizeHistory,
+  extractFacts: createExtractFacts(callFlash),
+  extractMemories: createExtractMemories(callFlash),
+  analyzeTaskState: createAnalyzeTaskState(callFlash),
+  store: createAgentStore(),
+  createTools: createAgentTools,
+}
 
 export type MemoryOptions = {
   enabled: boolean
@@ -137,58 +159,57 @@ export type ExecuteOptions = {
   user: string
   strategy: ContextStrategy
   rows: CompressionMessage[]
-  previousSummary: PreviousSummary | null
-  facts: Fact[]
   branchLabel?: string
+  windowSize?: number
   memory?: MemoryOptions
   profile?: ProfileRecord | null
-  saveSummary: (
-    summary: string,
-    throughMessageId: number,
-  ) => Promise<void> | void
-  saveFacts: (facts: Fact[]) => Promise<void> | void
+  taskState?: TaskState | null
+  isPaused?: () => boolean | Promise<boolean>
+  now?: Date
 }
 
 export type AgentExecution = {
   run: AgentRunResult
   auxUsage: SummaryUsage | null
+  taskState: TaskState | null
 }
 
 export async function executeAgent(
   options: ExecuteOptions,
+  runtime: AgentRuntime = defaultAgentRuntime,
 ): Promise<AgentExecution> {
-  const now = new Date()
-  const store = createAgentStore()
+  const now = options.now ?? new Date()
+  const store = runtime.store
   const context = await buildAgentContext(store, options.capabilities)
+  const taskState = options.taskState ?? null
   const agent = new Agent({
     capabilities: options.capabilities,
-    tools: createAgentTools(store, now),
+    tools: runtime.createTools(store, now),
     judges: AGENT_JUDGES,
-    callLLM: callFlash,
+    callLLM: runtime.callLLM,
     model: TIER_ENDPOINTS.medium.model,
     today: todayIso(now),
     responseLanguage: options.profile?.language ?? null,
     context,
+    taskState,
+    isPaused: options.isPaused,
   })
   try {
-    const memoryBlocks = await prepareMemoryBlocks(options)
+    const memoryBlocks = await prepareMemoryBlocks(options, runtime.extractMemories)
     const profileBlocks = buildProfileBlocks(options.profile ?? null)
+    const taskBlocks = buildTaskStateBlocks(taskState)
     const prepared = await options.strategy.prepare({
       rows: options.rows,
       request: options.user,
-      previousSummary: options.previousSummary,
-      summarize: summarizeHistory,
-      saveSummary: options.saveSummary,
-      facts: options.facts,
-      extractFacts,
-      saveFacts: options.saveFacts,
       branchLabel: options.branchLabel,
+      windowSize: options.windowSize,
     })
     const context: PreparedContext = {
       ...prepared.context,
       blocks: [
         ...profileBlocks,
         ...memoryBlocks.blocks,
+        ...taskBlocks,
         ...prepared.context.blocks,
       ],
     }
@@ -196,14 +217,16 @@ export async function executeAgent(
     return {
       run,
       auxUsage: sumSummaryUsage(prepared.auxUsage, memoryBlocks.usage),
+      taskState,
     }
   } catch (error) {
-    return { run: blockedRun(options, error), auxUsage: null }
+    return { run: blockedRun(options, error), auxUsage: null, taskState }
   }
 }
 
 async function prepareMemoryBlocks(
   options: ExecuteOptions,
+  extractMemories: ExtractMemories,
 ): Promise<{ blocks: PreparedContext['blocks']; usage: SummaryUsage | null }> {
   const memory = options.memory
   if (!memory?.enabled) {

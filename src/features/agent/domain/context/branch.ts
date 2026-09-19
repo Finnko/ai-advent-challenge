@@ -3,9 +3,6 @@ import type { ContextStrategy } from './types'
 
 export const branchStrategy: ContextStrategy = {
   id: 'branch',
-  label: 'Ветки диалога',
-  description:
-    'В запрос уходит активная ветка от checkpoint; переключение ветки меняет историю.',
   async prepare({ rows, branchLabel }) {
     return {
       context: {

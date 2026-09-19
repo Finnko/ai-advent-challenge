@@ -1,20 +1,22 @@
-import { useEffect, useRef, useState } from 'react'
+import { useMemo } from 'react'
 import type { AgentRunResult } from '../domain/agent'
 import type { ContextStrategyId } from '../domain/context/types'
+import type { ProfileInput } from '../domain/profile/types'
+import {
+  CONTEXT_STRATEGIES,
+  CONTEXT_STRATEGY_IDS,
+} from '../domain/context/registry'
 import { accountSession } from '../domain/accounting'
+import {
+  WINDOW_SIZE_MAX,
+  WINDOW_SIZE_MIN,
+  clampWindowSize,
+} from '../domain/session/config'
 import { CONTEXT_BUDGET_TOKENS, MODEL_CONTEXT_TOKENS } from '../domain/tokens'
-import { EXAMPLES, TOOL_INFO, TOKEN_SCENARIOS } from '../data/agent-ui'
-import type { Example, PersonaKind, ToolInfo } from '../data/agent-ui'
-import { useOrg } from '../api/get-org'
-import { useSessions } from '../api/get-sessions'
-import { useCapabilities } from '../api/get-capabilities'
-import { useSessionMessages } from '../api/get-session-messages'
-import { useSendMessage } from '../api/send-message'
-import { useDeleteSession } from '../api/delete-session'
-import { useCompareCompression } from '../api/compare-compression'
+import { useAgentWorkspace } from '../api/use-agent-workspace'
+import type { ProfileItem } from '../types'
 import PersonaPicker from '../components/PersonaPicker'
 import CapabilitiesPanel from '../components/CapabilitiesPanel'
-import ExampleChips from '../components/ExampleChips'
 import ChatThread from '../components/ChatThread'
 import type { ThreadMessage } from '../components/ChatThread'
 import SessionList from '../components/SessionList'
@@ -22,187 +24,150 @@ import TokenMeter from '../components/TokenMeter'
 import TokenReport from '../components/TokenReport'
 import ContextPanel from '../components/ContextPanel'
 import SessionAccounting from '../components/SessionAccounting'
-import CompressionCompare from '../components/CompressionCompare'
+import FactsPanel from '../components/FactsPanel'
+import BranchPanel from '../components/BranchPanel'
+import MemoryInspector from '../components/MemoryInspector'
+import MemoryPanel from '../components/MemoryPanel'
+
+import ProfileList from '../components/ProfileList'
+import ProfileEditor from '../components/ProfileEditor'
+import TaskStateBar from '../components/TaskStateBar'
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from '@/components/ui/Tabs'
 import { Button } from '@/components/ui/Button'
+import { Input } from '@/components/ui/Input'
 import { Textarea } from '@/components/ui/Textarea'
 import { Badge } from '@/components/ui/Badge'
 import { Alert } from '@/components/ui/Alert'
 import { Checkbox } from '@/components/ui/Checkbox'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/Select'
+
+const STRATEGY_CHOICES = CONTEXT_STRATEGY_IDS.map((id) => ({
+  id,
+  label: CONTEXT_STRATEGIES[id].label,
+  description: CONTEXT_STRATEGIES[id].description,
+}))
 
 export default function AgentPage() {
-  const [activeToken, setActiveToken] = useState<string | null>(null)
-  const [sessionId, setSessionId] = useState<number | null>(null)
-  const [draft, setDraft] = useState('')
-  const [strategy, setStrategy] = useState<ContextStrategyId>('summary')
-  const autoPickRef = useRef(false)
+  const workspace = useAgentWorkspace()
+  const {
+    sessionId,
+    draft,
+    config,
+    editingProfileId,
+    creatingProfile,
+    active,
+    manager,
+    employees,
+    activePerson,
+    sessions,
+    facts,
+    branches,
+    memoryView,
+    taskState,
+    profiles,
+    selectedProfile,
+    defaultProfile,
+    messagesData,
+    capabilities,
+    capabilitiesError,
+    orgLoading,
+    orgError,
+    sendError,
+    branchError,
+    sessionError,
+    settingsError,
+    taskError,
+    busy,
+    taskBusy,
+    sending,
+    actions,
+  } = workspace
 
-  const orgQuery = useOrg()
-  const people = orgQuery.data ?? []
-  const manager = people.find((person) => person.role === 'manager') ?? null
-  const employees = people.filter((person) => person.role === 'employee')
-  const activePerson =
-    people.find((person) => person.token === activeToken) ?? manager ?? null
-  const kind: PersonaKind = activePerson?.role ?? 'employee'
-  const roleExamples: Example[] = EXAMPLES.filter((example) => example.kind === kind)
-  const availableTools: ToolInfo[] = TOOL_INFO.filter((tool) =>
-    tool.roles.includes(kind),
+  const messages: ThreadMessage[] = useMemo(
+    () =>
+      messagesData.map((row) => ({
+        id: row.id,
+        role: row.role,
+        content: row.content,
+        ...(row.run ? { run: row.run as AgentRunResult } : {}),
+        ...(row.taskEvent ? { taskEvent: row.taskEvent } : {}),
+      })),
+    [messagesData],
   )
 
-  useEffect(() => {
-    if (!activeToken && manager) {
-      setActiveToken(manager.token)
-    }
-  }, [activeToken, manager])
+  const activeStrategy: ContextStrategyId = active.strategy
+  const activeWindowSize = active.windowSize
+  const activeMemory = active.memoryEnabled
+  const activeProfileName = workspace.sessionSummary
+    ? (workspace.sessionSummary.profileName ?? null)
+    : (selectedProfile?.name ?? defaultProfile?.name ?? null)
 
-  const capabilitiesQuery = useCapabilities(activeToken)
-  const sessionsQuery = useSessions(activeToken)
-  const messagesQuery = useSessionMessages(sessionId)
-
-  const sendMutation = useSendMessage()
-  const deleteMutation = useDeleteSession()
-  const compareMutation = useCompareCompression()
-
-  const messages: ThreadMessage[] = (messagesQuery.data ?? []).map((row) => ({
-    id: row.id,
-    role: row.role,
-    content: row.content,
-    ...(row.run ? { run: row.run as AgentRunResult } : {}),
-  }))
-
-  const busy =
-    sendMutation.isPending ||
-    compareMutation.isPending ||
-    deleteMutation.isPending ||
-    capabilitiesQuery.isLoading
-
-  const openSession = (id: number) => {
-    if (busy || id === sessionId) {
-      return
-    }
-    sendMutation.reset()
-    compareMutation.reset()
-    setSessionId(id)
-    setDraft('')
-  }
-
-  useEffect(() => {
-    if (!autoPickRef.current) {
-      return
-    }
-    if (sessionsQuery.isSuccess) {
-      autoPickRef.current = false
-      const first = sessionsQuery.data[0]
-      if (first) {
-        openSession(first.id)
-      }
-    }
-  }, [sessionsQuery.isSuccess, sessionsQuery.data])
-
-  const handlePickPerson = (token: string) => {
-    if (token === activeToken || busy) {
-      return
-    }
-    sendMutation.reset()
-    compareMutation.reset()
-    setActiveToken(token)
-    setSessionId(null)
-    setDraft('')
-    autoPickRef.current = true
-  }
-
-  const handleNewSession = () => {
-    if (busy) {
-      return
-    }
-    sendMutation.reset()
-    compareMutation.reset()
-    setSessionId(null)
-    setDraft('')
-  }
-
-  const handleDeleteSession = (id: number) => {
-    if (busy) {
-      return
-    }
-    deleteMutation.mutate(
-      { token: activeToken ?? '', sessionId: id },
-      {
-        onSuccess: () => {
-          if (id === sessionId) {
-            setSessionId(null)
-          }
-        },
-      },
-    )
-  }
-
-  const handleSend = () => {
-    const text = draft.trim()
-    if (text.length === 0 || busy || !activeToken) {
-      return
-    }
-    setDraft('')
-    sendMutation.mutate(
-      { token: activeToken, sessionId, user: text, strategy },
-      { onSuccess: (result) => setSessionId(result.sessionId) },
-    )
-  }
-
-  const handleCompare = () => {
-    const text = draft.trim()
-    if (text.length === 0 || sessionId === null || busy || !activeToken) {
-      return
-    }
-    compareMutation.mutate({ token: activeToken, sessionId, user: text })
-  }
-
-  const accounting = accountSession(messages, draft)
   const lastRun: AgentRunResult | null =
     [...messages].reverse().find((message) => message.run)?.run ?? null
   const noteState = lastRun?.contextNote ?? null
-  const comparison = compareMutation.data ?? null
-  const compareError = compareMutation.isError
-    ? toError(compareMutation.error)
-    : null
-  const sendError = sendMutation.isError ? toError(sendMutation.error) : null
-  const orgError = orgQuery.isError ? toError(orgQuery.error) : null
+  const accounting = accountSession(messages, draft)
+
+  const editorInitial: ProfileInput | null = useMemo(
+    () =>
+      selectedProfile
+        ? {
+            name: selectedProfile.name,
+            addressing: selectedProfile.addressing,
+            tone: selectedProfile.tone,
+            language: selectedProfile.language,
+            verbosity: selectedProfile.verbosity,
+            format: selectedProfile.format,
+            constraints: selectedProfile.constraints,
+            instructions: selectedProfile.instructions,
+          }
+        : null,
+    [selectedProfile],
+  )
 
   let capsPanel: Parameters<typeof CapabilitiesPanel>[0] = { status: 'loading' }
-  if (capabilitiesQuery.data) {
-    capsPanel = { status: 'ready', caps: capabilitiesQuery.data }
-  } else if (capabilitiesQuery.isError) {
-    capsPanel = { status: 'error', message: toError(capabilitiesQuery.error) }
+  if (capabilities) {
+    capsPanel = { status: 'ready', caps: capabilities }
+  } else if (capabilitiesError) {
+    capsPanel = { status: 'error', message: capabilitiesError }
   }
 
-  let strategyHint: string
-  if (sessionId !== null) {
-    strategyHint =
-      'Стратегия зафиксирована за сессией — начни новую сессию, чтобы сменить'
-  } else if (strategy === 'summary') {
-    strategyHint =
-      'Агент шлёт последние N сообщений и сводку старой истории; одиночный запрос больше бюджета отклоняется'
+  const sessionLocked = sessionId !== null
+  const showProfileEditor = creatingProfile || editingProfileId !== null
+
+  let sessionHint: string
+  if (sessionLocked) {
+    sessionHint = 'Конфиг зафиксирован за сессией'
+  } else if (config.profileId === null) {
+    sessionHint = 'Будет применён профиль по умолчанию'
   } else {
-    strategyHint = 'История уходит целиком, без сводки — база для сравнения'
+    sessionHint = `Новая сессия с профилем «${selectedProfile?.name ?? ''}»`
   }
 
   return (
     <div className="mx-auto flex max-w-[1440px] flex-col gap-4 px-4 pb-6 pt-6">
       <header className="mb-1">
-        <p className="island-kicker mb-2">Agent · Context strategies</p>
-        <h1 className="demo-title mb-2">
-          Корпоративный агент со стратегиями контекста
-        </h1>
+        <p className="island-kicker mb-2">Agent · единый рабочий экран</p>
+        <h1 className="demo-title mb-2">Корпоративный агент</h1>
         <p className="demo-muted m-0 max-w-4xl text-sm">
-          Тот же агент, что в первый день, — теперь контекст собирается подключаемой
-          стратегией. Сейчас активна «сжатие истории»: последние сообщения уходят
-          как есть, а старая история сворачивается в сводку, которая хранится
-          отдельно в SQLite. Стратегия фиксируется на сессию: переключать её можно
-          только до первого сообщения. A/B сравнение показывает экономию токенов и
-          цены.
+          Все доработки в одном месте: стратегии контекста (скользящее окно —
+          краткосрочная память), слои памяти, профиль пользователя и состояние
+          задачи. Настрой конфиг во вкладке «Настройки», создай сессию и работай
+          во вкладке «Диалог». Инварианты — точка расширения для следующего дня.
         </p>
       </header>
 
-      {orgQuery.isLoading && <p className="demo-muted">Загружаю сотрудников…</p>}
+      {orgLoading && <p className="demo-muted">Загружаю сотрудников…</p>}
       {orgError && <Alert variant="destructive">{orgError}</Alert>}
 
       {activePerson && manager && (
@@ -218,7 +183,7 @@ export default function AgentPage() {
             employees={employees}
             activeToken={activePerson.token}
             disabled={busy}
-            onPick={handlePickPerson}
+            onPick={actions.pickPerson}
           />
           <CapabilitiesPanel {...capsPanel} />
         </section>
@@ -235,12 +200,12 @@ export default function AgentPage() {
             </div>
             <div className="min-h-0 flex-1 py-2">
               <SessionList
-                sessions={sessionsQuery.data ?? []}
+                sessions={sessions}
                 activeId={sessionId}
                 disabled={busy}
-                onOpen={openSession}
-                onDelete={handleDeleteSession}
-                onNew={handleNewSession}
+                onOpen={actions.openSession}
+                onDelete={actions.deleteSession}
+                onNew={actions.newSession}
               />
             </div>
           </aside>
@@ -248,122 +213,271 @@ export default function AgentPage() {
           <section className="demo-panel flex min-w-0 flex-1 flex-col gap-3 p-5">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="demo-section-title m-0">
-                Чат с агентом · {activePerson.name}
+                Работа · {activePerson.name}
               </h2>
-              <span className="demo-muted text-xs">
-                {sessionId ? `сессия #${sessionId}` : 'новая сессия'}
-              </span>
-            </div>
-            <p className="demo-muted m-0 text-xs">
-              Сообщения и результат каждого запуска сохраняются в SQLite.
-              Перезапусти приложение — диалог продолжится.
-            </p>
-
-            <ExampleChips
-              examples={roleExamples}
-              disabled={busy}
-              onPick={setDraft}
-            />
-            {availableTools.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">
-                {availableTools.map((tool) => (
-                  <Badge key={tool.name} title={tool.description}>
-                    {tool.label}
-                  </Badge>
-                ))}
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge>{strategyLabel(activeStrategy)}</Badge>
+                {activeStrategy === 'window' && (
+                  <Badge>окно {activeWindowSize}</Badge>
+                )}
+                <Badge>{activeMemory ? 'память вкл.' : 'память выкл.'}</Badge>
+                <Badge>
+                  {active.taskStateEnabled ? 'задача вкл.' : 'задача выкл.'}
+                </Badge>
+                {activeProfileName && <Badge>{activeProfileName}</Badge>}
+                <span className="demo-muted text-xs">
+                  {sessionId ? `сессия #${sessionId}` : 'новая сессия'}
+                </span>
               </div>
-            )}
-
-            <SessionAccounting totals={accounting} />
-
-            <TokenReport
-              requestTokens={accounting.requestTokens}
-              historyTokens={accounting.historyTokens}
-              historyTokensSent={
-                lastRun ? lastRun.tokens.historyTokensSent : null
-              }
-              responseTokens={lastRun ? lastRun.tokens.responseTokens : null}
-              contextTokens={lastRun ? lastRun.tokens.contextTokens : null}
-            />
-
-            {noteState && <ContextPanel note={noteState} />}
-
-            <TokenMeter
-              historyTokens={accounting.historyTokens}
-              requestTokens={accounting.requestTokens}
-              budget={CONTEXT_BUDGET_TOKENS}
-              modelContext={MODEL_CONTEXT_TOKENS}
-            />
-
-            <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-3">
-              <div className="flex flex-wrap gap-2">
-                {TOKEN_SCENARIOS.map((scenario) => (
-                  <Button
-                    key={scenario.id}
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => setDraft(scenario.text)}
-                    disabled={busy}
-                    title={scenario.hint}
-                  >
-                    {scenario.label}
-                  </Button>
-                ))}
-              </div>
-              <label
-                className="demo-muted flex cursor-pointer select-none items-center gap-1.5 text-xs"
-                title={strategyHint}
-              >
-                <Checkbox
-                  checked={strategy === 'summary'}
-                  onCheckedChange={(checked) =>
-                    setStrategy(checked ? 'summary' : 'none')
-                  }
-                  disabled={busy || sessionId !== null}
-                />
-                сжатие истории
-              </label>
             </div>
 
-            <CompressionCompare
-              canCompare={sessionId !== null && draft.trim().length > 0}
-              running={compareMutation.isPending}
-              disabled={busy}
-              result={comparison}
-              error={compareError}
-              onCompare={handleCompare}
-            />
-
-            <ChatThread messages={messages} running={busy} />
-
-            {sendError && (
-              <Alert variant="destructive">{sendError}</Alert>
-            )}
-
-            <form
-              onSubmit={(event) => {
-                event.preventDefault()
-                handleSend()
-              }}
-              className="flex flex-col gap-3"
-            >
-              <Textarea
-                value={draft}
-                onChange={(event) => setDraft(event.target.value)}
-                placeholder="Например: забронируй переговорку на завтра на 15:00 на 6 человек…"
-                className="min-h-0"
-                rows={6}
-                disabled={busy}
-              />
-              <div className="flex justify-end">
-                <Button
-                  type="submit"
-                  disabled={busy || draft.trim().length === 0}
+            <Tabs defaultValue="dialog">
+              <TabsList>
+                <TabsTrigger value="dialog">Диалог</TabsTrigger>
+                <TabsTrigger
+                  value="invariants"
+                  disabled
+                  title="Day 14 — Инварианты и ограничения"
                 >
-                  {busy ? 'Агент работает…' : 'Отправить агенту'}
-                </Button>
-              </div>
-            </form>
+                  Инварианты
+                </TabsTrigger>
+                <TabsTrigger value="settings">Настройки</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="dialog">
+                {sessionId === null ? (
+                  <section className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-[var(--line)] p-8">
+                    <p className="m-0 text-sm font-semibold text-[var(--ink)]">
+                      Сессия не выбрана
+                    </p>
+                    <p className="demo-muted m-0 max-w-sm text-center text-xs">
+                      Создайте новую сессию (конфиг возьмётся из вкладки
+                      «Настройки») или выберите существующую в списке слева.
+                    </p>
+                    <Button onClick={actions.newSession} disabled={busy}>
+                      Новая сессия
+                    </Button>
+                    {sessionError && (
+                      <Alert variant="destructive">{sessionError}</Alert>
+                    )}
+                  </section>
+                ) : (
+                <div className="flex flex-col gap-3">
+                  <SessionAccounting totals={accounting} />
+
+                  <TokenReport
+                    requestTokens={accounting.requestTokens}
+                    historyTokens={accounting.historyTokens}
+                    historyTokensSent={
+                      lastRun ? lastRun.tokens.historyTokensSent : null
+                    }
+                    responseTokens={
+                      lastRun ? lastRun.tokens.responseTokens : null
+                    }
+                    contextTokens={lastRun ? lastRun.tokens.contextTokens : null}
+                  />
+
+                  {noteState && <ContextPanel note={noteState} />}
+
+                  <TokenMeter
+                    historyTokens={accounting.historyTokens}
+                    requestTokens={accounting.requestTokens}
+                    budget={CONTEXT_BUDGET_TOKENS}
+                    modelContext={MODEL_CONTEXT_TOKENS}
+                  />
+
+                  {activeStrategy === 'facts' && <FactsPanel facts={facts} />}
+
+                  {activeStrategy === 'branch' && (
+                    <BranchPanel
+                      branches={branches}
+                      disabled={busy}
+                      onSwitch={actions.switchBranch}
+                      onForkCheckpoint={actions.forkCheckpoint}
+                    />
+                  )}
+
+                  <ChatThread
+                    messages={messages}
+                    running={sending}
+                    onFork={activeStrategy === 'branch' ? actions.fork : undefined}
+                    forkDisabled={busy}
+                  />
+
+                  {sendError && <Alert variant="destructive">{sendError}</Alert>}
+                  {branchError && (
+                    <Alert variant="destructive">{branchError}</Alert>
+                  )}
+
+                  <TaskStateBar
+                    state={taskState}
+                    enabled={active.taskStateEnabled}
+                    hasSession={sessionLocked}
+                    busy={taskBusy}
+                    onPause={actions.pauseTask}
+                    onResume={actions.resumeTask}
+                    onCancel={actions.cancelTask}
+                  />
+                  {taskError && <Alert variant="destructive">{taskError}</Alert>}
+
+                  {taskState?.stage === 'paused' && (
+                    <p className="demo-muted m-0 text-xs">Задача на паузе</p>
+                  )}
+
+                  <form
+                    onSubmit={(event) => {
+                      event.preventDefault()
+                      actions.send()
+                    }}
+                    className="flex flex-col gap-3"
+                  >
+                    <Textarea
+                      value={draft}
+                      onChange={(event) => actions.setDraft(event.target.value)}
+                      placeholder="Например: забронируй переговорку на завтра на 15:00 на 6 человек…"
+                      className="min-h-0"
+                      rows={6}
+                      disabled={busy}
+                    />
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="demo-muted text-xs">{sessionHint}</span>
+                      <Button
+                        type="submit"
+                        disabled={busy || draft.trim().length === 0}
+                      >
+                        {busy ? 'Агент работает…' : 'Отправить агенту'}
+                      </Button>
+                    </div>
+                  </form>
+                </div>
+                )}
+              </TabsContent>
+
+              <TabsContent value="settings">
+                <div className="flex flex-col gap-4">
+                  {sessionLocked && (
+                    <SessionConfig
+                      locked
+                      strategy={activeStrategy}
+                      windowSize={activeWindowSize}
+                      memory={activeMemory}
+                      taskState={config.taskStateEnabled}
+                      activeTaskState={active.taskStateEnabled}
+                      profileName={activeProfileName}
+                      profiles={profiles}
+                      selectedProfileId={config.profileId}
+                      busy={busy}
+                      onStrategy={(id) =>
+                        actions.patchConfig({ strategy: id })
+                      }
+                      onWindowSize={(size) =>
+                        actions.patchConfig({ windowSize: size })
+                      }
+                      onMemory={(value) =>
+                        actions.patchConfig({ memoryEnabled: value })
+                      }
+                      onTaskState={(value) =>
+                        actions.patchConfig({ taskStateEnabled: value })
+                      }
+                      onProfile={(id) => actions.patchConfig({ profileId: id })}
+                    />
+                  )}
+                  <SessionConfig
+                    locked={false}
+                    strategy={config.strategy}
+                    windowSize={config.windowSize}
+                    memory={config.memoryEnabled}
+                    taskState={config.taskStateEnabled}
+                    activeTaskState={active.taskStateEnabled}
+                    profileName={activeProfileName}
+                    profiles={profiles}
+                    selectedProfileId={config.profileId}
+                    busy={busy}
+                    onStrategy={(id) => actions.patchConfig({ strategy: id })}
+                    onWindowSize={(size) =>
+                      actions.patchConfig({ windowSize: size })
+                    }
+                    onMemory={(value) =>
+                      actions.patchConfig({ memoryEnabled: value })
+                    }
+                    onTaskState={(value) =>
+                      actions.patchConfig({ taskStateEnabled: value })
+                    }
+                    onProfile={(id) => actions.patchConfig({ profileId: id })}
+                  />
+
+                  <div className="flex items-stretch gap-4">
+                    <aside className="w-[300px] shrink-0">
+                      <ProfileList
+                        profiles={profiles}
+                        activeId={editingProfileId}
+                        disabled={busy}
+                        onSelect={actions.selectProfile}
+                        onCreate={actions.startCreateProfile}
+                        onDelete={actions.deleteProfile}
+                        onSetDefault={actions.setDefaultProfile}
+                      />
+                    </aside>
+                    <div className="min-w-0 flex-1">
+                      {showProfileEditor ? (
+                        <ProfileEditor
+                          profileId={creatingProfile ? null : editingProfileId}
+                          initial={editorInitial}
+                          disabled={busy}
+                          onSave={actions.saveProfile}
+                          onCancel={actions.finishProfileEdit}
+                        />
+                      ) : (
+                        <section className="flex h-full items-center justify-center rounded-xl border border-dashed border-[var(--line)] p-6">
+                          <p className="demo-muted m-0 text-xs">
+                            Выбери профиль или создай новый.
+                          </p>
+                        </section>
+                      )}
+                    </div>
+                  </div>
+
+                  <section className="demo-panel p-5">
+                    <h2 className="demo-section-title mb-3">
+                      Слои памяти
+                    </h2>
+                    {sessionId === null ? (
+                      <p className="demo-muted m-0 text-xs">
+                        Отправь первое сообщение — появится сессия, и станут
+                        доступны слои памяти и ручные записи.
+                      </p>
+                    ) : (
+                      <div className="flex items-stretch gap-4">
+                        <div className="min-w-0 flex-1">
+                          <MemoryInspector
+                            working={memoryView.working}
+                            longTerm={memoryView.longTerm}
+                            shortTermCount={
+                              messages.filter(
+                                (message) => message.role !== 'task',
+                              ).length
+                            }
+                            disabled={busy}
+                            onForget={actions.forgetMemory}
+                          />
+                        </div>
+                        <div className="w-[360px] shrink-0">
+                          <MemoryPanel
+                            disabled={busy}
+                            lastUserMessage={lastUserMessage(messages)}
+                            onSave={actions.saveMemory}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </section>
+
+                  {settingsError && (
+                    <Alert variant="destructive">{settingsError}</Alert>
+                  )}
+                </div>
+              </TabsContent>
+            </Tabs>
           </section>
         </div>
       )}
@@ -371,6 +485,166 @@ export default function AgentPage() {
   )
 }
 
-function toError(err: unknown): string {
-  return err instanceof Error ? err.message : String(err)
+type SessionConfigProps = {
+  locked: boolean
+  strategy: ContextStrategyId
+  windowSize: number
+  memory: boolean
+  taskState: boolean
+  activeTaskState: boolean
+  profileName: string | null
+  profiles: ProfileItem[]
+  selectedProfileId: number | null
+  busy: boolean
+  onStrategy: (id: ContextStrategyId) => void
+  onWindowSize: (size: number) => void
+  onMemory: (value: boolean) => void
+  onTaskState: (value: boolean) => void
+  onProfile: (id: number | null) => void
+}
+
+function SessionConfig({
+  locked,
+  strategy,
+  windowSize,
+  memory,
+  taskState,
+  activeTaskState,
+  profileName,
+  profiles,
+  selectedProfileId,
+  busy,
+  onStrategy,
+  onWindowSize,
+  onMemory,
+  onTaskState,
+  onProfile,
+}: SessionConfigProps) {
+  const list = profiles ?? []
+  if (locked) {
+    return (
+      <section className="rounded-xl border border-[var(--line)] bg-[var(--surface)] p-4">
+        <p className="island-kicker m-0 text-[10px]">Конфиг сессии</p>
+        <p className="demo-muted m-0 mt-1 text-xs">
+          Конфиг фиксируется при создании сессии. Чтобы изменить — начни новую
+          сессию.
+        </p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          <Badge>{strategyLabel(strategy)}</Badge>
+          {strategy === 'window' && <Badge>окно {windowSize}</Badge>}
+          <Badge>{memory ? 'память вкл.' : 'память выкл.'}</Badge>
+          <Badge>{activeTaskState ? 'задача вкл.' : 'задача выкл.'}</Badge>
+          <Badge>{profileName ?? 'профиль по умолчанию'}</Badge>
+        </div>
+      </section>
+    )
+  }
+
+  return (
+    <section className="rounded-xl border border-[color-mix(in_oklab,var(--accent)_35%,var(--line))] bg-[var(--surface)] p-4">
+      <p className="island-kicker m-0 text-[10px]">Конфиг новой сессии</p>
+      <p className="demo-muted m-0 mt-1 text-xs">
+        Выбери настройки для следующей сессии — они зафиксируются при её
+        создании.
+      </p>
+
+      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <label className="demo-muted flex flex-col gap-1 text-[11px]">
+          стратегия контекста
+          <Select
+            value={strategy}
+            onValueChange={(value) => onStrategy(value as ContextStrategyId)}
+            disabled={busy}
+          >
+            <SelectTrigger className="h-9">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {STRATEGY_CHOICES.map((choice) => (
+                <SelectItem key={choice.id} value={choice.id}>
+                  {choice.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </label>
+
+        <label className="demo-muted flex flex-col gap-1 text-[11px]">
+          профиль
+          <Select
+            value={
+              selectedProfileId === null ? 'default' : String(selectedProfileId)
+            }
+            onValueChange={(value) =>
+              onProfile(value === 'default' ? null : Number(value))
+            }
+            disabled={busy}
+          >
+            <SelectTrigger className="h-9">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="default">По умолчанию</SelectItem>
+              {list.map((profile) => (
+                <SelectItem key={profile.id} value={String(profile.id)}>
+                  {profile.name}
+                  {profile.isDefault ? ' · по умолчанию' : ''}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </label>
+
+        {strategy === 'window' && (
+          <label className="demo-muted flex flex-col gap-1 text-[11px]">
+            размер скользящего окна
+            <Input
+              type="number"
+              min={WINDOW_SIZE_MIN}
+              max={WINDOW_SIZE_MAX}
+              value={windowSize}
+              onChange={(event) =>
+                onWindowSize(clampWindowSize(Number(event.target.value)))
+              }
+              disabled={busy}
+              className="h-9"
+            />
+          </label>
+        )}
+
+        <label className="demo-muted flex items-center gap-2 self-end text-xs">
+          <Checkbox
+            checked={memory}
+            onCheckedChange={(checked) => onMemory(checked === true)}
+            disabled={busy}
+          />
+          слои памяти (рабочая и долговременная)
+        </label>
+
+        <label className="demo-muted flex items-center gap-2 self-end text-xs">
+          <Checkbox
+            checked={taskState}
+            onCheckedChange={(checked) => onTaskState(checked === true)}
+            disabled={busy}
+          />
+          состояние задачи (этап, шаг, ожидаемое действие)
+        </label>
+      </div>
+
+      <p className="demo-muted m-0 mt-3 text-xs">
+        {STRATEGY_CHOICES.find((choice) => choice.id === strategy)
+          ?.description ?? ''}
+      </p>
+    </section>
+  )
+}
+
+function lastUserMessage(messages: ThreadMessage[]): string | undefined {
+  return [...messages]
+    .reverse()
+    .find((message) => message.role === 'user')?.content
+}
+
+function strategyLabel(id: ContextStrategyId): string {
+  return CONTEXT_STRATEGIES[id]?.label ?? id
 }

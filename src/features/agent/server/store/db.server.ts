@@ -160,6 +160,9 @@ CREATE TABLE IF NOT EXISTS sessions (
   active_branch_id INTEGER,
   memory_enabled INTEGER NOT NULL DEFAULT 0,
   profile_id INTEGER,
+  window_size INTEGER NOT NULL DEFAULT 10,
+  task_state_enabled INTEGER NOT NULL DEFAULT 0,
+  invariant_set_id INTEGER,
   created_at TEXT NOT NULL
 );
 
@@ -202,6 +205,20 @@ CREATE TABLE IF NOT EXISTS session_summaries (
   session_id INTEGER PRIMARY KEY,
   summary TEXT NOT NULL,
   through_message_id INTEGER NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS task_states (
+  session_id INTEGER PRIMARY KEY,
+  title TEXT NOT NULL,
+  stage TEXT NOT NULL,
+  previous_stage TEXT,
+  step TEXT NOT NULL,
+  steps_json TEXT NOT NULL DEFAULT '[]',
+  step_index INTEGER NOT NULL DEFAULT 0,
+  expected_actor TEXT NOT NULL,
+  expected_description TEXT NOT NULL,
+  history_json TEXT NOT NULL DEFAULT '[]',
   updated_at TEXT NOT NULL
 );
 
@@ -368,8 +385,10 @@ async function openDatabase(): Promise<SqliteDatabase> {
   const db = new DatabaseSync(dbPath)
   db.exec(SCHEMA_SQL)
   migrateBookings(db)
+  migrateSeededBookings(db)
   migrateSessions(db)
   migrateProfiles(db)
+  migrateTaskStates(db)
   seedPeople(db)
   seedBookings(db)
   seedProfiles(db)
@@ -407,16 +426,32 @@ function seedBookings(db: SqliteDatabase): void {
     return
   }
   const insert = db.prepare(
-    `INSERT INTO bookings (room, date, time, duration_min, capacity, title, reference, booked_by, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO bookings (room, date, time, duration_min, capacity, title, reference, booked_by, participants, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
   BOOKINGS_SEED.forEach((entry, index) => {
+    const [room, date, time, durationMin, capacity, title, bookedBy] = entry
     insert.run(
-      ...entry,
+      room,
+      date,
+      time,
+      durationMin,
+      capacity,
+      title,
       `BOOK-SEED${String(index + 1).padStart(2, '0')}`,
+      bookedBy,
+      '[]',
       nowIso(),
     )
   })
+}
+
+export function migrateSeededBookings(db: SqliteDatabase): void {
+  db.prepare(
+    `UPDATE bookings
+     SET booked_by = reference, reference = booked_by
+     WHERE booked_by LIKE 'BOOK-SEED%' AND reference NOT LIKE 'BOOK-%'`,
+  ).run()
 }
 
 function tableColumns(db: SqliteDatabase, table: string): string[] {
@@ -507,6 +542,17 @@ export function migrateSessions(db: SqliteDatabase): void {
   if (!sessionColumns.includes('profile_id')) {
     db.exec('ALTER TABLE sessions ADD COLUMN profile_id INTEGER')
   }
+  if (!sessionColumns.includes('window_size')) {
+    db.exec('ALTER TABLE sessions ADD COLUMN window_size INTEGER NOT NULL DEFAULT 10')
+  }
+  if (!sessionColumns.includes('task_state_enabled')) {
+    db.exec(
+      'ALTER TABLE sessions ADD COLUMN task_state_enabled INTEGER NOT NULL DEFAULT 0',
+    )
+  }
+  if (!sessionColumns.includes('invariant_set_id')) {
+    db.exec('ALTER TABLE sessions ADD COLUMN invariant_set_id INTEGER')
+  }
   const messageColumns = tableColumns(db, 'messages')
   if (!messageColumns.includes('branch_id')) {
     db.exec('ALTER TABLE messages ADD COLUMN branch_id INTEGER')
@@ -538,6 +584,35 @@ export function migrateSessions(db: SqliteDatabase): void {
     const branchId = Number(result.lastInsertRowid)
     setActive.run(branchId, session.id)
     backfill.run(branchId, session.id)
+  }
+}
+
+export function migrateTaskStates(db: SqliteDatabase): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS task_states (
+      session_id INTEGER PRIMARY KEY,
+      title TEXT NOT NULL,
+      stage TEXT NOT NULL,
+      previous_stage TEXT,
+      step TEXT NOT NULL,
+      steps_json TEXT NOT NULL DEFAULT '[]',
+      step_index INTEGER NOT NULL DEFAULT 0,
+      expected_actor TEXT NOT NULL,
+      expected_description TEXT NOT NULL,
+      history_json TEXT NOT NULL DEFAULT '[]',
+      updated_at TEXT NOT NULL
+    );
+  `)
+  const columns = tableColumns(db, 'task_states')
+  if (!columns.includes('steps_json')) {
+    db.exec(
+      "ALTER TABLE task_states ADD COLUMN steps_json TEXT NOT NULL DEFAULT '[]'",
+    )
+  }
+  if (!columns.includes('step_index')) {
+    db.exec(
+      'ALTER TABLE task_states ADD COLUMN step_index INTEGER NOT NULL DEFAULT 0',
+    )
   }
 }
 

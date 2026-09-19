@@ -3,6 +3,7 @@ import type { SummaryUsage } from './domain/compression'
 import type { ContextStrategyId } from './domain/context/types'
 import type { MemoryEntry } from './domain/memory/types'
 import type { ProfileRecord } from './domain/profile/types'
+import type { TaskState } from './domain/task/types'
 
 export type OrgPerson = {
   token: string
@@ -20,22 +21,15 @@ export type SessionSummary = {
   memoryEnabled: boolean
   profileId: number | null
   profileName: string | null
+  windowSize: number
+  taskStateEnabled: boolean
+  invariantSetId: number | null
   createdAt: string
   lastMessage: string
   messageCount: number
 }
 
 export type ProfileItem = ProfileRecord
-
-export type ProfileComparisonEntry = {
-  profileId: number
-  profileName: string
-  run: AgentRunResult
-}
-
-export type ProfileComparison = {
-  results: ProfileComparisonEntry[]
-}
 
 export type MemoryItem = MemoryEntry
 
@@ -48,12 +42,11 @@ export type RunAgentResult = {
   run: AgentRunResult
   sessionId: number
   auxUsage: SummaryUsage | null
+  taskState: TaskState | null
 }
 
-export type CompressionComparison = {
-  compressed: AgentRunResult
-  plain: AgentRunResult
-  auxUsage: SummaryUsage | null
+export type TaskStateResult = {
+  taskState: TaskState | null
 }
 
 export type CreateSessionResult = {
@@ -74,23 +67,4 @@ export type BranchInfo = {
 export type FactItem = {
   key: string
   value: string
-}
-
-export type ScenarioTraceMessage = {
-  role: 'user' | 'assistant'
-  content: string
-  run: AgentRunResult | null
-}
-
-export type ScenarioTrace = {
-  sessionId: number
-  title: string
-  strategy: ContextStrategyId
-  messages: ScenarioTraceMessage[]
-  facts: FactItem[]
-}
-
-export type ScenarioComparison = {
-  scenario: string
-  traces: ScenarioTrace[]
 }

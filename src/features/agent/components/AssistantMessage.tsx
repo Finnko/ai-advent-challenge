@@ -1,5 +1,6 @@
 import type { AgentRunResult } from '../domain/agent'
 import type { JudgeVerdict } from '../domain/agent'
+import { TASK_ACTOR_LABELS, TASK_STAGE_LABELS } from '../domain/task/types'
 import { formatUsd } from '../domain/tokens'
 import TraceAccordion from './TraceAccordion'
 import { Badge } from '@/components/ui/Badge'
@@ -40,6 +41,16 @@ export default function AssistantMessage({ run }: { run: AgentRunResult }) {
         )}
         {run.contextNote?.kind === 'branch' && (
           <Badge>ветка: {run.contextNote.text}</Badge>
+        )}
+        {run.taskState && (
+          <Badge
+            variant="accent"
+            title={`${run.taskState.step || '—'} · ожидается (${
+              TASK_ACTOR_LABELS[run.taskState.expectedAction.actor]
+            }): ${run.taskState.expectedAction.description || '—'}`}
+          >
+            задача: {TASK_STAGE_LABELS[run.taskState.stage]}
+          </Badge>
         )}
       </div>
       <div className="flex flex-wrap items-center gap-1.5">

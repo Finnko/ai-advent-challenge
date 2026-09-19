@@ -3,7 +3,9 @@ export {
   getDb,
   migrateBookings,
   migrateSessions,
+  migrateTaskStates,
 } from './store/db.server'
+export { getTaskState, saveTaskState } from './store/tasks.server'
 export {
   appendMessage,
   countMessagesByBranch,
@@ -14,7 +16,6 @@ export {
   getActiveBranch,
   getLongTermMemory,
   getPersonByToken,
-  getScenarioChecklist,
   getSession,
   getSessionFacts,
   getSessionSummary,
@@ -23,14 +24,13 @@ export {
   listBranchesDetailed,
   listPeople,
   listSessions,
-  listSessionsByScenario,
   listSubordinates,
   loadMessages,
   saveLongTermMemory,
-  saveScenarioChecklist,
   saveSessionFacts,
   saveWorkingMemory,
   setActiveBranch,
+  updateSessionTitleIfDefault,
   upsertSessionSummary,
 } from './store/sessions.server'
 export type {

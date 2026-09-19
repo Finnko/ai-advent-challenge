@@ -40,11 +40,15 @@ export default function CapabilitiesPanel(props: CapabilitiesPanelProps) {
           {caps.identity.title} {caps.identity.name}
         </Badge>
         <Badge>роль: {caps.identity.role}</Badge>
-        {availableTools.map((t) => (
-          <Badge key={t.name} title={t.description}>
-            {t.label}
+        {availableTools.length > 0 && (
+          <Badge
+            title={availableTools
+              .map((t) => `${t.label}: ${t.description}`)
+              .join('\n')}
+          >
+            инструментов: {availableTools.length}
           </Badge>
-        ))}
+        )}
       </div>
       {caps.identity.subordinates.length > 0 && (
         <div className="flex flex-wrap items-center gap-2">

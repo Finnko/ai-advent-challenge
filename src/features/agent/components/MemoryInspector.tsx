@@ -1,6 +1,6 @@
 import type { MemoryLayer } from '../domain/memory/types'
+import { MEMORY_LAYER_LABELS } from '../domain/memory/types'
 import type { MemoryItem } from '../types'
-import { memoryLayerLabel } from '../data/day11'
 import { memorySourceLabel } from '../domain/memory/read'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
@@ -69,7 +69,7 @@ function LayerSection({
     <section className="rounded-xl border border-[var(--line)] bg-[var(--surface)] p-3">
       <div className="flex items-center justify-between gap-2">
         <p className="island-kicker m-0 text-[10px]">
-          {memoryLayerLabel(scope)} · {scope}
+          {MEMORY_LAYER_LABELS[scope]} · {scope}
         </p>
         <Badge>{entries.length}</Badge>
       </div>

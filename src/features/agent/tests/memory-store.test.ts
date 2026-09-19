@@ -41,7 +41,7 @@ function memory(
 describe('memory store', () => {
   it('фиксирует флаг memory за сессией', async () => {
     const withMemory = await store.createSession('tok-a', 'с памятью', {
-      memory: true,
+      memoryEnabled: true,
     })
     const without = await store.createSession('tok-a', 'без памяти')
 
@@ -50,8 +50,8 @@ describe('memory store', () => {
   })
 
   it('хранит рабочую память отдельно по сессиям', async () => {
-    const sessionA = await store.createSession('tok-a', 'A', { memory: true })
-    const sessionB = await store.createSession('tok-a', 'B', { memory: true })
+    const sessionA = await store.createSession('tok-a', 'A', { memoryEnabled: true })
+    const sessionB = await store.createSession('tok-a', 'B', { memoryEnabled: true })
 
     await store.saveWorkingMemory(sessionA, [
       memory('working', 'Цель', 'запуск'),
@@ -65,7 +65,7 @@ describe('memory store', () => {
 
   it('долговременная память переживает новые сессии того же токена', async () => {
     const first = await store.createSession('tok-persist', 'первая', {
-      memory: true,
+      memoryEnabled: true,
     })
     await store.saveLongTermMemory('tok-persist', [
       memory('long-term', 'Роль', 'отвечает за кофе', 'manual'),
@@ -73,7 +73,7 @@ describe('memory store', () => {
     expect(await store.getWorkingMemory(first)).toEqual([])
 
     const second = await store.createSession('tok-persist', 'вторая', {
-      memory: true,
+      memoryEnabled: true,
     })
     const longTerm = await store.getLongTermMemory('tok-persist')
     expect(second).not.toBe(first)
@@ -93,7 +93,7 @@ describe('memory store', () => {
 
   it('удаляет запись из нужного слоя', async () => {
     const sessionId = await store.createSession('tok-del', 'del', {
-      memory: true,
+      memoryEnabled: true,
     })
     await store.saveWorkingMemory(sessionId, [
       memory('working', 'A', '1'),
@@ -114,7 +114,7 @@ describe('memory store', () => {
 
   it('listSessions отдаёт флаг памяти', async () => {
     const token = `tok-list-${Date.now()}`
-    await store.createSession(token, 'память', { memory: true })
+    await store.createSession(token, 'память', { memoryEnabled: true })
     await store.createSession(token, 'обычная')
     const sessions = await store.listSessions(token)
     expect(sessions.map((s) => s.memoryEnabled).sort()).toEqual([false, true])

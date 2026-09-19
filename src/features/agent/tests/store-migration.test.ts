@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite'
 import { describe, expect, it } from 'vitest'
-import { migrateSessions } from '../server/store.server'
+import { migrateSessions, migrateTaskStates } from '../server/store.server'
 
 function legacyDatabase(): DatabaseSync {
   const db = new DatabaseSync(':memory:')
@@ -53,17 +53,23 @@ describe('migrateSessions', () => {
 
     const session = db
       .prepare(
-        'SELECT strategy, scenario, active_branch_id, profile_id FROM sessions WHERE id = 1',
+        'SELECT strategy, scenario, active_branch_id, profile_id, window_size, task_state_enabled, invariant_set_id FROM sessions WHERE id = 1',
       )
       .get() as {
       strategy: string
       scenario: string | null
       active_branch_id: number
       profile_id: number | null
+      window_size: number
+      task_state_enabled: number
+      invariant_set_id: number | null
     }
     expect(session.strategy).toBe('summary')
     expect(session.scenario).toBeNull()
     expect(session.profile_id).toBeNull()
+    expect(session.window_size).toBe(10)
+    expect(session.task_state_enabled).toBe(0)
+    expect(session.invariant_set_id).toBeNull()
     expect(session.active_branch_id).not.toBeNull()
 
     const branch = db
@@ -97,5 +103,45 @@ describe('migrateSessions', () => {
       .prepare('SELECT COUNT(*) AS count FROM branches WHERE session_id = 1')
       .get() as { count: number }
     expect(branches.count).toBe(1)
+
+    const session = db
+      .prepare(
+        'SELECT window_size, task_state_enabled, invariant_set_id FROM sessions WHERE id = 1',
+      )
+      .get() as {
+      window_size: number
+      task_state_enabled: number
+      invariant_set_id: number | null
+    }
+    expect(session.window_size).toBe(10)
+    expect(session.task_state_enabled).toBe(0)
+    expect(session.invariant_set_id).toBeNull()
+  })
+})
+
+describe('migrateTaskStates', () => {
+  it('создаёт таблицу task_states и идемпотентна', () => {
+    const db = new DatabaseSync(':memory:')
+    migrateTaskStates(db)
+    migrateTaskStates(db)
+
+    const columns = (
+      db.prepare('PRAGMA table_info(task_states)').all() as Array<{
+        name: string
+      }>
+    ).map((column) => column.name)
+    expect(columns).toEqual(
+      expect.arrayContaining([
+        'session_id',
+        'title',
+        'stage',
+        'previous_stage',
+        'step',
+        'expected_actor',
+        'expected_description',
+        'history_json',
+        'updated_at',
+      ]),
+    )
   })
 })

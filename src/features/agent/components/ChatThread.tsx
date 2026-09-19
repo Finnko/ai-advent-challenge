@@ -1,15 +1,18 @@
 import { useEffect, useRef } from 'react'
 import { GitBranch } from 'lucide-react'
 import type { AgentRunResult } from '../domain/agent'
+import type { TaskEvent } from '../domain/task/types'
 import AssistantMessage from './AssistantMessage'
+import TaskEventRow from './TaskEventRow'
 import TypingDots from '@/components/TypingDots'
 import { Button } from '@/components/ui/Button'
 
 export type ThreadMessage = {
   id?: number
-  role: 'user' | 'assistant'
+  role: 'user' | 'assistant' | 'task'
   content: string
   run?: AgentRunResult
+  taskEvent?: TaskEvent
 }
 
 type ChatThreadProps = {
@@ -40,8 +43,13 @@ export default function ChatThread({
       ref={threadRef}
       className="flex min-h-[24rem] flex-1 flex-col gap-4 overflow-y-auto rounded-xl border border-[var(--line)] bg-[var(--surface)] p-4"
     >
-      {messages.map((message, i) =>
-        message.role === 'user' ? (
+      {messages.map((message, i) => {
+        if (message.role === 'task') {
+          return message.taskEvent ? (
+            <TaskEventRow key={message.id ?? i} event={message.taskEvent} />
+          ) : null
+        }
+        return message.role === 'user' ? (
           <div key={message.id ?? i} className="flex flex-col items-end gap-1">
             <UserBubble text={message.content} />
             {onFork && message.id !== undefined && (
@@ -63,8 +71,8 @@ export default function ChatThread({
               )}
             </div>
           </div>
-        ),
-      )}
+        )
+      })}
       {running && (
         <div className="flex items-center gap-2" aria-label="Ожидание ответа">
           <TypingDots />

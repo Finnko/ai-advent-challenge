@@ -1,41 +1,28 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import type { RunAgentResult } from '../types'
-import { createSession } from '../functions/create-session.functions'
 import { runAgent } from '../functions/run-agent.functions'
 import { sessionsQueryOptions } from './get-sessions'
 import { sessionMessagesQueryOptions } from './get-session-messages'
 import { sessionBranchesQueryOptions } from './get-branches'
 import { sessionFactsQueryOptions } from './get-facts'
 import { memoryQueryOptions } from './get-memory'
+import { taskStateQueryOptions } from './task-state'
 
 export type SendMessageInput = {
   token: string
-  sessionId: number | null
+  sessionId: number
   user: string
-  strategy: string
-  scenario?: string | null
-  memory?: boolean
-  profileId?: number | null
 }
 
 export async function sendMessage(
   input: SendMessageInput,
 ): Promise<RunAgentResult> {
-  let sessionId = input.sessionId
-  if (sessionId === null) {
-    const created = await createSession({
-      data: {
-        token: input.token,
-        strategy: input.strategy,
-        scenario: input.scenario ?? null,
-        memory: input.memory ?? false,
-        profileId: input.profileId,
-      },
-    })
-    sessionId = created.sessionId
-  }
   return runAgent({
-    data: { token: input.token, sessionId, user: input.user },
+    data: {
+      token: input.token,
+      sessionId: input.sessionId,
+      user: input.user,
+    },
   })
 }
 
@@ -59,6 +46,9 @@ export function useSendMessage() {
       })
       queryClient.invalidateQueries({
         queryKey: memoryQueryOptions(sessionId, vars.token).queryKey,
+      })
+      queryClient.invalidateQueries({
+        queryKey: taskStateQueryOptions(sessionId).queryKey,
       })
     },
     mutationFn: sendMessage,
