@@ -5,6 +5,16 @@ type TokenMeterProps = {
   modelContext: number
 }
 
+function resolveFillColor(ratio: number): string {
+  if (ratio > 1) {
+    return 'var(--danger)'
+  }
+  if (ratio > 0.8) {
+    return 'var(--warn)'
+  }
+  return 'var(--accent)'
+}
+
 export default function TokenMeter({
   historyTokens,
   requestTokens,
@@ -15,12 +25,7 @@ export default function TokenMeter({
   const ratio = total / budget
   const over = ratio > 1
   const pct = Math.min(100, Math.round(ratio * 100))
-  let fillColor = 'var(--accent)'
-  if (over) {
-    fillColor = 'var(--danger)'
-  } else if (ratio > 0.8) {
-    fillColor = 'var(--warn)'
-  }
+  const fillColor = resolveFillColor(ratio)
 
   return (
     <div className="rounded-xl border border-[var(--line)] bg-[var(--surface)] p-3">

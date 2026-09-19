@@ -1,7 +1,7 @@
 # Project: AI Advent Challenge
 
-Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 13 (`feature/day13`),
-which starts by collapsing the agent demos into one workspace (Days 13–14 features not built yet).
+Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 14 (`feature/day14`).
+Days 13–14 extend the unified `/agent` workspace with task state and invariants.
 
 ## Stack
 
@@ -15,7 +15,8 @@ which starts by collapsing the agent demos into one workspace (Days 13–14 feat
 - `src/features/agent/` — the agent feature, self-contained for porting (see its `README.md`):
   `pages/` (only public surface), `api/` (react-query hooks), `functions/` (`createServerFn`),
   `server/` (`.server.ts` deep modules: `agent-turn`, `agent-service`, `store`), `domain/` (isomorphic
-  logic: `agent`, `agent-tools`, `context/`, `memory/`, `profile/`, `session/`, `tokens`),
+  logic: `agent`, `agent-tools`, `context/`, `memory/`, `profile/`, `session/`, `task/`, `invariants/`,
+  `tokens`),
   `data/` (client-safe data), `components/`, `tests/`.
 - `src/lib/` — shared: `llm.ts`/`llm.server.ts` (transport), `functions/*.functions.ts` (Days 1–5 server
   fns + shared `validation.ts`), `day2.ts`…`day5.ts`, `days.ts` (sidebar), `utils.ts` (`cn`).
@@ -32,9 +33,10 @@ which starts by collapsing the agent demos into one workspace (Days 13–14 feat
 - Each `createServerFn` is a thin adapter: `validator → delegate` to a deep module. Server-only modules
   use the `.server.ts` suffix; client-safe prompt/text data lives in `dayN.ts` / feature `data/`, never
   in `functions/` or `.server.ts`.
-- The client sends only ids (tier / strategy / session), never model or prompt strings.
+- The client sends only ids (tier / strategy / session), never model or prompt strings. Invariant CRUD is
+  the explicit exception: validated rule content is user-managed data and must be sent to its CRUD function.
 
-## Turn execution & session config (Day 13 refactor)
+## Turn execution & session config (Day 13–14)
 
 - `features/agent/server/agent-turn.server.ts` — deep module of a Turn: `runAgentTurn({ token,
   sessionId, user }, deps)` hydrates capabilities/session/active branch/history/summary/facts/
@@ -43,7 +45,8 @@ which starts by collapsing the agent demos into one workspace (Days 13–14 feat
 - Injectable seam: `TurnDeps = { resolveCapabilities, store: TurnStore, runtime: AgentRuntime,
   now }`; `defaultTurnDeps` is the production wiring. Offline tests pass fakes (`tests/agent-turn.test.ts`).
 - `AgentRuntime` (in `agent-service.server.ts`): `{ callLLM, summarize, extractFacts, extractMemories,
-  store, createTools }`; `defaultAgentRuntime` wires the DeepSeek transport + `createAgentTools`.
+  analyzeTaskState, invariantGuard?, store, createTools }`; `defaultAgentRuntime` wires the DeepSeek
+  transport, task analyzer, invariant guard and `createAgentTools`.
   `executeAgent(options, runtime = defaultAgentRuntime)` no longer builds transport/store itself.
 - **Session config is one module**: `domain/session/config.ts` owns `SessionConfig` /
   `SessionConfigInput` / `SessionConfigDraft`, defaults (`sessionConfigInput`,
@@ -86,19 +89,25 @@ which starts by collapsing the agent demos into one workspace (Days 13–14 feat
   `listBookings` hides past meetings by default (override with `includePast`/`from`/`to`).
 - An API failure (e.g. raw 400 on a huge prompt) becomes a graceful blocked `AgentRunResult`, never a
   thrown error.
+- The role-derived registry includes vacation cancellation/rejection, booking rescheduling/update,
+  room schedules and declining meeting invites. `screenArgs` may normalize a tool's destination before
+  deterministic invariant checks; the actual tool remains the source of truth for execution.
 
 ## Unified agent workspace (post-Day 12)
 
-- One route `/agent` (`pages/AgentPage`) with tabs `Диалог | Задача | Инварианты | Настройки`; the last
-  two are disabled placeholders for Days 13–14. Old routes redirect. One sidebar entry (`lib/days.ts`).
+- One route `/agent` (`pages/AgentPage`) with tabs `Диалог | Задача | Инварианты | Настройки`; the
+  invariant tab provides token-global manual CRUD. Old routes redirect. One sidebar entry (`lib/days.ts`).
 - **Session config is the backbone** (`sessions.strategy` / `memory_enabled` / `profile_id` /
   `window_size`): fixed by `createSession`, read by `runAgentTurn`, never switchable mid-session. The
   session is created upfront (`api/create-session.ts`); `api/send-message.ts` then calls `runAgent`
-  (→ `runAgentTurn`) with only ids and text.
-- Reserved extension fields (no feature code yet): `sessions.invariant_set_id` (`task_state_enabled`
-  is live).
-  Future seams: `SystemBlock.kind` gains `'invariants' | 'task-state'`; invariants go in stable system
-  blocks, task state after history with profile/memory.
+  (→ `runAgentTurn`) with only ids and text; invariant CRUD is the explicit exception and sends validated
+  rule content because the rule itself is user-managed data.
+- `sessions.invariant_set_id` remains reserved and unused; invariants are global per token. They are
+  loaded server-side into stable system blocks immediately after the base system message. Deterministic
+  action checks run before mutating tools and answer checks run after finalize; `AgentRunResult.invariantHits`
+  is persisted in `run_json` and shown as `INV-*` badges.
+- Five pinned defaults are seeded per token. Pinned `slug` and `check` are immutable on the server; custom
+  checkless rules can use the opt-in async `invariantGuard`, which fails open on guard errors.
 
 ## Context strategies
 
@@ -114,6 +123,16 @@ which starts by collapsing the agent demos into one workspace (Days 13–14 feat
   fresher profile/memory. Base system is byte-identical across stages; volatile content (tools, rooms,
   context, stage instruction) goes in the last user message, so the cache prefix survives.
 - Pure modules (no env/fetch — offline tests): `compression.ts`, `facts.ts`.
+
+## Invariants (Day 14)
+
+- Rules live in `domain/invariants/`, are manually managed through token-scoped CRUD and seeded with five
+  pinned defaults. Pinned rules cannot be deleted; their slug and check are immutable on the server and in
+  the UI.
+- `cancelVacation`, `rejectVacation`, `rescheduleBooking`, `getRoomSchedule`, `updateBooking`, and
+  `declineInvite` are available through the same role-derived tool registry.
+- Deterministic checks run before mutating tools and after finalize; checkless custom rules may use the
+  opt-in `invariantGuard` fallback. Guard calls never replace deterministic enforcement.
 
 ## Memory model (Day 11)
 
@@ -154,8 +173,9 @@ which starts by collapsing the agent demos into one workspace (Days 13–14 feat
 - Migrations are idempotent (`PRAGMA table_info` + `ALTER`). Branches are copy-on-fork; `loadMessages`
   and `appendMessage` are scoped to the active branch. Sessions carry
   `strategy`/`scenario`/`memory_enabled`/`profile_id`/`window_size` (+ reserved `task_state_enabled` /
-  `invariant_set_id`); memory lives in `working_memory` and `long_term_memory`, profiles in `profiles`
-  (separate from `session_facts`/`session_summaries`).
+  `invariant_set_id`); task snapshots live in `task_states`, invariant rules in `invariants`, memory in
+  `working_memory` and `long_term_memory`, profiles in `profiles` (separate from
+  `session_facts`/`session_summaries`).
 
 ## Commands
 
@@ -171,6 +191,9 @@ npm run generate-routes # regenerate route tree after adding routes
 ## Conventions
 
 - No comments in code unless asked.
+- Avoid nested conditional expressions and long `if/else if` ladders that compute a single value.
+  Extract the decision into a small named function with early returns (e.g. `resolveBlockReason(...)`)
+  so each branch reads as a plain guard and the call site stays flat.
 - Respond one chunk at a time (no streaming yet); the UI shows a 3-dots animation while waiting.
 - Offline tests live in `src/**/*.test.ts` (Vitest, node env; the agent testkit is an in-memory
   `AgentStore`). `npm run test` must stay green; no network/API calls in tests.

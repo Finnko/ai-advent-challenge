@@ -248,6 +248,34 @@ describe('Agent pipeline', () => {
     expect(decideUser).not.toContain('не вызывай инструмент')
   })
 
+  it('показывает «Орион» только руководителю в decide-промпте', async () => {
+    const employee = scriptedLLM({
+      decide: '{"tool": null, "args": {}}',
+      finalize: 'Ок',
+    })
+    await buildAgent({
+      callLLM: employee.callLLM,
+      identity: createIdentity(),
+    }).run('Покажи свободные комнаты')
+    const employeeDecide = employee.calls.find((call) => call.isDecide)
+    const employeeUser =
+      employeeDecide?.messages[employeeDecide.messages.length - 1]?.content ?? ''
+    expect(employeeUser).not.toContain('Орион')
+
+    const manager = scriptedLLM({
+      decide: '{"tool": null, "args": {}}',
+      finalize: 'Ок',
+    })
+    await buildAgent({
+      callLLM: manager.callLLM,
+      identity: createManagerIdentity(),
+    }).run('Покажи свободные комнаты')
+    const managerDecide = manager.calls.find((call) => call.isDecide)
+    const managerUser =
+      managerDecide?.messages[managerDecide.messages.length - 1]?.content ?? ''
+    expect(managerUser).toContain('Орион')
+  })
+
   it('делает базовый system одинаковым для decide и finalize', async () => {
     const { callLLM, calls } = scriptedLLM({
       decide: '{"tool": null, "args": {}}',

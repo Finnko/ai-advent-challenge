@@ -99,6 +99,37 @@ describe('bookMeetingRoom', () => {
     expect(outcome.text).toContain('Все переговорки заняты')
   })
 
+  it('руководитель бронирует «Орион» явно', async () => {
+    const store = createFakeStore()
+    const outcome = await getTool(store, 'bookMeetingRoom').run(
+      { room: 'Орион', date: '2026-09-11', time: '16:00' },
+      createManagerIdentity(),
+    )
+    expect(outcome.ok).toBe(true)
+    expect(store.bookings[0].room).toBe('Переговорка «Орион»')
+  })
+
+  it('не отдаёт «Орион» сотруднику автоподбором, а руководителю отдаёт', async () => {
+    const busy = ROOMS.filter((room) => room !== 'Переговорка «Орион»').map(
+      (room) => createBooking({ room }),
+    )
+    const employeeStore = createFakeStore({ bookings: busy })
+    const employeeOutcome = await getTool(employeeStore, 'bookMeetingRoom').run(
+      { date: '2026-09-11', time: '16:00' },
+      createIdentity(),
+    )
+    expect(employeeOutcome.ok).toBe(false)
+    expect(employeeOutcome.text).toContain('Все переговорки заняты')
+
+    const managerStore = createFakeStore({ bookings: busy })
+    const managerOutcome = await getTool(managerStore, 'bookMeetingRoom').run(
+      { date: '2026-09-11', time: '16:00' },
+      createManagerIdentity(),
+    )
+    expect(managerOutcome.ok).toBe(true)
+    expect(managerStore.bookings.at(-1)?.room).toBe('Переговорка «Орион»')
+  })
+
   it('валидирует дату и время', async () => {
     const store = createFakeStore()
     const tool = getTool(store, 'bookMeetingRoom')
@@ -169,6 +200,21 @@ describe('listAvailableRooms', () => {
     )
     expect(outcome.text).toContain('Свободных переговорок')
     expect(outcome.text).toContain('нет')
+  })
+
+  it('скрывает «Орион» от сотрудника и показывает руководителю', async () => {
+    const store = createFakeStore()
+    const employeeView = await getTool(store, 'listAvailableRooms').run(
+      { date: '2026-09-11', time: '16:00' },
+      createIdentity(),
+    )
+    expect(employeeView.text).not.toContain('Орион')
+
+    const managerView = await getTool(store, 'listAvailableRooms').run(
+      { date: '2026-09-11', time: '16:00' },
+      createManagerIdentity(),
+    )
+    expect(managerView.text).toContain('Орион')
   })
 
   it('требует дату и время', async () => {

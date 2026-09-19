@@ -323,6 +323,20 @@ async function branchIdForMessage(
   return Number(row.branch_id)
 }
 
+async function resolveSourceBranchId(
+  sessionId: number,
+  fromMessageId: number | null,
+  sourceBranchId: number | null,
+): Promise<number | null> {
+  if (sourceBranchId !== null) {
+    return sourceBranchId
+  }
+  if (fromMessageId === null) {
+    return (await getActiveBranch(sessionId))?.id ?? null
+  }
+  return branchIdForMessage(sessionId, fromMessageId)
+}
+
 export async function createBranch(
   sessionId: number,
   fromMessageId: number | null,
@@ -330,11 +344,11 @@ export async function createBranch(
   sourceBranchId: number | null = null,
 ): Promise<number> {
   const db = await getDb()
-  const sourceId =
-    sourceBranchId ??
-    (fromMessageId === null
-      ? ((await getActiveBranch(sessionId))?.id ?? null)
-      : await branchIdForMessage(sessionId, fromMessageId))
+  const sourceId = await resolveSourceBranchId(
+    sessionId,
+    fromMessageId,
+    sourceBranchId,
+  )
   const result = db
     .prepare(
       'INSERT INTO branches (session_id, parent_branch_id, fork_message_id, title, created_at) VALUES (?, ?, ?, ?, ?)',

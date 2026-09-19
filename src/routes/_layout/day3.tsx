@@ -1,6 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useRef, useState } from 'react'
-import type { ReactNode } from 'react'
 import { ask } from '@lib/functions/ask.functions'
 import type { ChatResult } from '@lib/llm'
 import {
@@ -13,45 +12,20 @@ import {
   TASKS,
   buildJudgePrompt,
 } from '@lib/day3'
-import type { Day3Task, ExpertId, StrategyId } from '@lib/day3'
+import type { Day3Task, StrategyId } from '@lib/day3'
 import { Button } from '@/components/ui/Button'
-import { Badge } from '@/components/ui/Badge'
-import { Alert } from '@/components/ui/Alert'
+import TypingDots from '@/components/TypingDots'
+import StrategyCard from './-day3/StrategyCard'
+import VerdictCard from './-day3/VerdictCard'
+import type {
+  Answer,
+  ResultState,
+  StrategyResult,
+  VerdictShape,
+  VerdictState,
+} from './-day3/types'
 
 export const Route = createFileRoute('/_layout/day3')({ component: Day3 })
-
-type Answer = {
-  content: string
-  usage: ChatResult['usage']
-  chars: number
-  words: number
-}
-
-type ExpertAnswer = { id: ExpertId; label: string; answer: Answer }
-
-type StrategyResult =
-  | { kind: 'answer'; answer: Answer; promptUsed: string }
-  | { kind: 'promptcraft'; composed: Answer; final: Answer; promptUsed: string }
-  | { kind: 'experts'; experts: ExpertAnswer[]; promptUsed: string }
-
-type ResultState =
-  | { status: 'idle' }
-  | { status: 'loading' }
-  | { status: 'done'; result: StrategyResult }
-  | { status: 'error'; error: string }
-
-type VerdictShape = {
-  summary?: string
-  scores?: Partial<Record<StrategyId, number>>
-  winner?: string
-  why?: string
-}
-
-type VerdictState =
-  | { status: 'idle' }
-  | { status: 'loading' }
-  | { status: 'done'; verdict: VerdictShape }
-  | { status: 'error'; error: string; raw: string }
 
 const IDLE_RESULTS = Object.fromEntries(
   STRATEGIES.map((s) => [s.id, { status: 'idle' }]),
@@ -64,7 +38,6 @@ function Day3() {
   const [verdict, setVerdict] = useState<VerdictState>({ status: 'idle' })
   const [running, setRunning] = useState(false)
   const resultsRef = useRef(results)
-  resultsRef.current = results
 
   const task = TASKS.find((t) => t.id === selectedId) ?? TASKS[0]
 
@@ -211,10 +184,7 @@ function Day3() {
         </p>
         <div className="demo-code-block whitespace-pre-wrap">{task.prompt}</div>
         <div className="mt-4 flex flex-wrap items-center gap-3">
-          <Button
-            onClick={() => void handleRunAll()}
-            disabled={running}
-          >
+          <Button onClick={() => void handleRunAll()} disabled={running}>
             {running ? 'Выполняется…' : 'Запустить 4 стратегии'}
           </Button>
           {verdict.status === 'loading' && (
@@ -267,274 +237,6 @@ function Day3() {
           <VerdictCard verdict={verdict} />
         </div>
       </section>
-    </div>
-  )
-}
-
-function StrategyCard({
-  state,
-  id,
-  prompt,
-}: {
-  state: ResultState
-  id: StrategyId
-  prompt: string
-}) {
-  switch (state.status) {
-    case 'idle':
-      return (
-        <div>
-          <p className="demo-muted m-0 text-sm">
-            Пока не запущено. Нажми «Запустить 4 стратегии», чтобы решить задачу
-            этим способом.
-          </p>
-          <PromptPreview
-            title="Что будет отправлено в модель"
-            blocks={previewBlocks(id, prompt)}
-          />
-        </div>
-      )
-    case 'loading':
-      return (
-        <div className="flex flex-col gap-3">
-          <TypingDots />
-        </div>
-      )
-    case 'error':
-      return (
-        <Alert variant="destructive">
-          <p className="m-0 text-sm">{state.error}</p>
-        </Alert>
-      )
-    case 'done':
-      return <ResultBody result={state.result} />
-  }
-}
-
-function ResultBody({ result }: { result: StrategyResult }) {
-  switch (result.kind) {
-    case 'answer':
-      return <AnswerBlock answer={result.answer} blocks={sentBlocks(result)} />
-    case 'promptcraft':
-      return (
-        <div className="flex flex-col gap-3">
-          <details className="demo-code-block">
-            <summary className="cursor-pointer select-none text-xs text-[var(--ink-muted)]">
-              Сгенерированный промпт (им решается задача)
-            </summary>
-            <pre className="mt-2 whitespace-pre-wrap text-sm">
-              {result.composed.content}
-            </pre>
-            {usageLine(result.composed.usage, 'создание промпта')}
-          </details>
-          <AnswerBlock answer={result.final} blocks={sentBlocks(result)} />
-        </div>
-      )
-    case 'experts':
-      return (
-        <div className="flex flex-col gap-3">
-          {result.experts.map(({ id, label, answer }) => (
-            <div key={id}>
-              <p className="island-kicker mb-1">{label}</p>
-              <AnswerBlock answer={answer} blocks={sentBlocks(result, id)} />
-            </div>
-          ))}
-        </div>
-      )
-  }
-}
-
-function AnswerBlock({
-  answer,
-  blocks,
-}: {
-  answer: Answer
-  blocks: SentBlock[]
-}) {
-  return (
-    <div>
-      {answer.content.trim().length === 0 ? (
-        <Alert>
-          <p className="m-0 text-sm">
-            Модель вернула пустой ответ. Попробуй ещё раз.
-          </p>
-        </Alert>
-      ) : (
-        <pre className="demo-code-block whitespace-pre-wrap text-sm">
-          {answer.content}
-        </pre>
-      )}
-      <p className="demo-muted mt-1.5 text-xs">
-        {answer.chars ?? 0} симв. · {answer.words ?? 0} слов
-        {answer.usage ? ` · ${answer.usage.completion_tokens} ток.` : ''}
-      </p>
-      <PromptPreview title="Что было отправлено" blocks={blocks} />
-    </div>
-  )
-}
-
-function PromptPreview({
-  title,
-  blocks,
-}: {
-  title: string
-  blocks: SentBlock[]
-}) {
-  return (
-    <details className="mt-1">
-      <summary className="cursor-pointer select-none text-xs text-[var(--ink-muted)]">
-        {title}
-      </summary>
-      <div className="mt-2 space-y-2">
-        {blocks.map((block, i) => (
-          <div key={i} className="demo-code-block whitespace-pre-wrap text-xs">
-            <span className="island-kicker">{block.label}</span>
-            {'\n'}
-            {block.text}
-          </div>
-        ))}
-      </div>
-    </details>
-  )
-}
-
-type SentBlock = { label: string; text: string }
-
-function previewBlocks(id: StrategyId, prompt: string): SentBlock[] {
-  switch (id) {
-    case 'direct':
-      return [
-        { label: 'system', text: HELPFUL_SYSTEM },
-        { label: 'user', text: prompt },
-      ]
-    case 'stepwise':
-      return [
-        { label: 'system', text: STEPWISE_SYSTEM },
-        { label: 'user', text: prompt },
-      ]
-    case 'promptcraft':
-      return [
-        { label: 'шаг 1 · system', text: PROMPT_ENGINEER_SYSTEM },
-        { label: 'шаг 1 · user', text: prompt },
-        { label: 'шаг 2 · system', text: HELPFUL_SYSTEM },
-        {
-          label: 'шаг 2 · user',
-          text: 'Сгенерированный промпт — появится после шага 1.',
-        },
-      ]
-    case 'expert':
-      return EXPERT_ROLES.flatMap((role) => [
-        { label: `${role.label} · system`, text: role.system },
-        { label: `${role.label} · user`, text: prompt },
-      ])
-  }
-}
-
-function sentBlocks(result: StrategyResult, expertId?: ExpertId): SentBlock[] {
-  const { promptUsed } = result
-  switch (result.kind) {
-    case 'answer':
-      return [
-        { label: 'system', text: HELPFUL_SYSTEM },
-        { label: 'user', text: promptUsed },
-      ]
-    case 'promptcraft':
-      return [
-        { label: 'call 1 · system', text: PROMPT_ENGINEER_SYSTEM },
-        { label: 'call 1 · user', text: promptUsed },
-        { label: 'call 2 · system', text: HELPFUL_SYSTEM },
-        { label: 'call 2 · user', text: result.composed.content },
-      ]
-    case 'experts': {
-      const role = EXPERT_ROLES.find((r) => r.id === expertId)
-      if (role) {
-        return [
-          { label: `${role.label} · system`, text: role.system },
-          { label: `${role.label} · user`, text: promptUsed },
-        ]
-      }
-      return EXPERT_ROLES.flatMap((role) => [
-        { label: `${role.label} · system`, text: role.system },
-        { label: `${role.label} · user`, text: promptUsed },
-      ])
-    }
-  }
-}
-
-function VerdictCard({ verdict }: { verdict: VerdictState }) {
-  switch (verdict.status) {
-    case 'idle':
-      return (
-        <p className="demo-muted m-0 text-sm">
-          Появится после того, как ответят все четыре стратегии.
-        </p>
-      )
-    case 'loading':
-      return <TypingDots text="Сравниваю четыре ответа с эталоном…" />
-    case 'error':
-      return (
-        <div className="flex flex-col gap-3">
-          <Alert variant="destructive">
-            <p className="m-0 text-sm">{verdict.error}</p>
-          </Alert>
-          {verdict.raw && (
-            <pre className="demo-code-block whitespace-pre-wrap text-xs">
-              {verdict.raw}
-            </pre>
-          )}
-        </div>
-      )
-    case 'done':
-      return <VerdictBody verdict={verdict.verdict} />
-  }
-}
-
-function VerdictBody({ verdict }: { verdict: VerdictShape }) {
-  const winner = verdict.winner
-  const winnerMeta = STRATEGIES.find((s) => s.id === winner)
-  return (
-    <div className="flex flex-col gap-3">
-      {verdict.summary && (
-        <p className="demo-muted m-0 text-sm">{verdict.summary}</p>
-      )}
-      <div className="flex flex-wrap gap-2">
-        {STRATEGIES.map(({ id, label }) => {
-          const score = verdict.scores?.[id]
-          const isWinner = id === winner
-          return (
-            <Badge key={id} variant={isWinner ? 'accent' : 'default'}>
-              {label}: {typeof score === 'number' ? score : '—'}
-              {isWinner ? '  (победитель)' : ''}
-            </Badge>
-          )
-        })}
-      </div>
-      {winnerMeta && verdict.why && (
-        <div className="demo-code-block whitespace-pre-wrap text-sm">
-          <span className="island-kicker">
-            Почему победила стратегия «{winnerMeta.label}»
-          </span>
-          {'\n'}
-          {verdict.why}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function TypingDots({ text }: { text?: string }) {
-  return (
-    <div className="flex items-center gap-2" aria-label="Ожидание ответа">
-      <div className="flex items-center gap-1.5">
-        {[0, 1, 2].map((i) => (
-          <span
-            key={i}
-            className="typing-dot h-2 w-2 rounded-full bg-[var(--accent)]"
-            style={{ animationDelay: `${i * 150}ms` }}
-          />
-        ))}
-      </div>
-      {text && <span className="demo-muted text-xs">{text}</span>}
     </div>
   )
 }
@@ -640,17 +342,6 @@ function parseVerdict(content: string): VerdictShape | null {
   } catch {
     return null
   }
-}
-
-function usageLine(usage: ChatResult['usage'], label: string): ReactNode {
-  return (
-    <p className="demo-muted mt-1.5 text-xs">
-      {label}:{' '}
-      {usage
-        ? `${usage.completion_tokens} ток.`
-        : 'нет данных об использовании'}
-    </p>
-  )
 }
 
 function toError(err: unknown): string {

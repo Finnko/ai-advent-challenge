@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite'
 import { describe, expect, it } from 'vitest'
-import { migrateSessions, migrateTaskStates } from '../server/store.server'
+import { migrateInvariants, migrateSessions, migrateTaskStates } from '../server/store.server'
 
 function legacyDatabase(): DatabaseSync {
   const db = new DatabaseSync(':memory:')
@@ -143,5 +143,40 @@ describe('migrateTaskStates', () => {
         'updated_at',
       ]),
     )
+  })
+})
+
+describe('migrateInvariants', () => {
+  it('replaces global slug uniqueness with pinned-only uniqueness', () => {
+    const db = new DatabaseSync(':memory:')
+    db.exec(`
+      CREATE TABLE invariants (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        token TEXT NOT NULL,
+        slug TEXT NOT NULL,
+        category TEXT NOT NULL,
+        title TEXT NOT NULL,
+        text TEXT NOT NULL,
+        check_id TEXT,
+        pinned INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE (token, slug)
+      );
+      INSERT INTO invariants (token, slug, category, title, text, check_id, pinned, created_at, updated_at)
+      VALUES ('t', 'rule', 'business', 'Правило', 'Текст', NULL, 1, 'now', 'now');
+    `)
+
+    migrateInvariants(db)
+    migrateInvariants(db)
+
+    db.prepare(
+      'INSERT INTO invariants (token, slug, category, title, text, pinned, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 0, ?, ?)',
+    ).run('t', 'rule', 'business', 'Кастомное', 'Текст', 'now', 'now')
+    expect(() =>
+      db.prepare(
+        'INSERT INTO invariants (token, slug, category, title, text, pinned, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?)',
+      ).run('t', 'rule', 'business', 'Дубликат', 'Текст', 'now', 'now'),
+    ).toThrow()
   })
 })

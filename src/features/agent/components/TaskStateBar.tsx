@@ -18,6 +18,19 @@ type TaskStateBarProps = {
   onCancel: () => void
 }
 
+function resolveStageVariant(
+  paused: boolean,
+  terminal: boolean,
+): 'accent' | 'warn' | 'default' {
+  if (paused) {
+    return 'warn'
+  }
+  if (terminal) {
+    return 'default'
+  }
+  return 'accent'
+}
+
 export default function TaskStateBar({
   state,
   enabled,
@@ -41,12 +54,7 @@ export default function TaskStateBar({
   const paused = state.stage === 'paused'
   const active = ACTIVE_TASK_STAGES.includes(state.stage)
   const terminal = isTerminalTaskStage(state.stage)
-  let stageVariant: 'accent' | 'warn' | 'default' = 'accent'
-  if (paused) {
-    stageVariant = 'warn'
-  } else if (terminal) {
-    stageVariant = 'default'
-  }
+  const stageVariant = resolveStageVariant(paused, terminal)
 
   const planTitle = state.steps
     .map((item, index) => `${index + 1}. ${item}`)
