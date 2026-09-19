@@ -12,6 +12,8 @@ const CURRENT: TaskState = {
   stage: 'paused',
   previousStage: 'planning',
   step: 'Собираем параметры',
+  steps: [],
+  stepIndex: 0,
   expectedAction: { actor: 'user', description: 'Назвать число участников' },
   updatedAt: '2026-09-10T12:00:00.000Z',
   history: [],
@@ -38,6 +40,18 @@ describe('parseTaskAnalysis', () => {
       actor: 'agent',
       description: 'Вызвать инструмент',
     })
+  })
+
+  it('читает упорядоченный план шагов', () => {
+    const parsed = parseTaskAnalysis(
+      JSON.stringify({
+        stage: 'execution',
+        step: 'Забронировать',
+        steps: ['Забронировать', '  ', 'Пригласить'],
+        expectedAction: { actor: 'agent', description: 'Вызвать инструмент' },
+      }),
+    )
+    expect(parsed?.steps).toEqual(['Забронировать', 'Пригласить'])
   })
 
   it('снимает markdown-обёртку', () => {

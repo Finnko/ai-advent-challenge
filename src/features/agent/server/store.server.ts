@@ -30,6 +30,7 @@ export {
   saveSessionFacts,
   saveWorkingMemory,
   setActiveBranch,
+  updateSessionTitleIfDefault,
   upsertSessionSummary,
 } from './store/sessions.server'
 export type {

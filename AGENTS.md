@@ -51,15 +51,32 @@ which starts by collapsing the agent demos into one workspace (Days 13–14 feat
   draft→input (`sessionConfigDraftToInput`), immutability (`resolveActiveSessionConfig`) and
   `clampWindowSize`. `parseSessionConfigInput` (`functions/validation.ts`) validates the wire shape.
 - `store.createSession(token, title, input: Partial<SessionConfigInput>)` delegates configuration
-  defaults to `domain/session/config.ts`; profile lookup remains server-side. `api/send-message.ts`
-  sends `{ config: SessionConfigInput }`; `pages/AgentPage.tsx` keeps a single `SessionConfigDraft`.
-  `null` in the draft means the token's default profile; the UI does not start no-profile sessions.
+  defaults to `domain/session/config.ts`; profile lookup remains server-side. The session is created
+  **upfront** via `api/create-session.ts` (`useCreateSession`) when the user clicks «Новая сессия»;
+  the dialog (chat + state bar + input) renders only with an active session.
+  `api/send-message.ts` sends only `{ token, sessionId, user }`. `pages/AgentPage.tsx` keeps a single
+  `SessionConfigDraft` for the **next** session (editable while a session is active) and shows the
+  active session's config read-only. `null` in the draft means the token's default profile; the UI
+  does not start no-profile sessions.
 
 ## Agent behavior
 
 - Tools live in `features/agent/domain/agent-tools.ts`; `TOOLS_BY_ROLE` is derived from each tool's
   `roles`, so capabilities, the decide prompt and `isPermitted` can't drift.
-- **One tool per message** (`decide → act → finalize`).
+- **Actions per turn**: `decide → act` loops up to `maxActionsPerTurn` (default 5) while the model
+  picks another tool, then one `finalize` over all tool reports. The loop stops on `tool: null`, a
+  failed tool, a repeated `tool+args`, or the cap. The `no-fabricated-actions` judge blocks answers
+  that claim an action absent from the reports.
+- **`planning` is propose-and-wait**: mutating tools (`isMutatingTool` in `agent-tools.ts`) are hidden
+  from `decide` and hard-denied at `act`; read-only `list*` tools stay available. Mutations run only in
+  `execution`; `validation` (like `planning`) keeps only read-only `list*`.
+- **Auto transitions** (`domain/task/advance.ts`): `runAgentTurn` advances `execution → validation`
+  after a successful mutating turn, and `validation → done` after a real read-only verification
+  (`list*`) with no correction signal. A correction message (`looksLikeCorrection`) deterministically
+  returns `validation → execution`. `done` is also reachable by explicit confirmation (analyzer).
+- **Cooperative pause**: `AgentConfig.isPaused` is checked at the top of each action-loop iteration
+  (after the first), so a pause issued mid-run stops before the next action. `runAgentTurn` supplies a
+  probe reading `task_states`.
 - `executeAgent` builds a small `context` string (last managed booking / pending vacation) and passes it
   as `AgentConfig.context`; `decide` retries once with a nudge when it returns `tool: null` for an
   action-like request.
@@ -76,9 +93,10 @@ which starts by collapsing the agent demos into one workspace (Days 13–14 feat
   two are disabled placeholders for Days 13–14. Old routes redirect. One sidebar entry (`lib/days.ts`).
 - **Session config is the backbone** (`sessions.strategy` / `memory_enabled` / `profile_id` /
   `window_size`): fixed by `createSession`, read by `runAgentTurn`, never switchable mid-session. The
-  client sends only ids and the chosen config; `api/send-message.ts` creates the session then calls
-  `runAgent` (→ `runAgentTurn`).
-- Reserved extension fields (no feature code yet): `sessions.task_state_enabled`, `sessions.invariant_set_id`.
+  session is created upfront (`api/create-session.ts`); `api/send-message.ts` then calls `runAgent`
+  (→ `runAgentTurn`) with only ids and text.
+- Reserved extension fields (no feature code yet): `sessions.invariant_set_id` (`task_state_enabled`
+  is live).
   Future seams: `SystemBlock.kind` gains `'invariants' | 'task-state'`; invariants go in stable system
   blocks, task state after history with profile/memory.
 

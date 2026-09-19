@@ -214,6 +214,8 @@ CREATE TABLE IF NOT EXISTS task_states (
   stage TEXT NOT NULL,
   previous_stage TEXT,
   step TEXT NOT NULL,
+  steps_json TEXT NOT NULL DEFAULT '[]',
+  step_index INTEGER NOT NULL DEFAULT 0,
   expected_actor TEXT NOT NULL,
   expected_description TEXT NOT NULL,
   history_json TEXT NOT NULL DEFAULT '[]',
@@ -383,6 +385,7 @@ async function openDatabase(): Promise<SqliteDatabase> {
   const db = new DatabaseSync(dbPath)
   db.exec(SCHEMA_SQL)
   migrateBookings(db)
+  migrateSeededBookings(db)
   migrateSessions(db)
   migrateProfiles(db)
   migrateTaskStates(db)
@@ -423,16 +426,32 @@ function seedBookings(db: SqliteDatabase): void {
     return
   }
   const insert = db.prepare(
-    `INSERT INTO bookings (room, date, time, duration_min, capacity, title, reference, booked_by, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO bookings (room, date, time, duration_min, capacity, title, reference, booked_by, participants, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
   BOOKINGS_SEED.forEach((entry, index) => {
+    const [room, date, time, durationMin, capacity, title, bookedBy] = entry
     insert.run(
-      ...entry,
+      room,
+      date,
+      time,
+      durationMin,
+      capacity,
+      title,
       `BOOK-SEED${String(index + 1).padStart(2, '0')}`,
+      bookedBy,
+      '[]',
       nowIso(),
     )
   })
+}
+
+export function migrateSeededBookings(db: SqliteDatabase): void {
+  db.prepare(
+    `UPDATE bookings
+     SET booked_by = reference, reference = booked_by
+     WHERE booked_by LIKE 'BOOK-SEED%' AND reference NOT LIKE 'BOOK-%'`,
+  ).run()
 }
 
 function tableColumns(db: SqliteDatabase, table: string): string[] {
@@ -576,12 +595,25 @@ export function migrateTaskStates(db: SqliteDatabase): void {
       stage TEXT NOT NULL,
       previous_stage TEXT,
       step TEXT NOT NULL,
+      steps_json TEXT NOT NULL DEFAULT '[]',
+      step_index INTEGER NOT NULL DEFAULT 0,
       expected_actor TEXT NOT NULL,
       expected_description TEXT NOT NULL,
       history_json TEXT NOT NULL DEFAULT '[]',
       updated_at TEXT NOT NULL
     );
   `)
+  const columns = tableColumns(db, 'task_states')
+  if (!columns.includes('steps_json')) {
+    db.exec(
+      "ALTER TABLE task_states ADD COLUMN steps_json TEXT NOT NULL DEFAULT '[]'",
+    )
+  }
+  if (!columns.includes('step_index')) {
+    db.exec(
+      'ALTER TABLE task_states ADD COLUMN step_index INTEGER NOT NULL DEFAULT 0',
+    )
+  }
 }
 
 export function migrateProfiles(db: SqliteDatabase): void {

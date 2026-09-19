@@ -6,9 +6,11 @@ import { resumeTask } from '../domain/task/state'
 import type { TaskState } from '../domain/task/types'
 
 type Store = typeof import('../server/store.server')
+type TaskStateServer = typeof import('../server/task-state.server')
 
 let tempDir: string
 let store: Store
+let taskStateServer: TaskStateServer
 
 beforeAll(async () => {
   tempDir = await mkdtemp(join(tmpdir(), 'agent-task-'))
@@ -17,6 +19,7 @@ beforeAll(async () => {
   process.env.AGENT_DB_PATH = dbPath
   vi.resetModules()
   store = await import('../server/store.server')
+  taskStateServer = await import('../server/task-state.server')
 })
 
 afterAll(async () => {
@@ -30,6 +33,8 @@ function taskState(overrides: Partial<TaskState> = {}): TaskState {
     stage: 'planning',
     previousStage: null,
     step: 'Собираем параметры',
+    steps: ['Собираем параметры'],
+    stepIndex: 0,
     expectedAction: { actor: 'user', description: 'Назвать дату' },
     updatedAt: '2026-09-10T12:00:00.000Z',
     history: [],
@@ -105,5 +110,41 @@ describe('task state store', () => {
     await store.saveTaskState(sessionId, taskState())
     await store.deleteSession(sessionId)
     expect(await store.getTaskState(sessionId)).toBeNull()
+  })
+
+  it('кнопочная пауза и продолжение пишут событие в ленту', async () => {
+    const sessionId = await store.createSession('tok-action', 'кнопки')
+    await store.saveTaskState(sessionId, taskState({ stage: 'execution' }))
+
+    await taskStateServer.applyTaskAction(sessionId, 'pause')
+    await taskStateServer.applyTaskAction(sessionId, 'resume')
+
+    const messages = await store.loadMessages(sessionId)
+    const taskMessages = messages.filter((message) => message.role === 'task')
+    expect(taskMessages).toHaveLength(2)
+    expect(taskMessages[0].taskEvent).toMatchObject({
+      kind: 'transition',
+      from: 'execution',
+      to: 'paused',
+    })
+    expect(taskMessages[1].taskEvent).toMatchObject({
+      kind: 'transition',
+      from: 'paused',
+      to: 'execution',
+    })
+  })
+
+  it('обновляет дефолтный заголовок сессии', async () => {
+    const sessionId = await store.createSession('tok-title', 'Новая сессия')
+    await store.updateSessionTitleIfDefault(sessionId, 'Бронирование')
+    expect((await store.getSession(sessionId))?.title).toBe('Бронирование')
+    await store.updateSessionTitleIfDefault(sessionId, 'Другое')
+    expect((await store.getSession(sessionId))?.title).toBe('Бронирование')
+  })
+
+  it('не перетирает заданный заголовок сессии', async () => {
+    const sessionId = await store.createSession('tok-title2', 'Своя сессия')
+    await store.updateSessionTitleIfDefault(sessionId, 'Новое')
+    expect((await store.getSession(sessionId))?.title).toBe('Своя сессия')
   })
 })

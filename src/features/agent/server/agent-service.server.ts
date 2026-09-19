@@ -164,6 +164,7 @@ export type ExecuteOptions = {
   memory?: MemoryOptions
   profile?: ProfileRecord | null
   taskState?: TaskState | null
+  isPaused?: () => boolean | Promise<boolean>
   now?: Date
 }
 
@@ -191,6 +192,7 @@ export async function executeAgent(
     responseLanguage: options.profile?.language ?? null,
     context,
     taskState,
+    isPaused: options.isPaused,
   })
   try {
     const memoryBlocks = await prepareMemoryBlocks(options, runtime.extractMemories)

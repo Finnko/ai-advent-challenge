@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useReducer } from 'react'
-import { useIsMutating } from '@tanstack/react-query'
 import type { AgentCapabilities } from '../domain/agent'
 import type { MemoryLayer } from '../domain/memory/types'
 import type { ProfileInput } from '../domain/profile/types'
@@ -28,6 +27,7 @@ import { useSessionFacts } from './get-facts'
 import { useSessionBranches } from './get-branches'
 import { useMemory } from './get-memory'
 import { useProfiles } from './get-profiles'
+import { useCreateSession } from './create-session'
 import { useSendMessage } from './send-message'
 import { useDeleteSession } from './delete-session'
 import { useCreateBranch } from './create-branch'
@@ -73,6 +73,7 @@ export function useAgentWorkspace() {
   const profilesQuery = useProfiles(state.activeToken)
   const profiles = profilesQuery.data ?? []
 
+  const createSessionMutation = useCreateSession()
   const sendMutation = useSendMessage()
   const deleteMutation = useDeleteSession()
   const branchMutation = useCreateBranch()
@@ -87,7 +88,24 @@ export function useAgentWorkspace() {
   const resumeTaskMutation = useResumeTask()
   const cancelTaskMutation = useCancelTask()
 
-  const busy = useIsMutating() > 0 || capabilitiesQuery.isLoading
+  const busy =
+    createSessionMutation.isPending ||
+    sendMutation.isPending ||
+    deleteMutation.isPending ||
+    branchMutation.isPending ||
+    switchMutation.isPending ||
+    saveMemoryMutation.isPending ||
+    deleteMemoryMutation.isPending ||
+    createProfileMutation.isPending ||
+    updateProfileMutation.isPending ||
+    deleteProfileMutation.isPending ||
+    setDefaultMutation.isPending ||
+    capabilitiesQuery.isLoading
+
+  const taskBusy =
+    pauseTaskMutation.isPending ||
+    resumeTaskMutation.isPending ||
+    cancelTaskMutation.isPending
 
   const dispatchIntent = useCallback(
     (intent: WorkspaceIntent) => {
@@ -140,11 +158,20 @@ export function useAgentWorkspace() {
       dispatchIntent({ kind: 'openSession', sessionId: id })
     },
     newSession() {
-      if (busy) {
+      if (busy || !state.activeToken) {
         return
       }
       sendMutation.reset()
-      dispatchIntent({ kind: 'newSession' })
+      createSessionMutation.mutate(
+        {
+          token: state.activeToken,
+          config: sessionConfigDraftToInput(state.config),
+        },
+        {
+          onSuccess: (result) =>
+            dispatch({ kind: 'openSession', sessionId: result.sessionId }),
+        },
+      )
     },
     setDraft(draft: string) {
       dispatch({ kind: 'setDraft', draft })
@@ -154,20 +181,24 @@ export function useAgentWorkspace() {
     },
     send() {
       const text = state.draft.trim()
-      if (text.length === 0 || busy || !state.activeToken) {
+      if (
+        text.length === 0 ||
+        busy ||
+        !state.activeToken ||
+        state.sessionId === null
+      ) {
         return
       }
+      const sessionId = state.sessionId
       dispatch({ kind: 'setDraft', draft: '' })
       sendMutation.mutate(
         {
           token: state.activeToken,
-          sessionId: state.sessionId,
+          sessionId,
           user: text,
-          config: sessionConfigDraftToInput(state.config),
         },
         {
-          onSuccess: (result) =>
-            dispatch({ kind: 'sendSucceeded', sessionId: result.sessionId }),
+          onSuccess: () => dispatch({ kind: 'sendSucceeded', sessionId }),
         },
       )
     },
@@ -284,19 +315,19 @@ export function useAgentWorkspace() {
       setDefaultMutation.mutate({ token: state.activeToken, profileId: id })
     },
     pauseTask() {
-      if (busy || state.sessionId === null) {
+      if (state.sessionId === null) {
         return
       }
       pauseTaskMutation.mutate(state.sessionId)
     },
     resumeTask() {
-      if (busy || state.sessionId === null) {
+      if (state.sessionId === null) {
         return
       }
       resumeTaskMutation.mutate(state.sessionId)
     },
     cancelTask() {
-      if (busy || state.sessionId === null) {
+      if (state.sessionId === null) {
         return
       }
       cancelTaskMutation.mutate(state.sessionId)
@@ -358,9 +389,13 @@ export function useAgentWorkspace() {
     orgError: orgQuery.isError ? toError(orgQuery.error) : null,
     sendError: sendMutation.isError ? toError(sendMutation.error) : null,
     branchError: branchMutation.isError ? toError(branchMutation.error) : null,
+    sessionError: createSessionMutation.isError
+      ? toError(createSessionMutation.error)
+      : null,
     settingsError,
     taskError,
     busy,
+    taskBusy,
     sending: sendMutation.isPending,
     actions,
   }

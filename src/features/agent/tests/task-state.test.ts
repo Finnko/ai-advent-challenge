@@ -28,6 +28,8 @@ function state(stage: TaskStage, overrides: Partial<TaskState> = {}): TaskState 
     stage,
     previousStage: null,
     step: 'шаг',
+    steps: [],
+    stepIndex: 0,
     expectedAction: { actor: 'agent', description: 'действие' },
     updatedAt: AT,
     history: [],
@@ -46,6 +48,74 @@ describe('task state machine', () => {
     expect(created.previousStage).toBeNull()
     expect(created.history).toEqual([])
     expect(created.expectedAction.actor).toBe('agent')
+  })
+
+  it('создаёт план шагов из анализа', () => {
+    const created = createTaskState(
+      analysis({
+        stage: 'planning',
+        step: 'Уточнить дату',
+        steps: ['Уточнить дату', 'Выбрать комнату', 'Забронировать'],
+      }),
+      AT,
+    )
+    expect(created.steps).toEqual([
+      'Уточнить дату',
+      'Выбрать комнату',
+      'Забронировать',
+    ])
+    expect(created.stepIndex).toBe(0)
+    expect(created.step).toBe('Уточнить дату')
+  })
+
+  it('при смене этапа пересобирает план и сбрасывает индекс', () => {
+    const prev = state('planning', {
+      steps: ['a', 'b'],
+      stepIndex: 1,
+      step: 'b',
+    })
+    const next = applyAnalysis(
+      prev,
+      analysis({
+        stage: 'execution',
+        step: 'Забронировать',
+        steps: ['Забронировать', 'Пригласить'],
+      }),
+      AT,
+    )
+    expect(next.steps).toEqual(['Забронировать', 'Пригласить'])
+    expect(next.stepIndex).toBe(0)
+    expect(next.step).toBe('Забронировать')
+  })
+
+  it('на том же этапе не перескакивает шаг по анализатору', () => {
+    const prev = state('execution', {
+      steps: ['Первый', 'Второй'],
+      stepIndex: 0,
+      step: 'Первый',
+    })
+    const next = applyAnalysis(
+      prev,
+      analysis({ stage: 'execution', step: 'Второй' }),
+      AT,
+    )
+    expect(next.stepIndex).toBe(0)
+    expect(next.step).toBe('Первый')
+  })
+
+  it('ограничивает индекс при сокращении плана', () => {
+    const prev = state('execution', {
+      steps: ['a', 'b', 'c'],
+      stepIndex: 2,
+      step: 'c',
+    })
+    const next = applyAnalysis(
+      prev,
+      analysis({ stage: 'execution', steps: ['a', 'b'] }),
+      AT,
+    )
+    expect(next.stepIndex).toBe(1)
+    expect(next.step).toBe('b')
   })
 
   it('разрешает только валидные переходы графа', () => {

@@ -374,6 +374,19 @@ export type ToolDefinition = {
   description: string
   argsExample: string
   roles: AgentRole[]
+  mutating: boolean
+}
+
+const MUTATING_TOOLS = new Set<AgentToolName>([
+  'bookMeetingRoom',
+  'inviteToMeeting',
+  'cancelBooking',
+  'requestVacation',
+  'approveVacation',
+])
+
+export function isMutatingTool(name: string): boolean {
+  return MUTATING_TOOLS.has(name as AgentToolName)
 }
 
 export const TOOL_DEFINITIONS: ToolDefinition[] = [
@@ -384,6 +397,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     argsExample:
       '{ "room": "название комнаты", "date": "YYYY-MM-DD", "time": "HH:MM", "duration": минуты, "title": "тема" }',
     roles: ['employee', 'manager'],
+    mutating: true,
   },
   {
     name: 'listBookings',
@@ -392,6 +406,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     argsExample:
       '{ "includePast": true, "from": "YYYY-MM-DD", "to": "YYYY-MM-DD" } (все поля необязательны; по умолчанию только предстоящие)',
     roles: ['employee', 'manager'],
+    mutating: false,
   },
   {
     name: 'listAvailableRooms',
@@ -400,6 +415,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     argsExample:
       '{ "date": "YYYY-MM-DD", "time": "HH:MM", "duration": минуты }',
     roles: ['employee', 'manager'],
+    mutating: false,
   },
   {
     name: 'inviteToMeeting',
@@ -408,6 +424,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     argsExample:
       '{ "room": "название комнаты", "date": "YYYY-MM-DD", "time": "HH:MM", "participants": ["имя", "имя"] }',
     roles: ['employee', 'manager'],
+    mutating: true,
   },
   {
     name: 'cancelBooking',
@@ -416,12 +433,14 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     argsExample:
       '{ "room": "название комнаты", "date": "YYYY-MM-DD", "time": "HH:MM" }',
     roles: ['employee', 'manager'],
+    mutating: true,
   },
   {
     name: 'requestVacation',
     description: 'подать заявку на отпуск',
     argsExample: '{ "start": "YYYY-MM-DD", "end": "YYYY-MM-DD" }',
     roles: ['employee', 'manager'],
+    mutating: true,
   },
   {
     name: 'approveVacation',
@@ -430,12 +449,14 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     argsExample:
       '{ "employeeName": "имя сотрудника", "start": "YYYY-MM-DD", "end": "YYYY-MM-DD" }',
     roles: ['manager'],
+    mutating: true,
   },
   {
     name: 'listVacations',
     description: 'показать отпуска команды: согласованные и ожидающие',
     argsExample: '{}',
     roles: ['manager'],
+    mutating: false,
   },
 ]
 

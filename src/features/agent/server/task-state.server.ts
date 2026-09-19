@@ -2,9 +2,15 @@ import {
   cancelTask,
   pauseTask,
   resumeTask,
+  transitionEvent,
 } from '../domain/task/state'
 import type { TaskState } from '../domain/task/types'
-import { getSession, getTaskState, saveTaskState } from './store.server'
+import {
+  appendMessage,
+  getSession,
+  getTaskState,
+  saveTaskState,
+} from './store.server'
 
 export type TaskAction = 'pause' | 'resume' | 'cancel'
 
@@ -48,5 +54,9 @@ export async function applyTaskAction(
     return result.current
   }
   await saveTaskState(sessionId, next)
+  const transition = next.history.at(-1)
+  if (transition && next.history.length > result.current.history.length) {
+    await appendMessage(sessionId, 'task', '', transitionEvent(transition))
+  }
   return next
 }

@@ -2,7 +2,7 @@ import type { AgentRunResult, LlmUsage } from './agent'
 import { costUsd, estimateTokens } from './tokens'
 
 export type AccountingMessage = {
-  role: 'user' | 'assistant'
+  role: 'user' | 'assistant' | 'task'
   content: string
   run?: AgentRunResult
 }

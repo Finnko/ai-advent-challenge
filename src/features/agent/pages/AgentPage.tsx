@@ -13,13 +13,10 @@ import {
   clampWindowSize,
 } from '../domain/session/config'
 import { CONTEXT_BUDGET_TOKENS, MODEL_CONTEXT_TOKENS } from '../domain/tokens'
-import { EXAMPLES, TOOL_INFO, TOKEN_SCENARIOS } from '../data/agent-ui'
-import type { Example, PersonaKind, ToolInfo } from '../data/agent-ui'
 import { useAgentWorkspace } from '../api/use-agent-workspace'
 import type { ProfileItem } from '../types'
 import PersonaPicker from '../components/PersonaPicker'
 import CapabilitiesPanel from '../components/CapabilitiesPanel'
-import ExampleChips from '../components/ExampleChips'
 import ChatThread from '../components/ChatThread'
 import type { ThreadMessage } from '../components/ChatThread'
 import SessionList from '../components/SessionList'
@@ -31,9 +28,10 @@ import FactsPanel from '../components/FactsPanel'
 import BranchPanel from '../components/BranchPanel'
 import MemoryInspector from '../components/MemoryInspector'
 import MemoryPanel from '../components/MemoryPanel'
-import TaskStatePanel from '../components/TaskStatePanel'
+
 import ProfileList from '../components/ProfileList'
 import ProfileEditor from '../components/ProfileEditor'
+import TaskStateBar from '../components/TaskStateBar'
 import {
   Tabs,
   TabsContent,
@@ -87,20 +85,14 @@ export default function AgentPage() {
     orgError,
     sendError,
     branchError,
+    sessionError,
     settingsError,
     taskError,
     busy,
+    taskBusy,
     sending,
     actions,
   } = workspace
-
-  const kind: PersonaKind = activePerson?.role ?? 'employee'
-  const roleExamples: Example[] = EXAMPLES.filter(
-    (example) => example.kind === kind,
-  )
-  const availableTools: ToolInfo[] = TOOL_INFO.filter((tool) =>
-    tool.roles.includes(kind),
-  )
 
   const messages: ThreadMessage[] = useMemo(
     () =>
@@ -109,6 +101,7 @@ export default function AgentPage() {
         role: row.role,
         content: row.content,
         ...(row.run ? { run: row.run as AgentRunResult } : {}),
+        ...(row.taskEvent ? { taskEvent: row.taskEvent } : {}),
       })),
     [messagesData],
   )
@@ -241,7 +234,6 @@ export default function AgentPage() {
             <Tabs defaultValue="dialog">
               <TabsList>
                 <TabsTrigger value="dialog">Диалог</TabsTrigger>
-                <TabsTrigger value="task">Задача</TabsTrigger>
                 <TabsTrigger
                   value="invariants"
                   disabled
@@ -253,22 +245,24 @@ export default function AgentPage() {
               </TabsList>
 
               <TabsContent value="dialog">
+                {sessionId === null ? (
+                  <section className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-[var(--line)] p-8">
+                    <p className="m-0 text-sm font-semibold text-[var(--ink)]">
+                      Сессия не выбрана
+                    </p>
+                    <p className="demo-muted m-0 max-w-sm text-center text-xs">
+                      Создайте новую сессию (конфиг возьмётся из вкладки
+                      «Настройки») или выберите существующую в списке слева.
+                    </p>
+                    <Button onClick={actions.newSession} disabled={busy}>
+                      Новая сессия
+                    </Button>
+                    {sessionError && (
+                      <Alert variant="destructive">{sessionError}</Alert>
+                    )}
+                  </section>
+                ) : (
                 <div className="flex flex-col gap-3">
-                  <ExampleChips
-                    examples={roleExamples}
-                    disabled={busy}
-                    onPick={actions.setDraft}
-                  />
-                  {availableTools.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5">
-                      {availableTools.map((tool) => (
-                        <Badge key={tool.name} title={tool.description}>
-                          {tool.label}
-                        </Badge>
-                      ))}
-                    </div>
-                  )}
-
                   <SessionAccounting totals={accounting} />
 
                   <TokenReport
@@ -292,21 +286,6 @@ export default function AgentPage() {
                     modelContext={MODEL_CONTEXT_TOKENS}
                   />
 
-                  <div className="flex flex-wrap items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-3">
-                    {TOKEN_SCENARIOS.map((scenario) => (
-                      <Button
-                        key={scenario.id}
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => actions.setDraft(scenario.text)}
-                        disabled={busy}
-                        title={scenario.hint}
-                      >
-                        {scenario.label}
-                      </Button>
-                    ))}
-                  </div>
-
                   {activeStrategy === 'facts' && <FactsPanel facts={facts} />}
 
                   {activeStrategy === 'branch' && (
@@ -328,6 +307,21 @@ export default function AgentPage() {
                   {sendError && <Alert variant="destructive">{sendError}</Alert>}
                   {branchError && (
                     <Alert variant="destructive">{branchError}</Alert>
+                  )}
+
+                  <TaskStateBar
+                    state={taskState}
+                    enabled={active.taskStateEnabled}
+                    hasSession={sessionLocked}
+                    busy={taskBusy}
+                    onPause={actions.pauseTask}
+                    onResume={actions.resumeTask}
+                    onCancel={actions.cancelTask}
+                  />
+                  {taskError && <Alert variant="destructive">{taskError}</Alert>}
+
+                  {taskState?.stage === 'paused' && (
+                    <p className="demo-muted m-0 text-xs">Задача на паузе</p>
                   )}
 
                   <form
@@ -356,35 +350,43 @@ export default function AgentPage() {
                     </div>
                   </form>
                 </div>
-              </TabsContent>
-
-              <TabsContent value="task">
-                <div className="flex flex-col gap-3">
-                  <p className="demo-muted m-0 text-sm">
-                    Агент ведёт состояние задачи как конечный автомат: этап,
-                    текущий шаг и ожидаемое действие. Задача фиксируется за
-                    сессией — пауза и продолжение сохраняются.
-                  </p>
-                  <TaskStatePanel
-                    state={taskState}
-                    enabled={active.taskStateEnabled}
-                    hasSession={sessionLocked}
-                    busy={busy}
-                    onPause={actions.pauseTask}
-                    onResume={actions.resumeTask}
-                    onCancel={actions.cancelTask}
-                  />
-                  {taskError && <Alert variant="destructive">{taskError}</Alert>}
-                </div>
+                )}
               </TabsContent>
 
               <TabsContent value="settings">
                 <div className="flex flex-col gap-4">
+                  {sessionLocked && (
+                    <SessionConfig
+                      locked
+                      strategy={activeStrategy}
+                      windowSize={activeWindowSize}
+                      memory={activeMemory}
+                      taskState={config.taskStateEnabled}
+                      activeTaskState={active.taskStateEnabled}
+                      profileName={activeProfileName}
+                      profiles={profiles}
+                      selectedProfileId={config.profileId}
+                      busy={busy}
+                      onStrategy={(id) =>
+                        actions.patchConfig({ strategy: id })
+                      }
+                      onWindowSize={(size) =>
+                        actions.patchConfig({ windowSize: size })
+                      }
+                      onMemory={(value) =>
+                        actions.patchConfig({ memoryEnabled: value })
+                      }
+                      onTaskState={(value) =>
+                        actions.patchConfig({ taskStateEnabled: value })
+                      }
+                      onProfile={(id) => actions.patchConfig({ profileId: id })}
+                    />
+                  )}
                   <SessionConfig
-                    locked={sessionLocked}
-                    strategy={activeStrategy}
-                    windowSize={activeWindowSize}
-                    memory={activeMemory}
+                    locked={false}
+                    strategy={config.strategy}
+                    windowSize={config.windowSize}
+                    memory={config.memoryEnabled}
                     taskState={config.taskStateEnabled}
                     activeTaskState={active.taskStateEnabled}
                     profileName={activeProfileName}
@@ -450,7 +452,11 @@ export default function AgentPage() {
                           <MemoryInspector
                             working={memoryView.working}
                             longTerm={memoryView.longTerm}
-                            shortTermCount={messagesData.length}
+                            shortTermCount={
+                              messages.filter(
+                                (message) => message.role !== 'task',
+                              ).length
+                            }
                             disabled={busy}
                             onForget={actions.forgetMemory}
                           />
@@ -538,7 +544,8 @@ function SessionConfig({
     <section className="rounded-xl border border-[color-mix(in_oklab,var(--accent)_35%,var(--line))] bg-[var(--surface)] p-4">
       <p className="island-kicker m-0 text-[10px]">Конфиг новой сессии</p>
       <p className="demo-muted m-0 mt-1 text-xs">
-        Выбери настройки — они зафиксируются при первом сообщении.
+        Выбери настройки для следующей сессии — они зафиксируются при её
+        создании.
       </p>
 
       <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">

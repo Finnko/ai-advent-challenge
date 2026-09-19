@@ -4,7 +4,12 @@ import {
   estimateMessagesTokens,
   estimateTokens,
 } from './tokens'
-import { ROOMS, normalizeName, pickString } from './agent-tools'
+import {
+  ROOMS,
+  isMutatingTool,
+  normalizeName,
+  pickString,
+} from './agent-tools'
 import { buildTaskStateLine } from './task/read'
 import type { TaskState } from './task/types'
 
@@ -191,11 +196,15 @@ export type JudgeVerdict = {
   message: string
 }
 
+export type AgentAction = {
+  tool: string
+  args: ToolArgs
+  outcome: ToolOutcome
+}
+
 export type JudgeContext = {
   request: string
-  toolRequested: string | null
-  args: ToolArgs
-  outcome: ToolOutcome | null
+  actions: AgentAction[]
   answer: string
   identity: AgentIdentity
   allowedTools: string[]
@@ -251,6 +260,8 @@ export type AgentConfig = {
   context?: string
   taskState?: TaskState | null
   contextBudgetTokens?: number
+  maxActionsPerTurn?: number
+  isPaused?: () => boolean | Promise<boolean>
 }
 
 const DECIDE_TEMPERATURE = 0.2
@@ -258,6 +269,7 @@ const FINALIZE_TEMPERATURE = 0.7
 const MAX_INPUT_CHARS = 30_000
 const DECIDE_MAX_TOKENS = 300
 const FINALIZE_MAX_TOKENS = 700
+const DEFAULT_MAX_ACTIONS_PER_TURN = 5
 
 const ACTION_HINTS = [
   'забронир',
@@ -288,7 +300,7 @@ function looksLikeAction(text: string): boolean {
 
 const OUTPUT_POLICY_JUDGE: AgentJudge = {
   name: 'output-policy',
-  evaluate: ({ answer, outcome }) => {
+  evaluate: ({ answer, actions }) => {
     if (answer.trim().length === 0) {
       return {
         judge: 'output-policy',
@@ -296,68 +308,123 @@ const OUTPUT_POLICY_JUDGE: AgentJudge = {
         message: 'Ответ модели пуст.',
       }
     }
-    if (
-      outcome?.ok &&
-      outcome.reference &&
-      !answer.includes(outcome.reference)
-    ) {
+    const missing = actions
+      .filter(
+        (action) =>
+          action.outcome.ok &&
+          action.outcome.reference &&
+          !answer.includes(action.outcome.reference),
+      )
+      .map((action) => action.outcome.reference)
+    if (missing.length > 0) {
       return {
         judge: 'output-policy',
         status: 'fail',
-        message: `Ответ не содержит код подтверждения ${outcome.reference} — риск галлюцинации.`,
+        message: `Ответ не содержит код подтверждения ${missing.join(', ')} — риск галлюцинации.`,
       }
     }
     return {
       judge: 'output-policy',
       status: 'pass',
-      message: outcome?.ok
-        ? 'Ответ непустой и подтверждает результат инструмента кодом.'
-        : 'Ответ непустой.',
+      message:
+        actions.length > 0
+          ? 'Ответ непустой и подтверждает результат инструментов кодами.'
+          : 'Ответ непустой.',
     }
   },
 }
 
 const BUSINESS_RULES_JUDGE: AgentJudge = {
   name: 'business-rules',
-  evaluate: ({ toolRequested, args, identity, allowedTools }) => {
-    if (toolRequested === 'approveVacation') {
-      const employeeName = pickString(args, 'employeeName')
-      if (
-        employeeName &&
-        normalizeName(employeeName) === normalizeName(identity.name)
-      ) {
+  evaluate: ({ actions, identity, allowedTools }) => {
+    for (const action of actions) {
+      if (action.tool === 'approveVacation') {
+        const employeeName = pickString(action.args, 'employeeName')
+        if (
+          employeeName &&
+          normalizeName(employeeName) === normalizeName(identity.name)
+        ) {
+          return {
+            judge: 'business-rules',
+            status: 'fail',
+            message: `Руководитель ${identity.name} не может согласовать отпуск самому себе.`,
+          }
+        }
+        if (
+          employeeName &&
+          !identity.subordinates.some(
+            (name) => normalizeName(name) === normalizeName(employeeName),
+          )
+        ) {
+          return {
+            judge: 'business-rules',
+            status: 'fail',
+            message: `Инструмент approveVacation доступен только для подчинённых руководителя ${identity.name}.`,
+          }
+        }
+      }
+      if (!allowedTools.includes(action.tool)) {
         return {
           judge: 'business-rules',
           status: 'fail',
-          message: `Руководитель ${identity.name} не может согласовать отпуск самому себе.`,
+          message: `Инструмент ${action.tool} недоступен для роли ${identity.role}.`,
         }
-      }
-      if (
-        employeeName &&
-        !identity.subordinates.some(
-          (name) => normalizeName(name) === normalizeName(employeeName),
-        )
-      ) {
-        return {
-          judge: 'business-rules',
-          status: 'fail',
-          message: `Инструмент approveVacation доступен только для подчинённых руководителя ${identity.name}.`,
-        }
-      }
-    }
-    if (toolRequested && !allowedTools.includes(toolRequested)) {
-      return {
-        judge: 'business-rules',
-        status: 'fail',
-        message: `Инструмент ${toolRequested} недоступен для роли ${identity.role}.`,
       }
     }
     return {
       judge: 'business-rules',
       status: 'pass',
-      message: toolRequested
-        ? 'Выбранное действие в рамках прав роли.'
-        : 'Действие не требуется — обычный вопрос.',
+      message:
+        actions.length > 0
+          ? 'Выбранные действия в рамках прав роли.'
+          : 'Действие не требуется — обычный вопрос.',
+    }
+  },
+}
+
+const FABRICATION_JUDGE: AgentJudge = {
+  name: 'no-fabricated-actions',
+  evaluate: ({ answer, actions }) => {
+    const lower = answer.toLowerCase()
+    const done = (tool: string) =>
+      actions.some((action) => action.tool === tool && action.outcome.ok)
+    const claims: Array<{ tool: string; test: RegExp; label: string }> = [
+      {
+        tool: 'inviteToMeeting',
+        test:
+          /приглашения\s+(?:отправлен|разослан)|отправил[аи]?\s+приглашени|пригласил[аи]?\s+(?:всех|всю команду|сотрудник)/,
+        label: 'приглашения',
+      },
+      {
+        tool: 'bookMeetingRoom',
+        test:
+          /забронировал[аи]?\s+(?:переговорк|комнат)|бронь\s+(?:создан|оформлен)|оформил[аи]?\s+бронь/,
+        label: 'бронь',
+      },
+      {
+        tool: 'cancelBooking',
+        test: /отменил[аи]?\s+встреч|бронь\s+отменена/,
+        label: 'отмену встречи',
+      },
+      {
+        tool: 'requestVacation',
+        test: /заявк[ау]\s+на\s+отпуск\s+(?:создан|подал)|подал[аи]?\s+заявк/,
+        label: 'заявку на отпуск',
+      },
+    ]
+    for (const claim of claims) {
+      if (claim.test.test(lower) && !done(claim.tool)) {
+        return {
+          judge: 'no-fabricated-actions',
+          status: 'fail',
+          message: `Ответ сообщает про ${claim.label}, которой не было в отчёте инструмента.`,
+        }
+      }
+    }
+    return {
+      judge: 'no-fabricated-actions',
+      status: 'pass',
+      message: 'Ответ не приписывает агенту невыполненных действий.',
     }
   },
 }
@@ -365,6 +432,7 @@ const BUSINESS_RULES_JUDGE: AgentJudge = {
 export const AGENT_JUDGES: AgentJudge[] = [
   OUTPUT_POLICY_JUDGE,
   BUSINESS_RULES_JUDGE,
+  FABRICATION_JUDGE,
 ]
 
 const HARDENING_LINE =
@@ -405,19 +473,19 @@ function buildBaseSystem(caps: AgentCapabilities, today: string): string {
 
 function buildDecideUser(
   request: string,
-  caps: AgentCapabilities,
   tools: AgentTool[],
+  allowedToolNames: string[],
   context: string | undefined,
   precedenceLine: string | null,
   taskLine: string | null,
 ): string {
-  const available = caps.allowedTools
+  const available = allowedToolNames
     .map((name) => tools.find((t) => t.name === name))
     .filter((t): t is AgentTool => Boolean(t))
   const lines = [
     `Запрос пользователя:\n${request}`,
     '',
-    'Если запрос требует действия из списка доступных инструментов — выбери ровно один. Если инструмент не нужен или нужного нет в списке — верни tool: null.',
+    'Если запрос требует действия из списка доступных инструментов — выбери ровно один. Выполняй только то, что нужно для запроса. Если следующий шаг выполнять не требуется — верни tool: null.',
     'Если пользователь ссылается на «эту встречу», «эту заявку», «её/его» или «последнюю», подставь данные из контекста и вызови соответствующий инструмент — не переспрашивай.',
     'Доступные инструменты:',
     ...available.map(
@@ -671,11 +739,26 @@ export class Agent {
 
     const historyTokensSent = historyTokens
 
-    const runDecide = async (nudge?: string) => {
+    const stageMutatingBlocked = taskState !== null && taskState.stage !== 'execution'
+    const allowedToolNames = taskPaused
+      ? []
+      : capabilities.allowedTools.filter(
+          (name) => !(stageMutatingBlocked && isMutatingTool(name)),
+        )
+    const maxActions = Math.max(
+      1,
+      this.config.maxActionsPerTurn ?? DEFAULT_MAX_ACTIONS_PER_TURN,
+    )
+
+    const runDecide = async (
+      allowed: string[],
+      extra: LlmMessage[],
+      nudge?: string,
+    ) => {
       const decideUser = buildDecideUser(
         request,
-        capabilities,
         tools,
+        allowed,
         this.config.context,
         precedenceLine,
         taskLine,
@@ -689,6 +772,7 @@ export class Agent {
           ...memoryBlocks.map(asSystemMessage),
           ...taskStateBlocks.map(asSystemMessage),
           { role: 'user', content: decideUser },
+          ...extra,
           ...(nudge ? [{ role: 'user' as const, content: nudge }] : []),
         ],
         temperature: DECIDE_TEMPERATURE,
@@ -707,52 +791,132 @@ export class Agent {
       return parsed
     }
 
-    let decided = await runDecide()
-    if (!taskPaused && !decided.tool && looksLikeAction(request)) {
-      decided = await runDecide(DECIDE_NUDGE)
+    const actions: AgentAction[] = []
+    const loopMessages: LlmMessage[] = []
+    let actRefusal: string | undefined
+    let nudgeUsed = false
+    let stoppedByPause = false
+
+    const denialText = (tool: string): string => {
+      if (taskPaused) {
+        return 'Задача на паузе: инструменты не вызываются. Коротко подтверди паузу и жди пользователя.'
+      }
+      if (stageMutatingBlocked && isMutatingTool(tool)) {
+        return `Этап ${taskState?.stage ?? 'текущий'}: изменяющие действия недоступны — предложи план или выполни проверку справочными инструментами.`
+      }
+      return `Инструмент ${tool} недоступен для роли ${capabilities.identity.role}.`
     }
 
-    const requestedToolName = taskPaused ? null : decided.tool
-    let outcome: ToolOutcome | null = null
-    let requestedTool: AgentTool | null = null
-    let actRefusal: string | undefined
-
-    if (requestedToolName) {
-      requestedTool = tools.find((t) => t.name === requestedToolName) ?? null
-      const denied: ToolOutcome = {
-        ok: false,
-        text: `Инструмент ${requestedToolName} недоступен для роли ${capabilities.identity.role}.`,
-        reference: null,
-      }
-      if (!requestedTool || !isPermitted(capabilities, requestedTool)) {
-        outcome = denied
-        actRefusal = outcome.text
-      } else {
-        outcome = await requestedTool.run(decided.args, capabilities.identity)
-        if (!outcome.ok) {
-          actRefusal = outcome.text
+    const runAction = async (tool: string, args: ToolArgs): Promise<ToolOutcome> => {
+      const requestedTool = tools.find((t) => t.name === tool) ?? null
+      const blockedByStage =
+        taskPaused || (stageMutatingBlocked && isMutatingTool(tool))
+      if (
+        !requestedTool ||
+        !isPermitted(capabilities, requestedTool) ||
+        blockedByStage
+      ) {
+        const denied: ToolOutcome = {
+          ok: false,
+          text: denialText(tool),
+          reference: null,
         }
+        actions.push({ tool, args, outcome: denied })
+        actRefusal = denied.text
+        trace.push({ stage: 'act', tool, args, outcome: denied })
+        return denied
       }
-      trace.push({
-        stage: 'act',
-        tool: requestedToolName,
-        args: decided.args,
-        outcome,
+      const outcome = await requestedTool.run(args, capabilities.identity)
+      actions.push({ tool, args, outcome })
+      trace.push({ stage: 'act', tool, args, outcome })
+      if (!outcome.ok) {
+        actRefusal = outcome.text
+      }
+      return outcome
+    }
+
+    for (let step = 0; step < maxActions; step += 1) {
+      if (this.config.isPaused && (await this.config.isPaused())) {
+        stoppedByPause = true
+        break
+      }
+      let decided = await runDecide(allowedToolNames, loopMessages)
+      if (
+        !decided.tool &&
+        !nudgeUsed &&
+        !taskPaused &&
+        !stageMutatingBlocked &&
+        actions.length === 0 &&
+        looksLikeAction(request)
+      ) {
+        nudgeUsed = true
+        decided = await runDecide(allowedToolNames, loopMessages, DECIDE_NUDGE)
+      }
+      if (!decided.tool) {
+        break
+      }
+      const repeated = actions.some(
+        (action) =>
+          action.tool === decided.tool &&
+          JSON.stringify(action.args) === JSON.stringify(decided.args),
+      )
+      if (repeated) {
+        break
+      }
+      if (this.config.isPaused && (await this.config.isPaused())) {
+        stoppedByPause = true
+        break
+      }
+      const outcome = await runAction(decided.tool, decided.args)
+      if (!outcome.ok) {
+        break
+      }
+      loopMessages.push({
+        role: 'assistant',
+        content: JSON.stringify({ tool: decided.tool, args: decided.args }),
+      })
+      loopMessages.push({
+        role: 'user',
+        content: [
+          `ОТЧЁТ ИНСТРУМЕНТА (${decided.tool}):`,
+          outcome.text,
+          ...(outcome.reference
+            ? [`Код подтверждения: ${outcome.reference}`]
+            : []),
+          '',
+          'Если текущий шаг ещё не завершён — верни следующий инструмент в его рамках. Если шаг выполнен — верни {"tool": null, "args": {}}.',
+        ].join('\n'),
       })
     }
 
+    const pauseProbe = this.config.isPaused
+    const pausedNow = pauseProbe ? await pauseProbe() : false
+    const silentPause = pausedNow && actions.length === 0
+
+    const failed = actions.find((action) => !action.outcome.ok)
     let answer = ''
-    if (outcome && !outcome.ok) {
-      answer = outcome.text
-    } else {
-      const report = outcome
-        ? `ОТЧЁТ ИНСТРУМЕНТА (${requestedToolName ?? ''}):\n${outcome.text}${
-            outcome.reference ? `\nКод подтверждения: ${outcome.reference}` : ''
-          }`
-        : '(инструменты не вызывались)'
+    if (failed) {
+      answer = actions.map((action) => action.outcome.text).join('\n\n')
+    } else if (!silentPause) {
+      const report =
+        actions.length > 0
+          ? actions
+              .map(
+                (action) =>
+                  `ОТЧЁТ ИНСТРУМЕНТА (${action.tool}):\n${action.outcome.text}${
+                    action.outcome.reference
+                      ? `\nКод подтверждения: ${action.outcome.reference}`
+                      : ''
+                  }`,
+              )
+              .join('\n\n')
+          : '(инструменты не вызывались)'
+      const pauseNote = stoppedByPause
+        ? '\n\nПользователь поставил задачу на паузу — не выполняй дальнейшие действия, коротко сообщи, что выполнение приостановлено.'
+        : ''
       const finalizeUser = buildFinalizeUser(
         request,
-        report,
+        report + pauseNote,
         precedenceLine,
         this.config.responseLanguage ?? null,
         hasProfileBlocks,
@@ -762,7 +926,7 @@ export class Agent {
         messages: [
           { role: 'system', content: baseSystem },
           ...contextBlocks.map(asSystemMessage),
-          ...(outcome ? [] : history),
+          ...(actions.length > 0 ? [] : history),
           ...profileBlocks.map(asSystemMessage),
           ...memoryBlocks.map(asSystemMessage),
           ...taskStateBlocks.map(asSystemMessage),
@@ -780,18 +944,20 @@ export class Agent {
       })
     }
 
-    const verdicts = judges.map((j) =>
-      j.evaluate({
-        request,
-        toolRequested: requestedToolName,
-        args: decided.args,
-        outcome,
-        answer,
-        identity: capabilities.identity,
-        allowedTools: capabilities.allowedTools,
-      }),
-    )
-    trace.push({ stage: 'verdicts', verdicts })
+    const verdicts = silentPause
+      ? []
+      : judges.map((j) =>
+          j.evaluate({
+            request,
+            actions,
+            answer,
+            identity: capabilities.identity,
+            allowedTools: capabilities.allowedTools,
+          }),
+        )
+    if (!silentPause) {
+      trace.push({ stage: 'verdicts', verdicts })
+    }
 
     const failing = verdicts.filter((v) => v.status === 'fail')
     const blocked = failing.length > 0

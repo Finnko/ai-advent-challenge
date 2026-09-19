@@ -1,4 +1,4 @@
-import type { AgentCapabilities } from '../domain/agent'
+import type { AgentCapabilities, AgentRunResult } from '../domain/agent'
 import type { CompressionMessage, SummaryUsage } from '../domain/compression'
 import { resolveStrategy } from '../domain/context/registry'
 import type { ContextStrategyId } from '../domain/context/types'
@@ -8,9 +8,24 @@ import type { ProfileRecord } from '../domain/profile/types'
 import {
   resolveSessionConfig,
 } from '../domain/session/config'
-import { applyAnalysis, createTaskState } from '../domain/task/state'
+import {
+  advanceAfterRun,
+  advanceToExecution,
+  looksLikeCancel,
+  looksLikeCorrection,
+  looksLikeResume,
+} from '../domain/task/advance'
+import {
+  applyAnalysis,
+  cancelTask,
+  createTaskState,
+  resumeTask,
+  transitionEvent,
+} from '../domain/task/state'
 import type { AnalyzeTaskState } from '../domain/task/analyze'
-import type { TaskState } from '../domain/task/types'
+import type { TaskAnalysis } from '../domain/task/state'
+import type { TaskEvent, TaskState } from '../domain/task/types'
+import { TIER_ENDPOINTS } from '@lib/llm'
 import type { AgentExecution, AgentRuntime } from './agent-service.server'
 import {
   defaultAgentRuntime,
@@ -32,6 +47,7 @@ import {
   saveSessionFacts,
   saveTaskState,
   saveWorkingMemory,
+  updateSessionTitleIfDefault,
   upsertSessionSummary,
 } from './store.server'
 
@@ -51,7 +67,14 @@ export type TurnStore = {
   getActiveBranchTitle(sessionId: number): Promise<string | undefined>
   loadMessages(
     sessionId: number,
-  ): Promise<Array<{ id: number; role: 'user' | 'assistant'; content: string }>>
+  ): Promise<
+    Array<{
+      id: number
+      role: 'user' | 'assistant' | 'task'
+      content: string
+      taskEvent?: TaskEvent | null
+    }>
+  >
   getSummary(
     sessionId: number,
   ): Promise<{ summary: string; throughMessageId: number } | null>
@@ -69,9 +92,10 @@ export type TurnStore = {
   getProfile(profileId: number): Promise<ProfileRecord | null>
   getTaskState(sessionId: number): Promise<TaskState | null>
   saveTaskState(sessionId: number, state: TaskState): Promise<void>
+  updateSessionTitleIfDefault(sessionId: number, title: string): Promise<void>
   appendMessage(
     sessionId: number,
-    role: 'user' | 'assistant',
+    role: 'user' | 'assistant' | 'task',
     content: string,
     run?: unknown,
   ): Promise<void>
@@ -106,6 +130,7 @@ const defaultTurnStore: TurnStore = {
   getProfile,
   getTaskState,
   saveTaskState,
+  updateSessionTitleIfDefault,
   appendMessage: appendMessageToStore,
 }
 
@@ -140,6 +165,54 @@ function mergeUsage(
   }
 }
 
+type TaskOutcome = {
+  taskState: TaskState | null
+  taskEvent: TaskEvent | null
+  changed: boolean
+  usage: SummaryUsage | null
+}
+
+const ZERO_TOKENS: AgentRunResult['tokens'] = {
+  requestTokens: 0,
+  historyTokens: 0,
+  historyTokensSent: 0,
+  contextTokens: 0,
+  contextMessages: 0,
+  responseTokens: 0,
+  promptTokensActual: 0,
+  cacheHitTokens: 0,
+  cacheMissTokens: 0,
+  costUsd: 0,
+}
+
+function silentRun(taskState: TaskState | null): AgentRunResult {
+  return {
+    ok: true,
+    blocked: false,
+    reason: null,
+    answer: '',
+    trace: [],
+    verdicts: [],
+    usage: null,
+    latencyMs: 0,
+    model: TIER_ENDPOINTS.medium.model,
+    tokens: { ...ZERO_TOKENS },
+    contextNote: null,
+    taskState,
+  }
+}
+
+function eventFromHistory(
+  next: TaskState,
+  prev: TaskState,
+): TaskEvent | null {
+  const transition =
+    next.history.length > prev.history.length
+      ? next.history.at(-1)
+      : undefined
+  return transition ? transitionEvent(transition) : null
+}
+
 async function resolveTaskState(
   input: {
     enabled: boolean
@@ -150,12 +223,17 @@ async function resolveTaskState(
   },
   store: TurnStore,
   analyze: AnalyzeTaskState,
-): Promise<{ taskState: TaskState | null; usage: SummaryUsage | null }> {
+): Promise<TaskOutcome> {
   if (!input.enabled) {
-    return { taskState: null, usage: null }
+    return {
+      taskState: null,
+      taskEvent: null,
+      changed: false,
+      usage: null,
+    }
   }
   const current = await store.getTaskState(input.sessionId)
-  let analysis = null
+  let analysis: TaskAnalysis | null = null
   let usage: SummaryUsage | null = null
   try {
     const result = await analyze({
@@ -166,16 +244,38 @@ async function resolveTaskState(
     analysis = result.analysis
     usage = result.usage
   } catch {
-    return { taskState: current, usage: null }
+    usage = null
   }
+
+  if (analysis?.stage === 'cancelled') {
+    analysis = { ...analysis, stage: current?.stage ?? 'planning' }
+  }
+
   if (!analysis) {
-    return { taskState: current, usage }
+    return { taskState: current, taskEvent: null, changed: false, usage }
   }
-  const next = current
-    ? applyAnalysis(current, analysis, input.at)
-    : createTaskState(analysis, input.at)
-  await store.saveTaskState(input.sessionId, next)
-  return { taskState: next, usage }
+
+  if (!current) {
+    const created = createTaskState(analysis, input.at)
+    return {
+      taskState: created,
+      taskEvent: {
+        kind: 'created',
+        title: created.title,
+        stage: created.stage,
+        at: input.at,
+      },
+      changed: true,
+      usage,
+    }
+  }
+  const next = applyAnalysis(current, analysis, input.at)
+  return {
+    taskState: next,
+    taskEvent: next === current ? null : eventFromHistory(next, current),
+    changed: next !== current,
+    usage,
+  }
 }
 
 export async function runAgentTurn(
@@ -193,6 +293,10 @@ export async function runAgentTurn(
 
   const branchTitle = await deps.store.getActiveBranchTitle(sessionId)
   const rows = await deps.store.loadMessages(sessionId)
+  const history = rows.filter(
+    (row): row is typeof row & { role: 'user' | 'assistant' } =>
+      row.role !== 'task',
+  )
   const stored = await deps.store.getSummary(sessionId)
   const facts = await deps.store.getFacts(sessionId)
 
@@ -224,28 +328,94 @@ export async function runAgentTurn(
   })
 
   const now = deps.now()
+  const at = now.toISOString()
+  const started = config.taskStateEnabled
+    ? await deps.store.getTaskState(sessionId)
+    : null
+  const preEvents: TaskEvent[] = []
+
+  if (config.taskStateEnabled && looksLikeCancel(input.user)) {
+    if (started && started.stage !== 'cancelled') {
+      const cancelled = cancelTask(started, at)
+      if (cancelled !== started) {
+        await deps.store.saveTaskState(sessionId, cancelled)
+        await deps.store.appendMessage(sessionId, 'user', input.user)
+        const event = eventFromHistory(cancelled, started)
+        if (event) {
+          await deps.store.appendMessage(sessionId, 'task', '', event)
+        }
+        return {
+          run: silentRun(cancelled),
+          auxUsage: null,
+          taskState: cancelled,
+        }
+      }
+    }
+  }
+
+  if (started?.stage === 'paused') {
+    if (looksLikeResume(input.user)) {
+      const resumed = resumeTask(started, at)
+      if (resumed !== started) {
+        await deps.store.saveTaskState(sessionId, resumed)
+        const event = eventFromHistory(resumed, started)
+        if (event) {
+          preEvents.push(event)
+        }
+      }
+    } else {
+      await deps.store.appendMessage(sessionId, 'user', input.user)
+      return {
+        run: silentRun(started),
+        auxUsage: null,
+        taskState: started,
+      }
+    }
+  }
+
   const taskOutcome = await resolveTaskState(
     {
       enabled: config.taskStateEnabled,
       sessionId,
-      rows: rows.map((row) => ({ role: row.role, content: row.content })),
+      rows: history.map((row) => ({ role: row.role, content: row.content })),
       user: input.user,
-      at: now.toISOString(),
+      at,
     },
     deps.store,
     deps.runtime.analyzeTaskState,
   )
+
+  let activeTaskState = taskOutcome.taskState
+  let changed = taskOutcome.changed
+  let correctionEvent: TaskEvent | null = null
+  if (
+    activeTaskState &&
+    activeTaskState.stage === 'validation' &&
+    looksLikeCorrection(input.user)
+  ) {
+    const correction = advanceToExecution(activeTaskState, now.toISOString())
+    if (correction) {
+      activeTaskState = correction.state
+      changed = true
+      correctionEvent = correction.event
+    }
+  }
+
+  const sessionTitle = (taskOutcome.taskState?.title ?? input.user).trim()
+  await deps.store.updateSessionTitleIfDefault(sessionId, sessionTitle)
 
   const execution = await executeAgent(
     {
       capabilities,
       user: input.user,
       strategy,
-      rows: rows.map(toCompressionMessage),
+      rows: history.map(toCompressionMessage),
       branchLabel: branchTitle,
       windowSize: config.windowSize,
       profile,
-      taskState: taskOutcome.taskState,
+      taskState: activeTaskState,
+      isPaused: async () =>
+        (await deps.store.getTaskState(sessionId))?.stage === 'paused',
       memory: {
         enabled: config.memoryEnabled,
         token,
@@ -263,9 +433,51 @@ export async function runAgentTurn(
     deps.runtime,
   )
 
-  const run = { ...execution.run, taskState: taskOutcome.taskState }
+  const persisted = await deps.store.getTaskState(sessionId)
+  const concurrentPause =
+    persisted?.stage === 'paused' && activeTaskState?.stage !== 'paused'
+  const events: TaskEvent[] = [...preEvents]
+  let finalTaskState: TaskState | null = activeTaskState
+  if (concurrentPause) {
+    finalTaskState = persisted
+  } else {
+    const advance = advanceAfterRun(
+      activeTaskState,
+      execution.run,
+      now.toISOString(),
+      input.user,
+    )
+    if (advance) {
+      finalTaskState = advance.state
+      changed = true
+    }
+    if (taskOutcome.taskEvent) {
+      events.push(taskOutcome.taskEvent)
+    }
+    if (correctionEvent) {
+      events.push(correctionEvent)
+    }
+    if (advance) {
+      events.push(advance.event)
+    }
+    if (changed && finalTaskState) {
+      await deps.store.saveTaskState(sessionId, finalTaskState)
+    }
+  }
+
+  const run = { ...execution.run, taskState: finalTaskState }
 
   await deps.store.appendMessage(sessionId, 'user', input.user)
+  for (const event of events) {
+    await deps.store.appendMessage(sessionId, 'task', '', event)
+  }
+  if (concurrentPause) {
+    return {
+      run: silentRun(finalTaskState),
+      auxUsage: mergeUsage(execution.auxUsage, taskOutcome.usage),
+      taskState: finalTaskState,
+    }
+  }
   await deps.store.appendMessage(
     sessionId,
     'assistant',
@@ -276,6 +488,6 @@ export async function runAgentTurn(
   return {
     run,
     auxUsage: mergeUsage(execution.auxUsage, taskOutcome.usage),
-    taskState: taskOutcome.taskState,
+    taskState: finalTaskState,
   }
 }

@@ -1,5 +1,6 @@
 import type {
   TaskActor,
+  TaskEvent,
   TaskExpectedAction,
   TaskStage,
   TaskState,
@@ -9,6 +10,7 @@ import {
   TASK_EXPECTED_MAX,
   TASK_HISTORY_LIMIT,
   TASK_STEP_MAX,
+  TASK_STEPS_MAX,
   TASK_TITLE_MAX,
   isTaskActor,
   isTerminalTaskStage,
@@ -18,6 +20,7 @@ export type TaskAnalysis = {
   title?: string | null
   stage: TaskStage
   step: string
+  steps?: string[]
   expectedAction: { actor: TaskActor; description: string }
   reason?: string | null
 }
@@ -37,6 +40,23 @@ export function canTransition(from: TaskStage, to: TaskStage): boolean {
 
 function clampText(value: string, max: number): string {
   return value.trim().slice(0, max)
+}
+
+function normalizeSteps(steps: unknown, fallback: string): string[] {
+  const list = Array.isArray(steps)
+    ? steps
+        .filter(
+          (entry): entry is string =>
+            typeof entry === 'string' && entry.trim().length > 0,
+        )
+        .map((entry) => clampText(entry, TASK_STEP_MAX))
+        .slice(0, TASK_STEPS_MAX)
+    : []
+  if (list.length > 0) {
+    return list
+  }
+  const single = clampText(fallback, TASK_STEP_MAX)
+  return single.length > 0 ? [single] : []
 }
 
 function normalizeExpected(action: {
@@ -68,13 +88,26 @@ function nextPreviousStage(state: TaskState, to: TaskStage): TaskStage | null {
   return state.previousStage
 }
 
+export function transitionEvent(transition: TaskTransition): TaskEvent {
+  return {
+    kind: 'transition',
+    from: transition.from,
+    to: transition.to,
+    reason: transition.reason,
+    at: transition.at,
+  }
+}
+
 export function createTaskState(analysis: TaskAnalysis, at: string): TaskState {
   const title = clampText(analysis.title ?? '', TASK_TITLE_MAX) || 'Задача'
+  const steps = normalizeSteps(analysis.steps, analysis.step)
   return {
     title,
     stage: 'planning',
     previousStage: null,
-    step: clampText(analysis.step, TASK_STEP_MAX),
+    step: steps[0] ?? clampText(analysis.step, TASK_STEP_MAX),
+    steps,
+    stepIndex: 0,
     expectedAction: normalizeExpected(analysis.expectedAction),
     updatedAt: at,
     history: [],
@@ -88,10 +121,22 @@ export function applyAnalysis(
 ): TaskState {
   const title =
     clampText(analysis.title ?? '', TASK_TITLE_MAX) || state.title
+  const stageChanged = analysis.stage !== state.stage
+  let steps = state.steps
+  let stepIndex = state.stepIndex
+  if (stageChanged) {
+    steps = normalizeSteps(analysis.steps, analysis.step)
+    stepIndex = 0
+  } else if (Array.isArray(analysis.steps) && analysis.steps.length > 0) {
+    steps = normalizeSteps(analysis.steps, analysis.step)
+    stepIndex = Math.min(stepIndex, Math.max(steps.length - 1, 0))
+  }
   const described: TaskState = {
     ...state,
     title,
-    step: clampText(analysis.step, TASK_STEP_MAX),
+    step: steps[stepIndex] ?? clampText(analysis.step, TASK_STEP_MAX),
+    steps,
+    stepIndex,
     expectedAction: normalizeExpected(analysis.expectedAction),
     updatedAt: at,
   }

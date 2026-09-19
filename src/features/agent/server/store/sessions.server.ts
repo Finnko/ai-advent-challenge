@@ -2,6 +2,7 @@ import type { AgentRunResult } from '../../domain/agent'
 import type { ContextStrategyId } from '../../domain/context/types'
 import type { Fact } from '../../domain/facts'
 import type { MemoryEntry, MemoryLayer } from '../../domain/memory/types'
+import type { TaskEvent } from '../../domain/task/types'
 import {
   resolveSessionConfig,
   sessionConfigInput,
@@ -46,7 +47,7 @@ export type BranchRow = {
 export type MessageRow = {
   id: number
   session_id: number
-  role: 'user' | 'assistant'
+  role: 'user' | 'assistant' | 'task'
   content: string
   run_json: string | null
   created_at: string
@@ -70,9 +71,10 @@ export type SessionListItem = {
 
 export type StoredMessage = {
   id: number
-  role: 'user' | 'assistant'
+  role: 'user' | 'assistant' | 'task'
   content: string
   run: AgentRunResult | null
+  taskEvent?: TaskEvent | null
 }
 
 export type SessionSummaryRow = {
@@ -158,6 +160,20 @@ export async function createSession(
     sessionId,
   )
   return sessionId
+}
+
+export async function updateSessionTitleIfDefault(
+  sessionId: number,
+  title: string,
+): Promise<void> {
+  const trimmed = title.trim()
+  if (trimmed.length === 0) {
+    return
+  }
+  const db = await getDb()
+  db.prepare(
+    "UPDATE sessions SET title = ? WHERE id = ? AND (title = '' OR title = 'Новая сессия')",
+  ).run(trimmed.slice(0, 80), sessionId)
 }
 
 export async function getSession(sessionId: number): Promise<SessionRow | null> {
@@ -380,8 +396,8 @@ export async function listSessions(token: string): Promise<SessionListItem[]> {
         s.task_state_enabled AS task_state_enabled,
         s.invariant_set_id AS invariant_set_id,
         s.created_at AS created_at,
-        (SELECT m.content FROM messages m WHERE m.session_id = s.id AND m.branch_id = s.active_branch_id ORDER BY m.id DESC LIMIT 1) AS last_message,
-        (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id AND m.branch_id = s.active_branch_id) AS message_count
+        (SELECT m.content FROM messages m WHERE m.session_id = s.id AND m.branch_id = s.active_branch_id AND m.role != 'task' ORDER BY m.id DESC LIMIT 1) AS last_message,
+        (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id AND m.branch_id = s.active_branch_id AND m.role != 'task') AS message_count
       FROM sessions s
       LEFT JOIN profiles p ON p.id = s.profile_id
       WHERE s.token = ?
@@ -444,12 +460,28 @@ export async function loadMessages(
     content: string
     run_json: string | null
   }>
-  return rows.map((row) => ({
-    id: Number(row.id),
-    role: row.role === 'assistant' ? 'assistant' : 'user',
-    content: row.content,
-    run: row.run_json ? (safeParse(row.run_json) as AgentRunResult) : null,
-  }))
+  return rows.map((row): StoredMessage => {
+    const id = Number(row.id)
+    if (row.role === 'task') {
+      return {
+        id,
+        role: 'task',
+        content: '',
+        run: null,
+        taskEvent: row.run_json
+          ? (safeParse(row.run_json) as TaskEvent)
+          : null,
+      }
+    }
+    const role = row.role === 'assistant' ? 'assistant' : 'user'
+    return {
+      id,
+      role,
+      content: row.content,
+      run: row.run_json ? (safeParse(row.run_json) as AgentRunResult) : null,
+      taskEvent: null,
+    }
+  })
 }
 
 export async function getSessionSummary(
@@ -489,7 +521,7 @@ export async function upsertSessionSummary(
 
 export async function appendMessage(
   sessionId: number,
-  role: 'user' | 'assistant',
+  role: 'user' | 'assistant' | 'task',
   content: string,
   runJson?: unknown,
 ): Promise<void> {
