@@ -1,8 +1,24 @@
 import {
   prepareHistoryWithSummary,
   summarySystemContent,
+  type PreparedHistory,
 } from '../compression'
+import type { ContextNote } from '../agent'
 import type { ContextStrategy, SummaryCapability } from './types'
+
+function buildSummaryNote(prepared: PreparedHistory): ContextNote | null {
+  if (!prepared.summary) {
+    return null
+  }
+  return {
+    kind: 'summary',
+    label: 'Сводка истории',
+    text: prepared.summary,
+    messages: prepared.summarizedMessages,
+    throughMessageId:
+      prepared.throughMessageId > 0 ? prepared.throughMessageId : null,
+  }
+}
 
 export function createSummaryStrategy(
   capability: SummaryCapability,
@@ -35,18 +51,7 @@ export function createSummaryStrategy(
                 },
               ]
             : [],
-          note: prepared.summary
-            ? {
-                kind: 'summary',
-                label: 'Сводка истории',
-                text: prepared.summary,
-                messages: prepared.summarizedMessages,
-                throughMessageId:
-                  prepared.throughMessageId > 0
-                    ? prepared.throughMessageId
-                    : null,
-              }
-            : null,
+          note: buildSummaryNote(prepared),
         },
         auxUsage: prepared.summaryUsage,
       }

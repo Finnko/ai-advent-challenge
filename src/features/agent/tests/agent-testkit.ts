@@ -154,6 +154,49 @@ export function createFakeStore(
         vacation.approverName = approverName
       }
     },
+    async findOwnVacation(employeeName, reference) {
+      return (
+        vacations.find(
+          (vacation) =>
+            vacation.status === 'pending' &&
+            normalizeName(vacation.employeeName) === normalizeName(employeeName) &&
+            (!reference || vacation.reference === reference),
+        ) ?? null
+      )
+    },
+    async setVacationStatus(reference, status, approverName) {
+      const vacation = vacations.find(
+        (row) => row.reference === reference && row.status === 'pending',
+      )
+      if (vacation) {
+        vacation.status = status
+        vacation.approverName = approverName ?? vacation.approverName
+      }
+    },
+    async updateBooking(room, date, time, patch) {
+      const booking = bookings.find(
+        (row) => row.room === room && row.date === date && row.time === time,
+      )
+      if (booking) {
+        if (patch.title !== undefined) {
+          booking.title = patch.title
+        }
+        if (patch.durationMin !== undefined) {
+          booking.durationMin = patch.durationMin
+        }
+      }
+    },
+    async findOwnBooking(bookedBy, room, date, time) {
+      return (
+        bookings.find(
+          (row) =>
+            normalizeName(row.bookedBy) === normalizeName(bookedBy) &&
+            (!room || row.room === room) &&
+            (!date || row.date === date) &&
+            (!time || row.time === time),
+        ) ?? null
+      )
+    },
   }
 }
 

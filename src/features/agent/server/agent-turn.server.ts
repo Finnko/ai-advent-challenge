@@ -5,6 +5,7 @@ import type { ContextStrategyId } from '../domain/context/types'
 import type { Fact } from '../domain/facts'
 import type { MemoryEntry } from '../domain/memory/types'
 import type { ProfileRecord } from '../domain/profile/types'
+import type { InvariantRecord } from '../domain/invariants/types'
 import {
   resolveSessionConfig,
 } from '../domain/session/config'
@@ -42,6 +43,7 @@ import {
   getSessionSummary,
   getTaskState,
   getWorkingMemory,
+  listInvariants,
   loadMessages as loadMessagesFromStore,
   saveLongTermMemory,
   saveSessionFacts,
@@ -91,6 +93,7 @@ export type TurnStore = {
   saveLongTermMemory(token: string, entries: MemoryEntry[]): Promise<void>
   getProfile(profileId: number): Promise<ProfileRecord | null>
   getTaskState(sessionId: number): Promise<TaskState | null>
+  getInvariants?: (token: string) => Promise<InvariantRecord[]>
   saveTaskState(sessionId: number, state: TaskState): Promise<void>
   updateSessionTitleIfDefault(sessionId: number, title: string): Promise<void>
   appendMessage(
@@ -129,6 +132,7 @@ const defaultTurnStore: TurnStore = {
   saveLongTermMemory,
   getProfile,
   getTaskState,
+  getInvariants: listInvariants,
   saveTaskState,
   updateSessionTitleIfDefault,
   appendMessage: appendMessageToStore,
@@ -198,6 +202,7 @@ function silentRun(taskState: TaskState | null): AgentRunResult {
     model: TIER_ENDPOINTS.medium.model,
     tokens: { ...ZERO_TOKENS },
     contextNote: null,
+    invariantHits: [],
     taskState,
   }
 }
@@ -429,6 +434,9 @@ export async function runAgentTurn(
           deps.store.saveLongTermMemory(token, entries),
       },
       now,
+      invariants: deps.store.getInvariants
+        ? await deps.store.getInvariants(token)
+        : [],
     },
     deps.runtime,
   )

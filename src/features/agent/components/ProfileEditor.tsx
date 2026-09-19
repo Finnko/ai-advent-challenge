@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import type { ProfileField, ProfileInput } from '../domain/profile/types'
 import {
   PROFILE_CONSTRAINTS_MAX,
@@ -32,6 +32,19 @@ const EMPTY_FORM = {
 
 type FormState = typeof EMPTY_FORM
 
+function toForm(initial: ProfileInput | null): FormState {
+  return {
+    name: initial?.name ?? '',
+    addressing: initial?.addressing ?? '',
+    tone: initial?.tone ?? '',
+    language: initial?.language ?? '',
+    verbosity: initial?.verbosity ?? '',
+    format: initial?.format ?? '',
+    constraints: initial?.constraints ?? '',
+    instructions: initial?.instructions ?? '',
+  }
+}
+
 const SHORT_FIELDS: ProfileField[] = [
   'addressing',
   'tone',
@@ -47,20 +60,7 @@ export default function ProfileEditor({
   onSave,
   onCancel,
 }: ProfileEditorProps) {
-  const [form, setForm] = useState<FormState>(EMPTY_FORM)
-
-  useEffect(() => {
-    setForm({
-      name: initial?.name ?? '',
-      addressing: initial?.addressing ?? '',
-      tone: initial?.tone ?? '',
-      language: initial?.language ?? '',
-      verbosity: initial?.verbosity ?? '',
-      format: initial?.format ?? '',
-      constraints: initial?.constraints ?? '',
-      instructions: initial?.instructions ?? '',
-    })
-  }, [profileId, initial])
+  const [form, setForm] = useState<FormState>(() => toForm(initial))
 
   const set = (field: keyof FormState, value: string) =>
     setForm((prev) => ({ ...prev, [field]: value }))

@@ -1,8 +1,18 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "ignorePatterns": ["dist/**", "src/routeTree.gen.ts"],
+  "plugins": ["eslint", "react", "unicorn", "typescript", "oxc"],
   "rules": {
     "curly": "error",
-    "no-nested-ternary": "error"
-  }
+    "no-nested-ternary": "error",
+    "react/no-multi-comp": "error"
+  },
+  "overrides": [
+    {
+      "files": ["src/components/ui/**"],
+      "rules": {
+        "react/no-multi-comp": "off"
+      }
+    }
+  ]
 }

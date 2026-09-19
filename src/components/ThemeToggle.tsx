@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useSyncExternalStore } from 'react'
 import { Button } from '@/components/ui/Button'
 
 type ThemeMode = 'light' | 'dark' | 'auto'
@@ -15,21 +15,32 @@ const MODE_LABELS: Record<ThemeMode, string> = {
   light: 'Light',
 }
 
-function autoTheme(prefersDark: boolean): ThemeMode {
-  return prefersDark ? 'dark' : 'light'
+const listeners = new Set<() => void>()
+
+function subscribe(listener: () => void) {
+  listeners.add(listener)
+  return () => {
+    listeners.delete(listener)
+  }
 }
 
-function getInitialMode(): ThemeMode {
+function readStoredMode(): ThemeMode {
   if (typeof window === 'undefined') {
     return 'auto'
   }
-
   const stored = window.localStorage.getItem('theme')
   if (stored === 'light' || stored === 'dark' || stored === 'auto') {
     return stored
   }
-
   return 'auto'
+}
+
+function getServerMode(): ThemeMode {
+  return 'auto'
+}
+
+function autoTheme(prefersDark: boolean): ThemeMode {
+  return prefersDark ? 'dark' : 'light'
 }
 
 function applyThemeMode(mode: ThemeMode) {
@@ -48,14 +59,16 @@ function applyThemeMode(mode: ThemeMode) {
   document.documentElement.style.colorScheme = resolved
 }
 
-export default function ThemeToggle() {
-  const [mode, setMode] = useState<ThemeMode>('auto')
+function setStoredMode(mode: ThemeMode) {
+  window.localStorage.setItem('theme', mode)
+  applyThemeMode(mode)
+  for (const listener of listeners) {
+    listener()
+  }
+}
 
-  useEffect(() => {
-    const initialMode = getInitialMode()
-    setMode(initialMode)
-    applyThemeMode(initialMode)
-  }, [])
+export default function ThemeToggle() {
+  const mode = useSyncExternalStore(subscribe, readStoredMode, getServerMode)
 
   useEffect(() => {
     if (mode !== 'auto') {
@@ -72,10 +85,7 @@ export default function ThemeToggle() {
   }, [mode])
 
   function toggleMode() {
-    const nextMode = NEXT_MODE[mode]
-    setMode(nextMode)
-    applyThemeMode(nextMode)
-    window.localStorage.setItem('theme', nextMode)
+    setStoredMode(NEXT_MODE[mode])
   }
 
   const modeName = mode === 'auto' ? 'system' : mode

@@ -32,6 +32,25 @@ export function apiKeyFor(name: string): string {
   return requireEnv(name)
 }
 
+function toChatUsage(rawUsage: DeepSeekResponse['usage']): ChatUsage | null {
+  if (
+    typeof rawUsage?.prompt_tokens !== 'number' ||
+    typeof rawUsage.completion_tokens !== 'number'
+  ) {
+    return null
+  }
+  return {
+    prompt_tokens: rawUsage.prompt_tokens,
+    completion_tokens: rawUsage.completion_tokens,
+    ...(typeof rawUsage.prompt_cache_hit_tokens === 'number'
+      ? { prompt_cache_hit_tokens: rawUsage.prompt_cache_hit_tokens }
+      : {}),
+    ...(typeof rawUsage.prompt_cache_miss_tokens === 'number'
+      ? { prompt_cache_miss_tokens: rawUsage.prompt_cache_miss_tokens }
+      : {}),
+  }
+}
+
 export async function callCompletions(
   endpoint: CompletionEndpoint,
   apiKey: string,
@@ -66,20 +85,7 @@ export async function callCompletions(
   const content = dataJson.choices?.[0]?.message?.content ?? ''
 
   const rawUsage = dataJson.usage
-  const usage: ChatUsage | null =
-    typeof rawUsage?.prompt_tokens === 'number' &&
-    typeof rawUsage?.completion_tokens === 'number'
-      ? {
-          prompt_tokens: rawUsage.prompt_tokens,
-          completion_tokens: rawUsage.completion_tokens,
-          ...(typeof rawUsage.prompt_cache_hit_tokens === 'number'
-            ? { prompt_cache_hit_tokens: rawUsage.prompt_cache_hit_tokens }
-            : {}),
-          ...(typeof rawUsage.prompt_cache_miss_tokens === 'number'
-            ? { prompt_cache_miss_tokens: rawUsage.prompt_cache_miss_tokens }
-            : {}),
-        }
-      : null
+  const usage = toChatUsage(rawUsage)
 
   return {
     content,
