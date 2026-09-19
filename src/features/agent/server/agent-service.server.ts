@@ -35,6 +35,10 @@ import {
 import { MemoryRouter } from '../domain/memory/router'
 import type { ProfileRecord } from '../domain/profile/types'
 import { buildProfileBlocks } from '../domain/profile/read'
+import { buildInvariantBlocks } from '../domain/invariants/read'
+import type { InvariantRecord } from '../domain/invariants/types'
+import { createInvariantGuard } from '../domain/invariants/guard'
+import type { InvariantGuard } from '../domain/invariants/guard'
 import {
   callCompletions,
   apiKeyFor,
@@ -131,6 +135,7 @@ export type AgentRuntime = {
   analyzeTaskState: AnalyzeTaskState
   store: AgentStore
   createTools: (store: AgentStore, now: Date) => AgentTool[]
+  invariantGuard?: InvariantGuard
 }
 
 export const defaultAgentRuntime: AgentRuntime = {
@@ -141,6 +146,7 @@ export const defaultAgentRuntime: AgentRuntime = {
   analyzeTaskState: createAnalyzeTaskState(callFlash),
   store: createAgentStore(),
   createTools: createAgentTools,
+  invariantGuard: createInvariantGuard(callFlash),
 }
 
 export type MemoryOptions = {
@@ -166,6 +172,7 @@ export type ExecuteOptions = {
   taskState?: TaskState | null
   isPaused?: () => boolean | Promise<boolean>
   now?: Date
+  invariants?: InvariantRecord[]
 }
 
 export type AgentExecution = {
@@ -193,10 +200,13 @@ export async function executeAgent(
     context,
     taskState,
     isPaused: options.isPaused,
+    invariants: options.invariants,
+    invariantGuard: runtime.invariantGuard,
   })
   try {
     const memoryBlocks = await prepareMemoryBlocks(options, runtime.extractMemories)
     const profileBlocks = buildProfileBlocks(options.profile ?? null)
+    const invariantBlocks = buildInvariantBlocks(options.invariants ?? [])
     const taskBlocks = buildTaskStateBlocks(taskState)
     const prepared = await options.strategy.prepare({
       rows: options.rows,
@@ -207,6 +217,7 @@ export async function executeAgent(
     const context: PreparedContext = {
       ...prepared.context,
       blocks: [
+        ...invariantBlocks,
         ...profileBlocks,
         ...memoryBlocks.blocks,
         ...taskBlocks,
@@ -308,6 +319,7 @@ function blockedRun(options: ExecuteOptions, error: unknown): AgentRunResult {
       costUsd: 0,
     },
     contextNote: null,
+    invariantHits: [],
   }
 }
 

@@ -1,9 +1,18 @@
 export { createAgentStore } from './store/agent-records.server'
 export {
+  createInvariant,
+  deleteInvariant,
+  getInvariant,
+  listInvariants,
+  updateInvariant,
+} from './store/invariants.server'
+export type { InvariantRecord } from '../domain/invariants/types'
+export {
   getDb,
   migrateBookings,
   migrateSessions,
   migrateTaskStates,
+  migrateInvariants,
 } from './store/db.server'
 export { getTaskState, saveTaskState } from './store/tasks.server'
 export {

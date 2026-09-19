@@ -1,5 +1,6 @@
 import type { SessionAccounting as SessionAccountingTotals } from '../domain/accounting'
 import { formatUsd } from '../domain/tokens'
+import Stat from './Stat'
 
 export default function SessionAccounting({
   totals,
@@ -35,24 +36,5 @@ export default function SessionAccounting({
         </span>
       )}
     </div>
-  )
-}
-
-function Stat({
-  label,
-  value,
-  hint,
-}: {
-  label: string
-  value: number
-  hint?: string
-}) {
-  return (
-    <span className="text-[var(--ink-muted)]" title={hint}>
-      {label}{' '}
-      <span className="font-bold text-[var(--ink)]">
-        {value.toLocaleString('ru-RU')}
-      </span>
-    </span>
   )
 }

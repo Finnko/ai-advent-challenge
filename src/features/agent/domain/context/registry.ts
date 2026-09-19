@@ -43,6 +43,10 @@ export const CONTEXT_STRATEGY_IDS = Object.keys(
   CONTEXT_STRATEGIES,
 ) as ContextStrategyId[]
 
+export function strategyLabel(id: ContextStrategyId): string {
+  return CONTEXT_STRATEGIES[id]?.label ?? id
+}
+
 const STRATEGY_FACTORIES: Record<
   ContextStrategyId,
   (capabilities: ContextCapabilities) => ContextStrategy

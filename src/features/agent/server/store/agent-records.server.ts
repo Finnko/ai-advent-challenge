@@ -29,15 +29,21 @@ type BookingRow = {
   created_at: string
 }
 
+const VACATION_STATUS_BY_ROW: Record<string, VacationRecord['status']> = {
+  approved: 'approved',
+  cancelled: 'cancelled',
+  rejected: 'rejected',
+}
+
 function vacationFromRow(row: VacationRow): VacationRecord {
+  const status = VACATION_STATUS_BY_ROW[row.status] ?? 'pending'
   return {
     employeeName: row.employee_name,
     approverName: row.approver_name,
     start: row.start_date,
     end: row.end_date,
     reference: row.reference,
-    status:
-      row.status === 'approved' ? ('approved' as const) : ('pending' as const),
+    status,
     createdAt: row.created_at,
   }
 }
@@ -147,6 +153,24 @@ export function createAgentStore(): AgentStore {
         "UPDATE vacations SET status = 'approved', approver_name = ? WHERE reference = ? AND status = 'pending'",
       ).run(approverName, reference)
     },
+    async findOwnVacation(employeeName: string, reference?: string) {
+      const db = await getDb()
+      const rows = db
+        .prepare(
+          `SELECT employee_name, approver_name, start_date, end_date, reference, status, created_at
+           FROM vacations
+           WHERE employee_name = ? AND status = 'pending' AND (? IS NULL OR reference = ?)
+           ORDER BY id DESC LIMIT 1`,
+        )
+        .all(employeeName, reference ?? null, reference ?? null) as VacationRow[]
+      return rows.length > 0 ? vacationFromRow(rows[0]) : null
+    },
+    async setVacationStatus(reference: string, status: 'cancelled' | 'rejected', approverName?: string) {
+      const db = await getDb()
+      db.prepare(
+        'UPDATE vacations SET status = ?, approver_name = COALESCE(?, approver_name) WHERE reference = ? AND status = \'pending\'',
+      ).run(status, approverName ?? null, reference)
+    },
     async insertBooking(record: BookingRecord) {
       const db = await getDb()
       db.prepare(
@@ -244,6 +268,32 @@ export function createAgentStore(): AgentStore {
       db.prepare(
         'DELETE FROM bookings WHERE room = ? AND date = ? AND time = ?',
       ).run(room, date, time)
+    },
+    async updateBooking(room: string, date: string, time: string, patch: { title?: string; durationMin?: number }) {
+      const db = await getDb()
+      const assignments: string[] = []
+      const values: (string | number)[] = []
+      if (patch.title !== undefined) {
+        assignments.push('title = ?')
+        values.push(patch.title)
+      }
+      if (patch.durationMin !== undefined) {
+        assignments.push('duration_min = ?')
+        values.push(patch.durationMin)
+      }
+      if (assignments.length === 0) {
+        return
+      }
+      db.prepare(`UPDATE bookings SET ${assignments.join(', ')} WHERE room = ? AND date = ? AND time = ?`).run(...values, room, date, time)
+    },
+    async findOwnBooking(bookedBy: string, room?: string, date?: string, time?: string) {
+      const db = await getDb()
+      const rows = db.prepare(
+        `SELECT room, date, time, duration_min, capacity, title, reference, booked_by, participants, created_at
+         FROM bookings WHERE booked_by = ? AND (? IS NULL OR room = ?) AND (? IS NULL OR date = ?) AND (? IS NULL OR time = ?)
+         ORDER BY date DESC, time DESC, id DESC LIMIT 1`,
+      ).all(bookedBy, room ?? null, room ?? null, date ?? null, date ?? null, time ?? null, time ?? null) as BookingRow[]
+      return rows.length > 0 ? bookingFromRow(rows[0]) : null
     },
     async findOverlap(
       room: string,

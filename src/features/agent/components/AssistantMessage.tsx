@@ -1,8 +1,10 @@
 import type { AgentRunResult } from '../domain/agent'
-import type { JudgeVerdict } from '../domain/agent'
 import { TASK_ACTOR_LABELS, TASK_STAGE_LABELS } from '../domain/task/types'
 import { formatUsd } from '../domain/tokens'
 import TraceAccordion from './TraceAccordion'
+import TokenChip from './TokenChip'
+import VerdictPill from './VerdictPill'
+import SourcePill from './SourcePill'
 import { Badge } from '@/components/ui/Badge'
 import { Alert } from '@/components/ui/Alert'
 
@@ -23,6 +25,11 @@ export default function AssistantMessage({ run }: { run: AgentRunResult }) {
       <div className="flex flex-wrap gap-1.5">
         {run.verdicts.map((verdict) => (
           <VerdictPill key={verdict.judge} verdict={verdict} />
+        ))}
+        {(run.invariantHits ?? []).map((hit) => (
+          <Badge key={hit} variant="danger" title="Сработала детерминированная проверка инварианта">
+            {hit}
+          </Badge>
         ))}
         {run.model && <Badge>модель: {run.model}</Badge>}
         <SourcePill run={run} />
@@ -93,66 +100,3 @@ export default function AssistantMessage({ run }: { run: AgentRunResult }) {
   )
 }
 
-function TokenChip({
-  label,
-  value,
-  note,
-}: {
-  label: string
-  value: string
-  note?: string
-}) {
-  return (
-    <Badge
-      title={note ? `${label}: ${value} · ${note}` : `${label}: ${value}`}
-    >
-      <span className="text-[var(--ink-muted)]">{label}</span>{' '}
-      <span className="font-bold text-[var(--ink)]">{value}</span>
-      {note && <span className="text-[var(--ink-muted)]"> · {note}</span>}
-    </Badge>
-  )
-}
-
-function VerdictPill({ verdict }: { verdict: JudgeVerdict }) {
-  const failed = verdict.status === 'fail'
-
-  return (
-    <Badge
-      variant={failed ? 'danger' : 'default'}
-      title={verdict.message}
-    >
-      {verdict.judge}: {verdict.status === 'pass' ? 'ок' : 'нарушение'}
-    </Badge>
-  )
-}
-
-function SourcePill({ run }: { run: AgentRunResult }) {
-  const decide = run.trace.find(
-    (
-      step,
-    ): step is Extract<typeof step, { stage: 'decide'; tool: string | null }> =>
-      step.stage === 'decide' && step.tool !== null,
-  )
-  if (!decide) {
-    return (
-      <Badge title="Инструмент не вызывался — ответ собран из контекста (история/память модели)">
-        из контекста
-      </Badge>
-    )
-  }
-  if (decide.tool === 'listBookings' || decide.tool === 'listVacations') {
-    return (
-      <Badge
-        variant="accent"
-        title="Ответ построен по данным из SQLite через инструмент, а не по памяти модели"
-      >
-        из БД
-      </Badge>
-    )
-  }
-  return (
-    <Badge title={`Ответ построен по отчёту инструмента ${decide.tool}`}>
-      из инструмента
-    </Badge>
-  )
-}

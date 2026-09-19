@@ -4,7 +4,6 @@ import { ask } from '@lib/functions/ask.functions'
 import type { ChatResult } from '@lib/llm'
 import { Button } from '@/components/ui/Button'
 import { Textarea } from '@/components/ui/Textarea'
-import { Badge } from '@/components/ui/Badge'
 import { Alert } from '@/components/ui/Alert'
 import {
   CONCLUSIONS,
@@ -14,28 +13,19 @@ import {
   TEMPERATURES,
   checkFinalAnswer,
 } from '@lib/day4'
-import type { Day4Task, FinalCheck } from '@lib/day4'
+import type { Day4Task } from '@lib/day4'
+import TypingDots from '@/components/TypingDots'
+import TempCard from './-day4/TempCard'
+import CheckPill from './-day4/CheckPill'
+import Inspector from './-day4/Inspector'
+import type {
+  Answer,
+  LastRun,
+  Source,
+  TempState,
+} from './-day4/types'
 
 export const Route = createFileRoute('/_layout/day4')({ component: Day4 })
-
-type Source = 'curated' | 'custom'
-
-type Answer = {
-  content: string
-  usage: ChatResult['usage']
-  model: ChatResult['model']
-  chars: number
-  words: number
-  check: FinalCheck
-}
-
-type TempState =
-  | { status: 'idle' }
-  | { status: 'loading' }
-  | { status: 'done'; answer: Answer }
-  | { status: 'error'; error: string }
-
-type LastRun = { source: Source; user: string }
 
 const IDLE_STATE: TempState = { status: 'idle' }
 
@@ -257,130 +247,6 @@ function Day4() {
           />
         </aside>
       </div>
-    </div>
-  )
-}
-
-function TempCard({ state }: { state: TempState }) {
-  switch (state.status) {
-    case 'idle':
-      return (
-        <p className="demo-muted m-0 text-sm">
-          Пока не запущено. Нажми кнопку выше, чтобы отправить запрос с этой
-          температурой.
-        </p>
-      )
-    case 'loading':
-      return (
-        <div className="flex flex-col gap-3">
-          <TypingDots />
-        </div>
-      )
-    case 'error':
-      return (
-        <Alert variant="destructive">
-          <p className="m-0 text-sm">{state.error}</p>
-        </Alert>
-      )
-    case 'done':
-      return <AnswerBlock answer={state.answer} />
-  }
-}
-
-function AnswerBlock({ answer }: { answer: Answer }) {
-  return (
-    <div>
-      {answer.content.trim().length === 0 ? (
-        <Alert>
-          <p className="m-0 text-sm">
-            Модель вернула пустой ответ. Попробуй ещё раз.
-          </p>
-        </Alert>
-      ) : (
-        <pre className="demo-code-block whitespace-pre-wrap text-sm">
-          {answer.content}
-        </pre>
-      )}
-      <p className="demo-muted mt-1.5 text-xs">
-        {answer.chars ?? 0} симв. · {answer.words ?? 0} слов
-        {answer.usage ? ` · ${answer.usage.completion_tokens} ток.` : ''}
-      </p>
-    </div>
-  )
-}
-
-function CheckPill({ check }: { check: FinalCheck }) {
-  if (check === 'correct') {
-    return <Badge variant="accent">Итог верный</Badge>
-  }
-  if (check === 'wrong') {
-    return <Badge variant="danger">Не совпал</Badge>
-  }
-  return <Badge>Нет строки «Итог:»</Badge>
-}
-
-function Inspector({
-  user,
-  model,
-  activeTemp,
-  hasRun,
-}: {
-  user: string
-  model: ChatResult['model']
-  activeTemp: number
-  hasRun: boolean
-}) {
-  return (
-    <div className="space-y-3 text-sm">
-      <p className="demo-muted m-0 text-xs">
-        {hasRun
-          ? 'Что было отправлено (temperature активной карточки)'
-          : 'Что будет отправлено'}
-      </p>
-      <div className="demo-code-block whitespace-pre-wrap">
-        <span className="island-kicker">model</span>
-        {'\n'}
-        {model ?? '— (станет известна после запуска)'}
-      </div>
-      <div className="demo-code-block whitespace-pre-wrap">
-        <span className="island-kicker">system</span>
-        {'\n'}
-        {DAY4_SYSTEM}
-      </div>
-      <div className="demo-code-block whitespace-pre-wrap">
-        <span className="island-kicker">user</span>
-        {'\n'}
-        {user}
-      </div>
-      <div className="demo-code-block whitespace-pre-wrap">
-        <span className="island-kicker">params</span>
-        {'\n'}
-        {JSON.stringify(
-          {
-            thinking: { type: 'disabled' },
-            temperature: activeTemp,
-          },
-          null,
-          2,
-        )}
-      </div>
-    </div>
-  )
-}
-
-function TypingDots({ text }: { text?: string }) {
-  return (
-    <div className="flex items-center gap-2" aria-label="Ожидание ответа">
-      <div className="flex items-center gap-1.5">
-        {[0, 1, 2].map((i) => (
-          <span
-            key={i}
-            className="typing-dot h-2 w-2 rounded-full bg-[var(--accent)]"
-            style={{ animationDelay: `${i * 150}ms` }}
-          />
-        ))}
-      </div>
-      {text && <span className="demo-muted text-xs">{text}</span>}
     </div>
   )
 }

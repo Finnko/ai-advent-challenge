@@ -87,21 +87,23 @@ export function parseFacts(content: string): Fact[] {
   return []
 }
 
+function coerceFactValue(value: unknown): string {
+  if (typeof value === 'string') {
+    return value
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value)
+  }
+  return ''
+}
+
 function coerceFact(entry: unknown): Fact | null {
   if (!entry || typeof entry !== 'object') {
     return null
   }
   const record = entry as Record<string, unknown>
   const key = typeof record.key === 'string' ? record.key : ''
-  let value = ''
-  if (typeof record.value === 'string') {
-    value = record.value
-  } else if (
-    typeof record.value === 'number' ||
-    typeof record.value === 'boolean'
-  ) {
-    value = String(record.value)
-  }
+  const value = coerceFactValue(record.value)
   if (key.trim().length === 0 || value.trim().length === 0) {
     return null
   }

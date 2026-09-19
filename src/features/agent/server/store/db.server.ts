@@ -1,3 +1,5 @@
+import { DEFAULT_INVARIANTS } from '../../domain/invariants/defaults'
+
 type SqliteDatabase = import('node:sqlite').DatabaseSync
 
 const DB_FILENAME = 'agent.sqlite'
@@ -282,6 +284,19 @@ CREATE TABLE IF NOT EXISTS bookings (
   created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS invariants (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  token TEXT NOT NULL,
+  slug TEXT NOT NULL,
+  category TEXT NOT NULL,
+  title TEXT NOT NULL,
+  text TEXT NOT NULL,
+  check_id TEXT,
+  pinned INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
 CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, id);
 CREATE INDEX IF NOT EXISTS idx_profiles_token ON profiles(token);
@@ -389,11 +404,65 @@ async function openDatabase(): Promise<SqliteDatabase> {
   migrateSessions(db)
   migrateProfiles(db)
   migrateTaskStates(db)
+  migrateInvariants(db)
   seedPeople(db)
+  seedInvariants(db)
   seedBookings(db)
   seedProfiles(db)
   console.log(`[store] SQLite: ${dbPath}`)
   return db
+}
+
+function seedInvariants(db: SqliteDatabase): void {
+  const defaults = DEFAULT_INVARIANTS
+  const people = db.prepare('SELECT token FROM people').all() as Array<{ token: string }>
+  const insert = db.prepare('INSERT OR IGNORE INTO invariants (token, slug, category, title, text, check_id, pinned, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)')
+  for (const person of people) {
+    for (const invariant of defaults) {
+      const now = nowIso()
+      insert.run(person.token, invariant.slug, invariant.category, invariant.title, invariant.text, invariant.check ?? null, now, now)
+    }
+  }
+}
+
+export function migrateInvariants(db: SqliteDatabase): void {
+  const schema = db
+    .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'invariants'")
+    .get() as { sql?: string } | undefined
+  if (schema?.sql?.includes('UNIQUE (token, slug)')) {
+    db.exec('BEGIN')
+    try {
+      db.exec('DROP INDEX IF EXISTS idx_invariants_pinned_slug')
+      db.exec('ALTER TABLE invariants RENAME TO invariants_legacy')
+      db.exec(`
+        CREATE TABLE invariants (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          token TEXT NOT NULL,
+          slug TEXT NOT NULL,
+          category TEXT NOT NULL,
+          title TEXT NOT NULL,
+          text TEXT NOT NULL,
+          check_id TEXT,
+          pinned INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        )
+      `)
+      db.exec(`
+        INSERT INTO invariants (id, token, slug, category, title, text, check_id, pinned, created_at, updated_at)
+        SELECT id, token, slug, category, title, text, check_id, pinned, created_at, updated_at
+        FROM invariants_legacy
+      `)
+      db.exec('DROP TABLE invariants_legacy')
+      db.exec('COMMIT')
+    } catch (error) {
+      db.exec('ROLLBACK')
+      throw error
+    }
+  }
+  db.exec(
+    'CREATE UNIQUE INDEX IF NOT EXISTS idx_invariants_pinned_slug ON invariants(token, slug) WHERE pinned = 1',
+  )
 }
 
 export async function getDb(): Promise<SqliteDatabase> {

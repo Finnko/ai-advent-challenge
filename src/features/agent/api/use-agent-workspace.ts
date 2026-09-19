@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useReducer } from 'react'
+import { useEffect, useReducer } from 'react'
 import type { AgentCapabilities } from '../domain/agent'
 import type { MemoryLayer } from '../domain/memory/types'
 import type { ProfileInput } from '../domain/profile/types'
+import type { InvariantInput, InvariantUpdateInput } from '../domain/invariants/types'
 import {
   resolveActiveSessionConfig,
   sessionConfigDraftToInput,
@@ -38,6 +39,10 @@ import { useCreateProfile } from './create-profile'
 import { useUpdateProfile } from './update-profile'
 import { useDeleteProfile } from './delete-profile'
 import { useSetDefaultProfile } from './set-default-profile'
+import { useInvariants } from './get-invariants'
+import { useCreateInvariant } from './create-invariant'
+import { useUpdateInvariant } from './update-invariant'
+import { useDeleteInvariant } from './delete-invariant'
 import {
   useCancelTask,
   usePauseTask,
@@ -49,6 +54,17 @@ const EMPTY_MEMORY: MemoryView = { working: [], longTerm: [] }
 
 function toError(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
+}
+
+type StatusSource = { isError: boolean; isPending: boolean; error: unknown }
+
+function firstError(sources: StatusSource[]): string | null {
+  const failed = sources.find((source) => source.isError)
+  return failed ? toError(failed.error) : null
+}
+
+function anyPending(sources: StatusSource[]): boolean {
+  return sources.some((source) => source.isPending)
 }
 
 export function useAgentWorkspace() {
@@ -71,6 +87,7 @@ export function useAgentWorkspace() {
   const memoryQuery = useMemory(state.sessionId, state.activeToken)
   const taskStateQuery = useTaskState(state.sessionId)
   const profilesQuery = useProfiles(state.activeToken)
+  const invariantsQuery = useInvariants(state.activeToken)
   const profiles = profilesQuery.data ?? []
 
   const createSessionMutation = useCreateSession()
@@ -84,37 +101,47 @@ export function useAgentWorkspace() {
   const updateProfileMutation = useUpdateProfile()
   const deleteProfileMutation = useDeleteProfile()
   const setDefaultMutation = useSetDefaultProfile()
+  const createInvariantMutation = useCreateInvariant()
+  const updateInvariantMutation = useUpdateInvariant()
+  const deleteInvariantMutation = useDeleteInvariant()
   const pauseTaskMutation = usePauseTask()
   const resumeTaskMutation = useResumeTask()
   const cancelTaskMutation = useCancelTask()
 
+  const settingsMutations = [
+    saveMemoryMutation,
+    deleteMemoryMutation,
+    createProfileMutation,
+    updateProfileMutation,
+    deleteProfileMutation,
+    setDefaultMutation,
+    createInvariantMutation,
+    updateInvariantMutation,
+    deleteInvariantMutation,
+  ]
+  const taskMutations = [
+    pauseTaskMutation,
+    resumeTaskMutation,
+    cancelTaskMutation,
+  ]
+
   const busy =
-    createSessionMutation.isPending ||
-    sendMutation.isPending ||
-    deleteMutation.isPending ||
-    branchMutation.isPending ||
-    switchMutation.isPending ||
-    saveMemoryMutation.isPending ||
-    deleteMemoryMutation.isPending ||
-    createProfileMutation.isPending ||
-    updateProfileMutation.isPending ||
-    deleteProfileMutation.isPending ||
-    setDefaultMutation.isPending ||
-    capabilitiesQuery.isLoading
+    anyPending([
+      createSessionMutation,
+      sendMutation,
+      deleteMutation,
+      branchMutation,
+      switchMutation,
+      ...settingsMutations,
+    ]) || capabilitiesQuery.isLoading
 
-  const taskBusy =
-    pauseTaskMutation.isPending ||
-    resumeTaskMutation.isPending ||
-    cancelTaskMutation.isPending
+  const taskBusy = anyPending(taskMutations)
 
-  const dispatchIntent = useCallback(
-    (intent: WorkspaceIntent) => {
-      if (canApplyIntent(intent, busy)) {
-        dispatch(intent)
-      }
-    },
-    [busy],
-  )
+  const dispatchIntent = (intent: WorkspaceIntent) => {
+    if (canApplyIntent(intent, busy)) {
+      dispatch(intent)
+    }
+  }
 
   useEffect(() => {
     if (!state.activeToken && manager) {
@@ -314,6 +341,24 @@ export function useAgentWorkspace() {
       }
       setDefaultMutation.mutate({ token: state.activeToken, profileId: id })
     },
+    createInvariant(input: InvariantInput) {
+      if (!state.activeToken) {
+        return
+      }
+      createInvariantMutation.mutate({ token: state.activeToken, ...input })
+    },
+    updateInvariant(id: number, input: InvariantUpdateInput) {
+      if (!state.activeToken) {
+        return
+      }
+      updateInvariantMutation.mutate({ token: state.activeToken, id, ...input })
+    },
+    deleteInvariant(id: number) {
+      if (!state.activeToken) {
+        return
+      }
+      deleteInvariantMutation.mutate({ token: state.activeToken, id })
+    },
     pauseTask() {
       if (state.sessionId === null) {
         return
@@ -334,29 +379,8 @@ export function useAgentWorkspace() {
     },
   }
 
-  let settingsError: string | null = null
-  if (saveMemoryMutation.isError) {
-    settingsError = toError(saveMemoryMutation.error)
-  } else if (deleteMemoryMutation.isError) {
-    settingsError = toError(deleteMemoryMutation.error)
-  } else if (createProfileMutation.isError) {
-    settingsError = toError(createProfileMutation.error)
-  } else if (updateProfileMutation.isError) {
-    settingsError = toError(updateProfileMutation.error)
-  } else if (deleteProfileMutation.isError) {
-    settingsError = toError(deleteProfileMutation.error)
-  } else if (setDefaultMutation.isError) {
-    settingsError = toError(setDefaultMutation.error)
-  }
-
-  let taskError: string | null = null
-  if (pauseTaskMutation.isError) {
-    taskError = toError(pauseTaskMutation.error)
-  } else if (resumeTaskMutation.isError) {
-    taskError = toError(resumeTaskMutation.error)
-  } else if (cancelTaskMutation.isError) {
-    taskError = toError(cancelTaskMutation.error)
-  }
+  const settingsError = firstError(settingsMutations)
+  const taskError = firstError(taskMutations)
 
   return {
     activeToken: state.activeToken,
@@ -377,6 +401,7 @@ export function useAgentWorkspace() {
     memoryView,
     taskState: taskStateQuery.data?.taskState ?? null,
     profiles,
+    invariants: invariantsQuery.data ?? [],
     selectedProfile,
     defaultProfile,
     messagesData: messagesQuery.data ?? [],
