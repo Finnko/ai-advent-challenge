@@ -312,6 +312,7 @@ export type AgentConfig = {
   responseLanguage?: string | null
   context?: string
   taskState?: TaskState | null
+  taskNote?: string | null
   contextBudgetTokens?: number
   maxActionsPerTurn?: number
   isPaused?: () => boolean | Promise<boolean>
@@ -540,6 +541,7 @@ const DECIDE_TOOL_HINTS: Record<string, string[]> = {
   inviteToMeeting: [
     'Просьбу позвать/пригласить сотрудников на встречу решай через inviteToMeeting. Комнату, дату и время бери из сообщения или из контекста (последняя бронь пользователя). Если они известны из контекста — обязательно вызывай инструмент, не переспрашивай.',
     'Если просят позвать «всех моих сотрудников» или «всю команду», передай в participants всех подчинённых пользователя.',
+    'Участники передаются именами сотрудников из списка коллег; почта и контакт не нужны. Если названное имя есть среди коллег (например «Иван») — сразу вызывай инструмент, не переспрашивай.',
     'Структура аргументов inviteToMeeting: {"room": "<название комнаты>", "date": "YYYY-MM-DD", "time": "HH:MM", "participants": ["<имя>", "<имя>"]}.',
   ],
   approveVacation: [
@@ -886,7 +888,7 @@ export class Agent {
       hasInvariantBlocks,
     )
     const taskState = this.config.taskState ?? null
-    const taskLine = buildTaskStateLine(taskState)
+    const taskLine = buildTaskStateLine(taskState, this.config.taskNote)
     const taskPaused = taskState?.stage === 'paused'
     const requestTokens = estimateTokens(request)
     const historyTokens = estimateMessagesTokens(history)

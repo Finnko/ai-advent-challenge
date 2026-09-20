@@ -62,6 +62,7 @@ function buildAgent(options: {
   contextBudgetTokens?: number
   responseLanguage?: string | null
   taskState?: TaskState
+  taskNote?: string
   maxActionsPerTurn?: number
   isPaused?: () => boolean | Promise<boolean>
 }): Agent {
@@ -80,6 +81,7 @@ function buildAgent(options: {
     context: options.context,
     contextBudgetTokens: options.contextBudgetTokens,
     taskState: options.taskState,
+    taskNote: options.taskNote,
     maxActionsPerTurn: options.maxActionsPerTurn,
     isPaused: options.isPaused,
   })
@@ -638,6 +640,41 @@ describe('этап planning и мульти-действия', () => {
 
     expect(run.trace.filter((step) => step.stage === 'act')).toHaveLength(1)
     expect(run.ok).toBe(true)
+  })
+
+  it('подмешивает note об отклонённом переходе в decide и finalize', async () => {
+    const { callLLM, calls } = scriptedLLM({
+      decide: '{"tool": null, "args": {}}',
+      finalize: 'План предложен.',
+    })
+    await buildAgent({
+      callLLM,
+      taskState: buildTaskState({ stage: 'planning' }),
+      taskNote:
+        'Попытка перейти planning → execution отклонена: План ещё не утверждён пользователем.',
+    }).run('Забронируй Ладогу')
+
+    const decideUser =
+      calls.find((call) => call.isDecide)?.messages.at(-1)?.content ?? ''
+    const finalizeUser =
+      calls.find((call) => !call.isDecide)?.messages.at(-1)?.content ?? ''
+    expect(decideUser).toContain('отклонена')
+    expect(finalizeUser).toContain('отклонена')
+  })
+
+  it('подсказывает в decide, что участники передаются именами', async () => {
+    const { callLLM, calls } = scriptedLLM({
+      decide: '{"tool": null, "args": {}}',
+      finalize: 'Ок.',
+    })
+    await buildAgent({
+      callLLM,
+      taskState: buildTaskState({ stage: 'execution' }),
+    }).run('позови Ивана')
+
+    const decideUser =
+      calls.find((call) => call.isDecide)?.messages.at(-1)?.content ?? ''
+    expect(decideUser).toContain('Участники передаются именами')
   })
 
   it('останавливает цикл по паузе между действиями', async () => {

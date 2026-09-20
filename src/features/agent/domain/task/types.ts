@@ -48,6 +48,13 @@ export type TaskEvent =
       index: number
       at: string
     }
+  | {
+      kind: 'rejected'
+      from: TaskStage
+      to: TaskStage
+      reason: string
+      at: string
+    }
 
 export const TASK_STAGES: TaskStage[] = [
   'planning',

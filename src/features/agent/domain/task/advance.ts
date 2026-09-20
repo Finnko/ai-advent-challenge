@@ -1,8 +1,7 @@
 import type { AgentRunResult } from '../agent'
 import { isMutatingTool } from '../agent-tools'
-import { canTransition, transitionEvent } from './state'
-import type { TaskEvent, TaskState, TaskStage, TaskTransition } from './types'
-import { TASK_HISTORY_LIMIT } from './types'
+import { transitionTask } from './state'
+import type { TaskEvent, TaskState, TaskStage } from './types'
 
 export type TaskAdvance = {
   state: TaskState
@@ -13,9 +12,45 @@ const EXECUTION_FIX_STEPS = ['Исправить результат']
 const VALIDATION_DEFAULT_STEPS = ['Сверить результат']
 
 const CORRECTION_HINTS =
-  /неверн|неправильн|передел|исправ|заново|не получил|ошибк|не так|\bне то\b|на самом деле/u
+  /неверн|не\s+верно|неправильн|передел|исправ|заново|не получил|ошибк|не так|\bне то\b|на самом деле/u
 
 const RESUME_HINTS = /продолж|дальше|вернись|возобнов|resume|go on/u
+
+const APPROVAL_WORDS = [
+  'да',
+  'ок',
+  'окей',
+  'приступай',
+  'приступайте',
+  'приступаем',
+  'начинай',
+  'начинайте',
+  'начинаем',
+  'поехали',
+  'делаем',
+  'верно',
+  'согласен',
+  'согласна',
+  'подтверждаю',
+  'утверждаю',
+]
+
+const APPROVAL_PHRASES = ['всё верно', 'все верно']
+
+const WORD_PATTERN_CACHE = new Map<string, RegExp>()
+
+function containsWord(text: string, word: string): boolean {
+  let pattern = WORD_PATTERN_CACHE.get(word)
+  if (!pattern) {
+    const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    pattern = new RegExp(
+      `(?:^|[^а-яёa-z])${escaped}(?:[^а-яёa-z]|$)`,
+      'u',
+    )
+    WORD_PATTERN_CACHE.set(word, pattern)
+  }
+  return pattern.test(text)
+}
 
 const CANCEL_PHRASES = [
   'задача отменена',
@@ -31,6 +66,17 @@ export function looksLikeCorrection(text: string): boolean {
 
 export function looksLikeResume(text: string): boolean {
   return RESUME_HINTS.test(text.trim().toLowerCase())
+}
+
+export function looksLikeApproval(text: string): boolean {
+  const lower = text.trim().toLowerCase().replace(/\s+/g, ' ')
+  if (looksLikeCorrection(lower)) {
+    return false
+  }
+  if (APPROVAL_PHRASES.some((phrase) => lower.includes(phrase))) {
+    return true
+  }
+  return APPROVAL_WORDS.some((word) => containsWord(lower, word))
 }
 
 export function looksLikeCancel(text: string): boolean {
@@ -63,31 +109,11 @@ function advanceStage(
   reason: string,
   steps: string[],
 ): TaskAdvance | null {
-  if (state.stage === to || !canTransition(state.stage, to)) {
+  const outcome = transitionTask(state, to, { at, reason, steps })
+  if (outcome.status !== 'applied') {
     return null
   }
-  const transition: TaskTransition = {
-    from: state.stage,
-    to,
-    reason,
-    at,
-  }
-  const plan = [...steps]
-  const nextStep = plan[0] ?? ''
-  return {
-    state: {
-      ...state,
-      stage: to,
-      previousStage: null,
-      step: nextStep,
-      steps: plan,
-      stepIndex: 0,
-      expectedAction: { actor: 'agent', description: nextStep },
-      updatedAt: at,
-      history: [...state.history, transition].slice(-TASK_HISTORY_LIMIT),
-    },
-    event: transitionEvent(transition),
-  }
+  return { state: outcome.state, event: outcome.event }
 }
 
 export function advanceStep(state: TaskState, at: string): TaskAdvance | null {

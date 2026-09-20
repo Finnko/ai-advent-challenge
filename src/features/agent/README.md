@@ -100,15 +100,15 @@ user-ходом. Дедуп — last-write-wins, ручная запись не 
 - Лимиты — в `functions/validation.ts` (`requireProfileName`, `optionalProfileField`: имя ≤60,
   поле ≤120, ограничения ≤500, инструкции ≤1200).
 
-## Состояние задачи (Day 13)
+## Состояние задачи (Day 13, ужесточено в Day 15)
 
 Задача ведётся как конечный автомат: **этап → текущий шаг → ожидаемое действие**. Граф
 `planning → execution → validation → done` плюс `paused` (помнит `previousStage`) и `cancelled`.
 
 - Шов — `domain/task/`: `types.ts` (стадии, актор, лимиты), `state.ts` (чистый reducer переходов,
-  pause/resume/cancel, отклонение нелегальных переходов), `advance.ts` (авто-переходы после хода),
-  `analyze.ts` (LLM-анализатор состояния), `read.ts` (system-блок и volatile-строка про
-  этап/ожидаемое действие).
+  единственная точка `transitionTask` поверх `ALLOWED_TRANSITIONS`, pause/resume/cancel, отклонение
+  нелегальных переходов), `advance.ts` (авто-переходы после хода, текстовые гейты), `analyze.ts`
+  (LLM-анализатор состояния), `read.ts` (system-блок и volatile-строка про этап/ожидаемое действие).
 - Фича гейтится `sessions.task_state_enabled` (по умолчанию **включена**), фиксируется за сессией.
 - Анализатор гоняется раз в Ход **до** `executeAgent`; при сбое состояние не меняется, usage → `auxUsage`.
 - Snapshot живёт в таблице `task_states` (keyed by `session_id`, bounded `history_json`); пауза и
@@ -120,6 +120,13 @@ user-ходом. Дедуп — last-write-wins, ручная запись не 
   скрыты из decide и жёстко отклоняются на act; справочные `list*` доступны. Мутации выполняются
   только на `execution`, куда задача уходит по явному согласию пользователя; на `validation` тоже
   только `list*`.
+- **Контроль переходов (Day 15)**: любой переход валидируется в `transitionTask` по графу
+  `ALLOWED_TRANSITIONS`; нелегальный возвращает `rejected` и не меняет состояние. Дополнительно
+  `planning → execution` невозможен без явного согласия пользователя и при незакрытых пунктах плана:
+  `runAgentTurn` проверяет `looksLikeApproval` (в `advance.ts`) и `expectedAction.actor !== 'user'`, и
+  иначе оставляет задачу в `planning`. Отказ наблюдаем: пишется `task`-событие `kind: 'rejected'` и
+  строка-подсказка подмешивается в `taskLine` текущего хода (decide + finalize), чтобы ассистент
+  озвучил его, а не продолжал выполнение.
 - **Авто-переходы** (`domain/task/advance.ts`): `execution → validation` после успешного мутирующего
   действия и `validation → done` **только после реальной справочной проверки** (`list*`) и без
   признаков правки; `done` также по явному подтверждению (анализатор). Если пользователь сообщает,
