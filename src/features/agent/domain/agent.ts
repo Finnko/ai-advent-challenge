@@ -5,13 +5,25 @@ import {
   estimateTokens,
 } from './tokens'
 import {
-  ROOMS,
   isMutatingTool,
   normalizeName,
   pickString,
+  roomsForRole,
 } from './agent-tools'
 import { buildTaskStateLine } from './task/read'
 import type { TaskState } from './task/types'
+import {
+  INVARIANT_PRECEDENCE_LINE,
+  invariantCode,
+  type InvariantCode,
+} from './invariants/types'
+import {
+  runActionChecks,
+  runAnswerChecks,
+  type InvariantCheckResult,
+} from './invariants/checks'
+import type { InvariantRecord } from './invariants/types'
+import type { InvariantGuard, InvariantGuardVerdict } from './invariants/guard'
 
 export type AgentRole = 'employee' | 'manager'
 
@@ -72,7 +84,7 @@ export type CallLLM = (params: {
 }) => Promise<LlmReply>
 
 export type SystemBlock = {
-  kind: 'summary' | 'facts' | 'working' | 'long-term' | 'profile' | 'task-state'
+  kind: 'summary' | 'facts' | 'working' | 'long-term' | 'profile' | 'task-state' | 'invariants'
   content: string
 }
 
@@ -108,7 +120,7 @@ export type VacationRecord = {
   start: string
   end: string
   reference: string
-  status: 'pending' | 'approved'
+  status: 'pending' | 'approved' | 'cancelled' | 'rejected'
   createdAt?: string
 }
 
@@ -143,6 +155,15 @@ export type AgentStore = {
     reference: string,
     approverName: string,
   ) => void | Promise<void>
+  findOwnVacation: (
+    employeeName: string,
+    reference?: string,
+  ) => VacationRecord | null | Promise<VacationRecord | null>
+  setVacationStatus: (
+    reference: string,
+    status: 'cancelled' | 'rejected',
+    approverName?: string,
+  ) => void | Promise<void>
   insertBooking: (record: BookingRecord) => void | Promise<void>
   listBookings: (
     bookedBy: string,
@@ -171,6 +192,18 @@ export type AgentStore = {
     date: string,
     time: string,
   ) => void | Promise<void>
+  updateBooking: (
+    room: string,
+    date: string,
+    time: string,
+    patch: { title?: string; durationMin?: number },
+  ) => void | Promise<void>
+  findOwnBooking: (
+    bookedBy: string,
+    room?: string,
+    date?: string,
+    time?: string,
+  ) => BookingRecord | null | Promise<BookingRecord | null>
   findOverlap: (
     room: string,
     date: string,
@@ -188,6 +221,10 @@ export type AgentTool = {
     args: ToolArgs,
     identity: AgentIdentity,
   ) => ToolOutcome | Promise<ToolOutcome>
+  screenArgs?: (
+    args: ToolArgs,
+    identity: AgentIdentity,
+  ) => ToolArgs | Promise<ToolArgs>
 }
 
 export type JudgeVerdict = {
@@ -208,6 +245,7 @@ export type JudgeContext = {
   answer: string
   identity: AgentIdentity
   allowedTools: string[]
+  invariants: InvariantRecord[]
 }
 
 export type AgentJudge = {
@@ -225,12 +263,26 @@ export type AgentTraceStep =
       usage: LlmUsage | null
       latencyMs: number
     }
-  | { stage: 'act'; tool: string; args: ToolArgs; outcome: ToolOutcome }
+  | {
+      stage: 'act'
+      tool: string
+      args: ToolArgs
+      outcome: ToolOutcome
+      invariantHits?: InvariantCode[]
+    }
   | {
       stage: 'finalize'
       answer: string
       usage: LlmUsage | null
       latencyMs: number
+    }
+  | {
+      stage: 'invariant-guard'
+      verdict: JudgeVerdict
+      hits: InvariantCode[]
+      usage: LlmUsage | null
+      latencyMs: number
+      error?: string
     }
   | { stage: 'verdicts'; verdicts: JudgeVerdict[] }
 
@@ -246,6 +298,7 @@ export type AgentRunResult = {
   model: string
   tokens: TokenBreakdown
   contextNote: ContextNote | null
+  invariantHits: InvariantCode[]
   taskState?: TaskState | null
 }
 
@@ -262,6 +315,8 @@ export type AgentConfig = {
   contextBudgetTokens?: number
   maxActionsPerTurn?: number
   isPaused?: () => boolean | Promise<boolean>
+  invariants?: InvariantRecord[]
+  invariantGuard?: InvariantGuard
 }
 
 const DECIDE_TEMPERATURE = 0.2
@@ -288,6 +343,12 @@ const ACTION_HINTS = [
   'перенес',
   'освобод',
   'назнач',
+  'отклони',
+  'откажи',
+  'измени тему',
+  'измени длительность',
+  'выйди из встреч',
+  'расписани',
 ]
 
 const DECIDE_NUDGE =
@@ -411,6 +472,31 @@ const FABRICATION_JUDGE: AgentJudge = {
         test: /заявк[ау]\s+на\s+отпуск\s+(?:создан|подал)|подал[аи]?\s+заявк/,
         label: 'заявку на отпуск',
       },
+      {
+        tool: 'cancelVacation',
+        test: /заявк[ау]\s+на\s+отпуск\s+(?:отменил|отменена)/,
+        label: 'отмену заявки на отпуск',
+      },
+      {
+        tool: 'rejectVacation',
+        test: /заявк[ау].*(?:отклонен|отказан)|отклонил[аи]?\s+заявк[уи]/,
+        label: 'отклонение заявки на отпуск',
+      },
+      {
+        tool: 'rescheduleBooking',
+        test: /встреч[ау].*(?:перенес|перенесён|перенесена)|перенес[уи]?\s+встреч/,
+        label: 'перенос встречи',
+      },
+      {
+        tool: 'updateBooking',
+        test: /встреч[ау].*(?:обновлен|изменен)|изменил[аи]?\s+(?:тему|длительность)/,
+        label: 'изменение встречи',
+      },
+      {
+        tool: 'declineInvite',
+        test: /вышел[аи]?\s+из\s+встреч|отказал[аи]?\s+от\s+приглашени/,
+        label: 'выход из встречи',
+      },
     ]
     for (const claim of claims) {
       if (claim.test.test(lower) && !done(claim.tool)) {
@@ -444,9 +530,36 @@ const MEMORY_PRECEDENCE_LINE =
 const PROFILE_PRECEDENCE_LINE =
   'Блок ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ выше — настройки стиля, формата и ограничений пользователя. Соблюдай их в ответе.'
 
+const DECIDE_TOOL_HINTS: Record<string, string[]> = {
+  listAvailableRooms: [
+    'Вопросы о том, какие переговорки свободны/доступны на дату и время, решай через listAvailableRooms, а не по памяти.',
+  ],
+  listBookings: [
+    'Прошедшие встречи listBookings по умолчанию не показывает. Если пользователь явно спрашивает о прошлых встречах или о периоде — передай includePast: true и, при необходимости, from/to в формате YYYY-MM-DD.',
+  ],
+  inviteToMeeting: [
+    'Просьбу позвать/пригласить сотрудников на встречу решай через inviteToMeeting. Комнату, дату и время бери из сообщения или из контекста (последняя бронь пользователя). Если они известны из контекста — обязательно вызывай инструмент, не переспрашивай.',
+    'Если просят позвать «всех моих сотрудников» или «всю команду», передай в participants всех подчинённых пользователя.',
+    'Структура аргументов inviteToMeeting: {"room": "<название комнаты>", "date": "YYYY-MM-DD", "time": "HH:MM", "participants": ["<имя>", "<имя>"]}.',
+  ],
+  approveVacation: [
+    'Просьбу «подтверди/согласуй эту заявку» (на отпуск) решай через approveVacation. Сотрудника и даты бери из сообщения или из контекста (последняя заявка от подчинённых). Если они известны из контекста — обязательно вызывай инструмент, не переспрашивай.',
+  ],
+  cancelBooking: [
+    'Просьбу «отмени эту встречу» решай через cancelBooking. Комнату, дату и время бери из сообщения или из контекста (последняя доступная встреча). Если они известны из контекста — обязательно вызывай инструмент, не переспрашивай.',
+  ],
+  cancelVacation: ['Просьбу отменить свою заявку на отпуск решай через cancelVacation.'],
+  rejectVacation: ['Просьбу отклонить отпуск подчинённого решай через rejectVacation и обязательно передай причину.'],
+  rescheduleBooking: ['Просьбу перенести встречу решай через rescheduleBooking; старые и новые дата/время передавай явно или бери старую встречу из контекста.'],
+  getRoomSchedule: ['Расписание конкретной переговорки на дату решай через getRoomSchedule.'],
+  updateBooking: ['Изменение темы или длительности встречи решай через updateBooking.'],
+  declineInvite: ['Если пользователь хочет выйти из приглашённой встречи, используй declineInvite.'],
+}
+
 function buildPrecedenceLine(
   hasProfileBlocks: boolean,
   hasMemoryBlocks: boolean,
+  hasInvariantBlocks: boolean,
 ): string | null {
   const lines: string[] = []
   if (hasProfileBlocks) {
@@ -454,6 +567,9 @@ function buildPrecedenceLine(
   }
   if (hasMemoryBlocks) {
     lines.push(MEMORY_PRECEDENCE_LINE)
+  }
+  if (hasInvariantBlocks) {
+    lines.push(INVARIANT_PRECEDENCE_LINE)
   }
   return lines.length > 0 ? lines.join('\n') : null
 }
@@ -475,9 +591,11 @@ function buildDecideUser(
   request: string,
   tools: AgentTool[],
   allowedToolNames: string[],
+  rooms: string[],
   context: string | undefined,
   precedenceLine: string | null,
   taskLine: string | null,
+  hasInvariantBlocks: boolean,
 ): string {
   const available = allowedToolNames
     .map((name) => tools.find((t) => t.name === name))
@@ -491,39 +609,20 @@ function buildDecideUser(
     ...available.map(
       (t) => `- ${t.name}: ${t.description}. Аргументы: ${t.argsExample}`,
     ),
-    ...(available.some((t) => t.name === 'bookMeetingRoom')
-      ? [`Доступные комнаты (для bookMeetingRoom): ${ROOMS.join(', ')}.`]
-      : []),
-    ...(available.some((t) => t.name === 'listAvailableRooms')
-      ? [
-          'Вопросы о том, какие переговорки свободны/доступны на дату и время, решай через listAvailableRooms, а не по памяти.',
-        ]
-      : []),
-    ...(available.some((t) => t.name === 'listBookings')
-      ? [
-          'Прошедшие встречи listBookings по умолчанию не показывает. Если пользователь явно спрашивает о прошлых встречах или о периоде — передай includePast: true и, при необходимости, from/to в формате YYYY-MM-DD.',
-        ]
-      : []),
-    ...(available.some((t) => t.name === 'inviteToMeeting')
-      ? [
-          'Просьбу позвать/пригласить сотрудников на встречу решай через inviteToMeeting. Комнату, дату и время бери из сообщения или из контекста (последняя бронь пользователя). Если они известны из контекста — обязательно вызывай инструмент, не переспрашивай.',
-          'Если просят позвать «всех моих сотрудников» или «всю команду», передай в participants всех подчинённых пользователя.',
-          'Структура аргументов inviteToMeeting: {"room": "<название комнаты>", "date": "YYYY-MM-DD", "time": "HH:MM", "participants": ["<имя>", "<имя>"]}.',
-        ]
-      : []),
-    ...(available.some((t) => t.name === 'approveVacation')
-      ? [
-          'Просьбу «подтверди/согласуй эту заявку» (на отпуск) решай через approveVacation. Сотрудника и даты бери из сообщения или из контекста (последняя заявка от подчинённых). Если они известны из контекста — обязательно вызывай инструмент, не переспрашивай.',
-        ]
-      : []),
-    ...(available.some((t) => t.name === 'cancelBooking')
-      ? [
-          'Просьбу «отмени эту встречу» решай через cancelBooking. Комнату, дату и время бери из сообщения или из контекста (последняя доступная встреча). Если они известны из контекста — обязательно вызывай инструмент, не переспрашивай.',
-        ]
-      : []),
+    ...available.flatMap((tool) =>
+      tool.name === 'bookMeetingRoom'
+        ? [
+            `Доступные комнаты (для bookMeetingRoom): ${rooms.join(', ')}.`,
+            ...(DECIDE_TOOL_HINTS[tool.name] ?? []),
+          ]
+        : DECIDE_TOOL_HINTS[tool.name] ?? [],
+    ),
     ...(context ? ['', 'Контекст:', context] : []),
     ...(precedenceLine ? ['', precedenceLine] : []),
     ...(taskLine ? ['', taskLine] : []),
+    ...(hasInvariantBlocks
+      ? ['', 'Учитывай инварианты при выборе действия и не выбирай инструмент с нарушающими их аргументами.']
+      : []),
     '',
     'Ответь ровно одним json-объектом вида {"tool": "имя_инструмента" | null, "args": { ... }}. Без текста до "{" и после "}", без markdown.',
   ]
@@ -550,6 +649,7 @@ function buildFinalizeUser(
   responseLanguage: string | null,
   hasProfileBlocks: boolean,
   taskLine: string | null,
+  hasInvariantBlocks: boolean,
 ): string {
   return [
     `Запрос пользователя:\n${request}`,
@@ -558,6 +658,9 @@ function buildFinalizeUser(
     '',
     ...(precedenceLine ? [precedenceLine, ''] : []),
     ...(taskLine ? [taskLine, ''] : []),
+    ...(hasInvariantBlocks
+      ? ['Если решение нарушает инвариант — откажись, укажи INV-<id> и предложи совместимый вариант.', '']
+      : []),
     'Отвечай по фактам из отчёта инструмента. Если в отчёте есть «Код подтверждения: …» — включи этот код в ответ дословно. Не выдумывай выполненные действия, которых нет в отчёте.',
     'Если инструмент не вызывался — просто ответь на запрос.',
     'Вопросы вроде «кому я согласовал отпуск?» решаются через listVacations — не отвечай по памяти модели, используй данные отчёта.',
@@ -567,15 +670,120 @@ function buildFinalizeUser(
   ].join('\n')
 }
 
-function refusalText(verdicts: JudgeVerdict[], actText?: string): string {
+function refusalText(
+  verdicts: JudgeVerdict[],
+  actText: string | undefined,
+  invariants: InvariantRecord[],
+  hits: InvariantCode[],
+): string {
   const reasons = verdicts
     .filter((v) => v.status === 'fail')
     .map((v) => `- ${v.message}`)
   const lines = ['Действие отклонено полиси агента.', ...reasons]
+  const hitRecords = invariants.filter((record) => hits.includes(invariantCode(record)))
+  if (hitRecords.length > 0) {
+    lines.push(
+      '',
+      ...hitRecords.map(
+        (record) =>
+          `${invariantCode(record)} — ${record.text}\nСовместимая альтернатива: ${compatibleAlternative(record)}`,
+      ),
+    )
+  }
   if (actText) {
     lines.push('', `(Инструмент не выполнен: ${actText})`)
   }
   return lines.join('\n')
+}
+
+function compatibleAlternative(record: InvariantRecord): string {
+  switch (record.check) {
+    case 'meeting-end-time':
+      return 'выберите время и длительность, чтобы встреча завершилась не позже 18:30.'
+    case 'vacation-duration':
+      return 'укажите отпуск длительностью не более 14 дней.'
+    case 'orion-employee':
+      return 'выберите другую переговорную или попросите руководителя выполнить бронирование.'
+    case 'sqlite-only':
+      return 'используйте SQLite через node:sqlite.'
+    case 'server-secrets':
+      return 'оставьте ключи и переменные окружения на сервере, не передавая их в браузер.'
+    default:
+      return `предложите решение, которое соблюдает правило: «${record.text}».`
+  }
+}
+
+function formatInvariantHits(
+  invariants: InvariantRecord[],
+  hits: InvariantCode[],
+): string | null {
+  const lines = invariants
+    .filter((record) => hits.includes(invariantCode(record)))
+    .map((record) => `${invariantCode(record)}: ${record.text}`)
+  return lines.length > 0 ? lines.join('\n') : null
+}
+
+type BlockReasonInput = {
+  answerCheck: InvariantCheckResult
+  actionInvariantFailed: boolean
+  guardVerdict: InvariantGuardVerdict | null
+  failing: JudgeVerdict[]
+  invariants: InvariantRecord[]
+  hits: InvariantCode[]
+}
+
+function resolveBlockReason(input: BlockReasonInput): string | null {
+  if (!input.answerCheck.ok) {
+    return input.answerCheck.reason
+  }
+  if (input.actionInvariantFailed) {
+    return formatInvariantHits(input.invariants, input.hits)
+  }
+  if (input.guardVerdict?.status === 'fail') {
+    return (
+      input.guardVerdict.reason ?? 'Ответ нарушает пользовательский инвариант.'
+    )
+  }
+  if (input.failing.length > 0) {
+    return input.failing.map((verdict) => verdict.message).join(' ')
+  }
+  return null
+}
+
+function blockedAnswer(
+  answerCheck: InvariantCheckResult,
+  verdicts: JudgeVerdict[],
+  actRefusal: string | undefined,
+  invariants: InvariantRecord[],
+  hits: InvariantCode[],
+): string {
+  if (!answerCheck.ok) {
+    return refusalText(verdicts, undefined, invariants, answerCheck.hits)
+  }
+  return refusalText(verdicts, actRefusal, invariants, hits)
+}
+
+function formatActionReport(action: AgentAction): string {
+  const reference = action.outcome.reference
+    ? `\nКод подтверждения: ${action.outcome.reference}`
+    : ''
+  return `ОТЧЁТ ИНСТРУМЕНТА (${action.tool}):\n${action.outcome.text}${reference}`
+}
+
+function formatToolReport(actions: AgentAction[]): string {
+  if (actions.length === 0) {
+    return '(инструменты не вызывались)'
+  }
+  return actions.map(formatActionReport).join('\n\n')
+}
+
+function resolveGuardMessage(verdict: InvariantGuardVerdict): string {
+  if (verdict.reason) {
+    return verdict.reason
+  }
+  return verdict.status === 'pass'
+    ? 'Пользовательские инварианты не нарушены.'
+    : 'Ответ нарушает пользовательский инвариант.'
 }
 
 function parseDecideJson(content: string): {
@@ -634,6 +842,10 @@ function isTaskStateBlock(block: SystemBlock): boolean {
   return block.kind === 'task-state'
 }
 
+function isInvariantBlock(block: SystemBlock): boolean {
+  return block.kind === 'invariants'
+}
+
 function asSystemMessage(block: SystemBlock): LlmMessage {
   return { role: 'system', content: block.content }
 }
@@ -656,17 +868,22 @@ export class Agent {
     const profileBlocks = blocks.filter(isProfileBlock)
     const memoryBlocks = blocks.filter(isMemoryBlock)
     const taskStateBlocks = blocks.filter(isTaskStateBlock)
+    const invariantBlocks = blocks.filter(isInvariantBlock)
     const contextBlocks = blocks.filter(
       (block) =>
         !isMemoryBlock(block) &&
         !isProfileBlock(block) &&
-        !isTaskStateBlock(block),
+        !isTaskStateBlock(block) &&
+        !isInvariantBlock(block),
     )
     const hasMemoryBlocks = memoryBlocks.length > 0
     const hasProfileBlocks = profileBlocks.length > 0
+    const hasInvariantBlocks =
+      invariantBlocks.length > 0 || (this.config.invariants?.length ?? 0) > 0
     const precedenceLine = buildPrecedenceLine(
       hasProfileBlocks,
       hasMemoryBlocks,
+      hasInvariantBlocks,
     )
     const taskState = this.config.taskState ?? null
     const taskLine = buildTaskStateLine(taskState)
@@ -711,6 +928,7 @@ export class Agent {
         model,
         tokens: emptyTokens(),
         contextNote: prepared.note,
+        invariantHits: [],
       }
     }
 
@@ -734,6 +952,7 @@ export class Agent {
         model,
         tokens: emptyTokens({ historyTokensSent: 0 }),
         contextNote: prepared.note,
+        invariantHits: [],
       }
     }
 
@@ -759,13 +978,16 @@ export class Agent {
         request,
         tools,
         allowed,
+        roomsForRole(capabilities.identity.role),
         this.config.context,
         precedenceLine,
         taskLine,
+        hasInvariantBlocks,
       )
       const reply = await callLLM({
         messages: [
           { role: 'system', content: baseSystem },
+          ...invariantBlocks.map(asSystemMessage),
           ...contextBlocks.map(asSystemMessage),
           ...history,
           ...profileBlocks.map(asSystemMessage),
@@ -792,6 +1014,7 @@ export class Agent {
     }
 
     const actions: AgentAction[] = []
+    const actionInvariantHits: InvariantCode[] = []
     const loopMessages: LlmMessage[] = []
     let actRefusal: string | undefined
     let nudgeUsed = false
@@ -824,6 +1047,38 @@ export class Agent {
         actions.push({ tool, args, outcome: denied })
         actRefusal = denied.text
         trace.push({ stage: 'act', tool, args, outcome: denied })
+        return denied
+      }
+      let screenedArgs = args
+      if (requestedTool.screenArgs) {
+        try {
+          screenedArgs = await requestedTool.screenArgs(args, capabilities.identity)
+        } catch {
+          screenedArgs = args
+        }
+      }
+      const invariantCheck = runActionChecks(
+        tool,
+        screenedArgs,
+        capabilities.identity,
+        this.config.invariants ?? [],
+      )
+      if (!invariantCheck.ok) {
+        actionInvariantHits.push(...invariantCheck.hits)
+        const denied: ToolOutcome = {
+          ok: false,
+          text: `Действие отклонено: ${invariantCheck.reason}\nПредлагаю совместимый вариант без нарушения инварианта.`,
+          reference: null,
+        }
+        actions.push({ tool, args, outcome: denied })
+        actRefusal = denied.text
+        trace.push({
+          stage: 'act',
+          tool,
+          args,
+          outcome: denied,
+          invariantHits: invariantCheck.hits,
+        })
         return denied
       }
       const outcome = await requestedTool.run(args, capabilities.identity)
@@ -895,36 +1150,27 @@ export class Agent {
 
     const failed = actions.find((action) => !action.outcome.ok)
     let answer = ''
+    let toolReport = ''
     if (failed) {
       answer = actions.map((action) => action.outcome.text).join('\n\n')
     } else if (!silentPause) {
-      const report =
-        actions.length > 0
-          ? actions
-              .map(
-                (action) =>
-                  `ОТЧЁТ ИНСТРУМЕНТА (${action.tool}):\n${action.outcome.text}${
-                    action.outcome.reference
-                      ? `\nКод подтверждения: ${action.outcome.reference}`
-                      : ''
-                  }`,
-              )
-              .join('\n\n')
-          : '(инструменты не вызывались)'
+      toolReport = formatToolReport(actions)
       const pauseNote = stoppedByPause
         ? '\n\nПользователь поставил задачу на паузу — не выполняй дальнейшие действия, коротко сообщи, что выполнение приостановлено.'
         : ''
       const finalizeUser = buildFinalizeUser(
         request,
-        report + pauseNote,
+        toolReport + pauseNote,
         precedenceLine,
         this.config.responseLanguage ?? null,
         hasProfileBlocks,
         taskLine,
+        hasInvariantBlocks,
       )
       const finalizeReply = await callLLM({
         messages: [
           { role: 'system', content: baseSystem },
+          ...invariantBlocks.map(asSystemMessage),
           ...contextBlocks.map(asSystemMessage),
           ...(actions.length > 0 ? [] : history),
           ...profileBlocks.map(asSystemMessage),
@@ -944,7 +1190,7 @@ export class Agent {
       })
     }
 
-    const verdicts = silentPause
+    let verdicts = silentPause
       ? []
       : judges.map((j) =>
           j.evaluate({
@@ -953,17 +1199,93 @@ export class Agent {
             answer,
             identity: capabilities.identity,
             allowedTools: capabilities.allowedTools,
+            invariants: this.config.invariants ?? [],
           }),
         )
+    const answerInvariantCheck = silentPause
+      ? { ok: true, hits: [], reason: null }
+      : runAnswerChecks(answer, this.config.invariants ?? [])
+    let invariantHits = [
+      ...new Set([
+        ...answerInvariantCheck.hits,
+        ...actionInvariantHits,
+      ]),
+    ]
+    const checklessInvariants = (this.config.invariants ?? []).filter(
+      (record) => record.check === null,
+    )
+    let guardVerdict: InvariantGuardVerdict | null = null
+    if (
+      !silentPause &&
+      !failed &&
+      answerInvariantCheck.ok &&
+      this.config.invariantGuard &&
+      checklessInvariants.length > 0
+    ) {
+      try {
+        guardVerdict = await this.config.invariantGuard({
+          request,
+          answer,
+          report: toolReport,
+          invariants: checklessInvariants,
+        })
+        const verdict: JudgeVerdict = {
+          judge: 'invariant-guard',
+          status: guardVerdict.status,
+          message: resolveGuardMessage(guardVerdict),
+        }
+        verdicts = [...verdicts, verdict]
+        invariantHits = [...new Set([...invariantHits, ...guardVerdict.hits])]
+        trace.push({
+          stage: 'invariant-guard',
+          verdict,
+          hits: guardVerdict.hits,
+          usage: guardVerdict.usage,
+          latencyMs: guardVerdict.latencyMs,
+        })
+      } catch (error) {
+        trace.push({
+          stage: 'invariant-guard',
+          verdict: {
+            judge: 'invariant-guard',
+            status: 'pass',
+            message: 'LLM-проверка инвариантов недоступна; ответ не заблокирован.',
+          },
+          hits: [],
+          usage: null,
+          latencyMs: 0,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
+    }
     if (!silentPause) {
       trace.push({ stage: 'verdicts', verdicts })
     }
 
     const failing = verdicts.filter((v) => v.status === 'fail')
-    const blocked = failing.length > 0
-    const reason = blocked ? failing.map((v) => v.message).join(' ') : null
+    const guardFailed = guardVerdict?.status === 'fail'
+    const actionInvariantFailed = actionInvariantHits.length > 0
+    const blocked =
+      failing.length > 0 ||
+      !answerInvariantCheck.ok ||
+      actionInvariantFailed ||
+      guardFailed
+    const reason = resolveBlockReason({
+      answerCheck: answerInvariantCheck,
+      actionInvariantFailed,
+      guardVerdict,
+      failing,
+      invariants: this.config.invariants ?? [],
+      hits: invariantHits,
+    })
     if (blocked) {
-      answer = refusalText(verdicts, actRefusal)
+      answer = blockedAnswer(
+        answerInvariantCheck,
+        verdicts,
+        actRefusal,
+        this.config.invariants ?? [],
+        invariantHits,
+      )
     }
 
     const usage = sumUsage(trace)
@@ -1002,6 +1324,7 @@ export class Agent {
       model,
       tokens,
       contextNote: prepared.note,
+      invariantHits,
     }
   }
 }
@@ -1014,7 +1337,11 @@ function sumUsage(trace: AgentTraceStep[]): LlmUsage | null {
   let hasCacheBreakdown = false
   let any = false
   for (const step of trace) {
-    if (step.stage === 'decide' || step.stage === 'finalize') {
+    if (
+      step.stage === 'decide' ||
+      step.stage === 'finalize' ||
+      step.stage === 'invariant-guard'
+    ) {
       if (step.usage) {
         prompt += step.usage.prompt_tokens
         completion += step.usage.completion_tokens
@@ -1048,7 +1375,11 @@ function sumUsage(trace: AgentTraceStep[]): LlmUsage | null {
 function sumLatency(trace: AgentTraceStep[]): number {
   let total = 0
   for (const step of trace) {
-    if (step.stage === 'decide' || step.stage === 'finalize') {
+    if (
+      step.stage === 'decide' ||
+      step.stage === 'finalize' ||
+      step.stage === 'invariant-guard'
+    ) {
       total += step.latencyMs
     }
   }

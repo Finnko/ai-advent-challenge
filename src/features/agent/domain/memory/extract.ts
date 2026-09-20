@@ -20,6 +20,17 @@ const LAYER_TAXONOMY = [
   'Краткосрочная память (текущий диалог) уже хранится системой — её не извлекай.',
 ].join('\n')
 
+function resolveMemoryEntries(parsed: unknown): unknown[] | null {
+  if (Array.isArray(parsed)) {
+    return parsed
+  }
+  if (parsed && typeof parsed === 'object') {
+    const entries = (parsed as Record<string, unknown>).memories
+    return Array.isArray(entries) ? entries : null
+  }
+  return null
+}
+
 export function parseMemoryCandidates(content: string): MemoryCandidate[] {
   const cleaned = content
     .trim()
@@ -32,20 +43,23 @@ export function parseMemoryCandidates(content: string): MemoryCandidate[] {
   } catch {
     return []
   }
-  let entries: unknown
-  if (Array.isArray(parsed)) {
-    entries = parsed
-  } else if (parsed && typeof parsed === 'object') {
-    entries = (parsed as Record<string, unknown>).memories
-  } else {
-    entries = null
-  }
-  if (!Array.isArray(entries)) {
+  const entries = resolveMemoryEntries(parsed)
+  if (!entries) {
     return []
   }
   return entries
     .map((entry) => coerceCandidate(entry))
     .filter((candidate): candidate is MemoryCandidate => candidate !== null)
+}
+
+function coerceMemoryValue(value: unknown): string {
+  if (typeof value === 'string') {
+    return value
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value)
+  }
+  return ''
 }
 
 function coerceCandidate(entry: unknown): MemoryCandidate | null {
@@ -54,15 +68,7 @@ function coerceCandidate(entry: unknown): MemoryCandidate | null {
   }
   const record = entry as Record<string, unknown>
   const key = typeof record.key === 'string' ? record.key.trim() : ''
-  let value = ''
-  if (typeof record.value === 'string') {
-    value = record.value
-  } else if (
-    typeof record.value === 'number' ||
-    typeof record.value === 'boolean'
-  ) {
-    value = String(record.value)
-  }
+  const value = coerceMemoryValue(record.value)
   if (key.length === 0 || value.trim().length === 0) {
     return null
   }

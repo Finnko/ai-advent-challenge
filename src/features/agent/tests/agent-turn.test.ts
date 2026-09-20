@@ -5,6 +5,7 @@ import type {
   LlmMessage,
 } from '../domain/agent'
 import type { MemoryEntry } from '../domain/memory/types'
+import type { InvariantRecord } from '../domain/invariants/types'
 import type { TaskState } from '../domain/task/types'
 import { createAgentTools } from '../domain/agent-tools'
 import type { AgentRuntime } from '../server/agent-service.server'
@@ -172,6 +173,42 @@ function deps(
 }
 
 describe('runAgentTurn', () => {
+  it('передаёт глобальные инварианты в prompt и сохраняет hits', async () => {
+    const { store, appended } = createTurnStore(turnSession())
+    const invariant: InvariantRecord = {
+      id: 4,
+      token: 'tok-test',
+      slug: 'sqlite-only',
+      category: 'stack',
+      title: 'Только SQLite',
+      text: 'PostgreSQL не предлагать.',
+      check: 'sqlite-only',
+      pinned: true,
+    }
+    store.getInvariants = async () => [invariant]
+    const captured: LlmMessage[][] = []
+    const { runtime } = makeRuntime({
+      callLLM: async ({ messages, response_format }) => {
+        captured.push(messages)
+        return {
+          content: response_format ? '{"tool":null,"args":{}}' : 'Используем PostgreSQL.',
+          usage: null,
+          latencyMs: 0,
+        }
+      },
+    })
+
+    const result = await runAgentTurn(
+      { token: 'tok-test', sessionId: 7, user: 'Предложи базу данных' },
+      deps(store, runtime),
+    )
+
+    expect(result.run.blocked).toBe(true)
+    expect(result.run.invariantHits).toEqual(['INV-4'])
+    expect(captured[0].some((message) => message.role === 'system' && message.content.includes('Только SQLite'))).toBe(true)
+    expect(appended[1]?.run).toBe(result.run)
+  })
+
   it('отклоняет чужую сессию', async () => {
     const { store } = createTurnStore(turnSession({ token: 'other-token' }))
     const { runtime } = makeRuntime()

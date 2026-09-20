@@ -1,11 +1,11 @@
 import { useEffect, useRef } from 'react'
-import { GitBranch } from 'lucide-react'
 import type { AgentRunResult } from '../domain/agent'
 import type { TaskEvent } from '../domain/task/types'
 import AssistantMessage from './AssistantMessage'
 import TaskEventRow from './TaskEventRow'
+import ForkButton from './ForkButton'
+import UserBubble from './UserBubble'
 import TypingDots from '@/components/TypingDots'
-import { Button } from '@/components/ui/Button'
 
 export type ThreadMessage = {
   id?: number
@@ -79,37 +79,6 @@ export default function ChatThread({
           <span className="demo-muted text-xs">Агент думает и действует…</span>
         </div>
       )}
-    </div>
-  )
-}
-
-function ForkButton({
-  disabled,
-  onFork,
-}: {
-  disabled?: boolean
-  onFork: () => void
-}) {
-  return (
-    <Button
-      variant="secondary"
-      size="xs"
-      onClick={onFork}
-      disabled={disabled}
-      title="Создать ветку от этого сообщения"
-    >
-      <GitBranch className="h-3 w-3" />
-      ветка
-    </Button>
-  )
-}
-
-function UserBubble({ text }: { text: string }) {
-  return (
-    <div className="flex w-full justify-end">
-      <div className="max-w-[85%] break-words rounded-2xl border border-[var(--line)] bg-[color-mix(in_oklab,var(--accent)_18%,var(--surface-strong))] px-4 py-2.5 text-sm">
-        {text}
-      </div>
     </div>
   )
 }

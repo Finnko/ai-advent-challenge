@@ -23,8 +23,55 @@ import {
   WINDOW_SIZE_MIN,
 } from '../domain/session/config'
 import type { SessionConfigInput } from '../domain/session/config'
+import type {
+  InvariantCategory,
+  InvariantCheckId,
+  InvariantInput,
+  InvariantUpdateInput,
+} from '../domain/invariants/types'
+import { INVARIANT_CATEGORIES, invariantCheckIds } from '../domain/invariants/types'
 
 export { WINDOW_SIZE_MAX, WINDOW_SIZE_MIN }
+
+export function requireInvariantId(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
+    throw new Error('Некорректный id инварианта')
+  }
+  return value
+}
+
+function parseInvariantFields(value: unknown): Omit<InvariantInput, 'slug'> {
+  const data = asObject(value)
+  const text = typeof data.text === 'string' ? data.text.trim() : ''
+  const title = typeof data.title === 'string' ? data.title.trim() : ''
+  if (!title || title.length > 120) {
+    throw new Error('Название инварианта должно быть длиной до 120 символов')
+  }
+  if (!text || text.length > 500) {
+    throw new Error('Текст инварианта должен быть длиной до 500 символов')
+  }
+  if (!INVARIANT_CATEGORIES.includes(data.category as InvariantCategory)) {
+    throw new Error('Некорректная категория инварианта')
+  }
+  const check = data.check === undefined || data.check === null ? null : String(data.check)
+  if (check !== null && !(invariantCheckIds as readonly string[]).includes(check)) {
+    throw new Error('Некорректная проверка инварианта')
+  }
+  return { category: data.category as InvariantCategory, title, text, check: check as InvariantCheckId | null }
+}
+
+export function requireInvariantInput(value: unknown): InvariantInput {
+  const data = asObject(value)
+  const slug = typeof data.slug === 'string' ? data.slug.trim() : ''
+  if (!slug || !/^[a-z0-9-]+$/.test(slug)) {
+    throw new Error('Некорректный slug инварианта')
+  }
+  return { slug, ...parseInvariantFields(data) }
+}
+
+export function requireInvariantUpdate(value: unknown): InvariantUpdateInput {
+  return parseInvariantFields(value)
+}
 
 export function requireWindowSize(value: unknown): number {
   if (

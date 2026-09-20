@@ -9,39 +9,10 @@ import {
   TableHead,
   TableCell,
 } from '@/components/ui/Table'
+import StatCard from './-index/StatCard'
+import { STATS } from './-index/stats'
 
 export const Route = createFileRoute('/_layout/')({ component: Hub })
-
-const STATS = [
-  {
-    label: 'Шаги курса',
-    value: String(DAYS.length),
-    note: 'Все модули готовы',
-    dot: 'bg-[var(--accent)]',
-    noteClass: 'text-[var(--positive)]',
-  },
-  {
-    label: 'Тиры моделей',
-    value: '3',
-    note: 'weak · medium · strong',
-    dot: 'bg-[var(--info)]',
-    noteClass: 'text-[var(--info)]',
-  },
-  {
-    label: 'Контекст модели',
-    value: '1M',
-    note: 'токенов у deepseek-flash',
-    dot: 'bg-[var(--surface-tint)]',
-    noteClass: 'text-[var(--ink-muted)]',
-  },
-  {
-    label: 'Бюджет агента',
-    value: '4 096',
-    note: 'демо-лимит из 1 000 000 токенов контекста',
-    dot: 'bg-[var(--positive)]',
-    noteClass: 'text-[var(--ink-muted)]',
-  },
-]
 
 const STATUS: Record<string, string> = Object.fromEntries(
   DAYS.map((day) => [
@@ -49,23 +20,6 @@ const STATUS: Record<string, string> = Object.fromEntries(
     day.path.startsWith('/agent') ? 'Демо' : 'Доступно',
   ]),
 )
-
-function StatCard({ stat }: { stat: (typeof STATS)[number] }) {
-  return (
-    <div className="island-shell rounded-xl p-5 sm:p-6">
-      <div className="flex items-center justify-between gap-2">
-        <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[var(--ink-muted)]">
-          {stat.label}
-        </p>
-        <span className={`h-2 w-2 shrink-0 rounded-full ${stat.dot}`} />
-      </div>
-      <p className="mt-2 text-3xl font-extrabold tracking-tight text-[var(--ink)]">
-        {stat.value}
-      </p>
-      <p className={`m-0 text-sm font-medium ${stat.noteClass}`}>{stat.note}</p>
-    </div>
-  )
-}
 
 function Hub() {
   return (

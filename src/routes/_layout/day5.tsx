@@ -6,32 +6,18 @@ import { saveProposal } from '@lib/functions/save-proposal.functions'
 import type { ChatResult } from '@lib/llm'
 import { Button } from '@/components/ui/Button'
 import { Alert } from '@/components/ui/Alert'
+import TypingDots from '@/components/TypingDots'
 import { COMPARISON_NOTE, DAY5_SYSTEM, LINKS, TIERS } from '@lib/day5'
-import type { TierMeta } from '@lib/day5'
+import TierCard from './-day5/TierCard'
+import type { Answer, BriefState, CardState } from './-day5/types'
 
 export const Route = createFileRoute('/_layout/day5')({ component: Day5 })
 
-type Answer = {
-  content: string
-  usage: ChatResult['usage']
-  model: ChatResult['model']
-  latencyMs: ChatResult['latencyMs']
-  chars: number
-  words: number
-}
-
-type CardState =
-  | { status: 'idle' }
-  | { status: 'loading' }
-  | { status: 'done'; answer: Answer; savedPath: string | null; runId: string }
-  | { status: 'error'; error: string }
-
-type BriefState =
-  | { status: 'loading' }
-  | { status: 'ready'; text: string }
-  | { status: 'error'; error: string }
-
 const IDLE_STATE: CardState = { status: 'idle' }
+
+function createRunId(): string {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
+}
 
 function Day5() {
   const [brief, setBrief] = useState<BriefState>({ status: 'loading' })
@@ -58,11 +44,10 @@ function Day5() {
     }
   }, [])
 
-  const handleRunAll = async () => {
+  const handleRunAll = async (runId: string) => {
     if (running || brief.status !== 'ready') {
       return
     }
-    const runId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
     setRunning(true)
     setResults({})
     await Promise.all(
@@ -140,7 +125,7 @@ function Day5() {
           )}
           <div className="mt-3 flex flex-wrap items-center gap-3">
             <Button
-              onClick={() => void handleRunAll()}
+              onClick={() => void handleRunAll(createRunId())}
               disabled={running || !briefReady}
             >
               {running ? 'Модели думают…' : 'Собрать 3 предложения'}
@@ -198,103 +183,6 @@ function Day5() {
           </ul>
         </div>
       </div>
-    </div>
-  )
-}
-
-function TierCard({ tier, state }: { tier: TierMeta; state: CardState }) {
-  return (
-    <div className="demo-panel flex min-h-0 flex-col p-5">
-      <div className="mb-1 flex items-start justify-between gap-2">
-        <div>
-          <p className="island-kicker mb-1">{tier.label}</p>
-          <h2 className="demo-section-title m-0">{tier.model}</h2>
-        </div>
-      </div>
-      <p className="demo-muted m-0 mb-2 text-xs">
-        {tier.provider} · {tier.description}
-      </p>
-      <div className="min-h-0 flex-1 pt-2">
-        <CardBody state={state} />
-      </div>
-    </div>
-  )
-}
-
-function CardBody({ state }: { state: CardState }) {
-  switch (state.status) {
-    case 'idle':
-      return (
-        <p className="demo-muted m-0 text-sm">
-          Пока не запущено. Нажми кнопку выше.
-        </p>
-      )
-    case 'loading':
-      return (
-        <div className="flex flex-col gap-3">
-          <TypingDots />
-        </div>
-      )
-    case 'error':
-      return (
-        <Alert variant="destructive">
-          <p className="m-0 text-sm">{state.error}</p>
-        </Alert>
-      )
-    case 'done':
-      return <AnswerBlock answer={state.answer} savedPath={state.savedPath} />
-  }
-}
-
-function AnswerBlock({
-  answer,
-  savedPath,
-}: {
-  answer: Answer
-  savedPath: string | null
-}) {
-  return (
-    <div>
-      {answer.content.trim().length === 0 ? (
-        <Alert>
-          <p className="m-0 text-sm">
-            Модель вернула пустой ответ. Попробуй ещё раз.
-          </p>
-        </Alert>
-      ) : (
-        <pre className="demo-code-block select-text whitespace-pre-wrap text-sm">
-          {answer.content}
-        </pre>
-      )}
-      <p className="demo-muted mt-1.5 text-xs">
-        {answer.chars ?? 0} симв. · {answer.words ?? 0} слов
-        {answer.usage
-          ? ` · prompt ${answer.usage.prompt_tokens} → completion ${answer.usage.completion_tokens} ток.`
-          : ''}
-        {typeof answer.latencyMs === 'number'
-          ? ` · ${answer.latencyMs} мс`
-          : ''}
-      </p>
-      {savedPath && (
-        <p className="demo-muted m-0 mt-1 text-xs">Сохранено: {savedPath}</p>
-      )}
-    </div>
-  )
-}
-
-function TypingDots({ text }: { text?: string }) {
-  return (
-    <div className="flex items-center gap-2" aria-label="Ожидание ответа">
-      <div className="flex items-center gap-1.5">
-        {[0, 1, 2].map((i) => (
-          <span
-            key={i}
-            className="typing-dot h-2 w-2 rounded-full bg-[var(--accent)]"
-            style={{ animationDelay: `${i * 150}ms` }}
-          />
-        ))}
-      </div>
-      {text && <span className="demo-muted text-xs">{text}</span>}
     </div>
   )
 }

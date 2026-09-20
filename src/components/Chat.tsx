@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import type { ReactNode } from 'react'
 import type { ChatResult } from '../lib/llm'
+import ChatMessageView from './ChatMessageView'
+import TypingDots from './TypingDots'
 import { Button } from '@/components/ui/Button'
 import { Textarea } from '@/components/ui/Textarea'
 import { Alert } from '@/components/ui/Alert'
@@ -55,36 +57,18 @@ export default function Chat({
     <div className="flex h-full min-h-0 flex-col">
       <div className="mb-3 min-h-0 flex-1 overflow-y-auto">
         <div className="flex flex-col gap-4 pb-2">
-          {messages.map((message, i) =>
-            message.role === 'user' ? (
-              <div key={i} className="flex justify-end">
-                <div className="max-w-[85%] rounded-2xl border border-[var(--line)] bg-[color-mix(in_oklab,var(--accent)_18%,var(--surface-strong))] px-4 py-2.5 text-sm">
-                  {message.content}
-                </div>
-              </div>
-            ) : (
-              <div key={i} className="flex justify-start">
-                <div className="max-w-[85%]">
-                  {renderAssistant ? (
-                    renderAssistant(message)
-                  ) : (
-                    <pre className="demo-code-block whitespace-pre-wrap text-sm">
-                      {message.content}
-                    </pre>
-                  )}
-                  <p className="demo-muted mt-1.5 text-xs">
-                    {message.chars} симв. · {message.words} слов
-                    {message.usage
-                      ? ` · ${message.usage.completion_tokens} ток.`
-                      : ''}
-                  </p>
-                </div>
-              </div>
-            ),
-          )}
+          {messages.map((message, i) => (
+            <ChatMessageView
+              key={i}
+              message={message}
+              renderAssistant={renderAssistant}
+            />
+          ))}
           {loading && (
             <div className="flex justify-start">
-              <TypingDots />
+              <div className="py-3">
+                <TypingDots />
+              </div>
             </div>
           )}
         </div>
@@ -131,19 +115,3 @@ function toMessage(
   return { role, content, usage, chars: content.length, words }
 }
 
-function TypingDots() {
-  return (
-    <div
-      className="flex items-center gap-1.5 py-3"
-      aria-label="Ожидание ответа"
-    >
-      {[0, 1, 2].map((i) => (
-        <span
-          key={i}
-          className="typing-dot h-2.5 w-2.5 rounded-full bg-[var(--accent)]"
-          style={{ animationDelay: `${i * 150}ms` }}
-        />
-      ))}
-    </div>
-  )
-}
