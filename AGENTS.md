@@ -1,7 +1,7 @@
 # Project: AI Advent Challenge
 
-Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 14 (`feature/day14`).
-Days 13–14 extend the unified `/agent` workspace with task state and invariants.
+Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 16 (`feature/day16`).
+Days 13–16 extend the unified `/agent` workspace with task state, invariants and MCP.
 
 ## Stack
 
@@ -9,14 +9,17 @@ Days 13–14 extend the unified `/agent` workspace with task state and invariant
 - **Tailwind v4** via `@tailwindcss/vite`. Tokens/theme (`data-theme`, light/dark) in `src/styles.css`.
 - Styling: bare Tailwind + semantic tokens (`.demo-*`/`.island-*` kit). Slate palette + indigo accents;
   `--positive`/`--danger` reserved for meaning. Don't add component libraries unless asked.
+- **MCP SDK** (`@modelcontextprotocol/sdk` + `zod`) is the one allowed non-LLM SDK; it lives only in the
+  MCP server/client modules, never on the LLM transport layer (that stays raw `fetch`).
 
 ## Layout
 
 - `src/features/agent/` — the agent feature, self-contained for porting (see its `README.md`):
   `pages/` (only public surface), `api/` (react-query hooks), `functions/` (`createServerFn`),
-  `server/` (`.server.ts` deep modules: `agent-turn`, `agent-service`, `store`), `domain/` (isomorphic
+  `server/` (`.server.ts` deep modules: `agent-turn`, `agent-service`, `store`, `mcp`), `domain/` (isomorphic
   logic: `agent`, `agent-tools`, `context/`, `memory/`, `profile/`, `session/`, `task/`, `invariants/`,
-  `tokens`),
+  `mcp/`, `tokens`),
+  `mcp/` (standalone stdio MCP server process — spawned, never imported/bundled),
   `data/` (client-safe data), `components/`, `tests/`.
 - `src/lib/` — shared: `llm.ts`/`llm.server.ts` (transport), `functions/*.functions.ts` (Days 1–5 server
   fns + shared `validation.ts`), `day2.ts`…`day5.ts`, `days.ts` (sidebar), `utils.ts` (`cn`).
@@ -103,7 +106,7 @@ Days 13–14 extend the unified `/agent` workspace with task state and invariant
 
 ## Unified agent workspace (post-Day 12)
 
-- One route `/agent` (`pages/AgentPage`) with tabs `Диалог | Задача | Инварианты | Настройки`; the
+- One route `/agent` (`pages/AgentPage`) with tabs `Диалог | Инварианты | MCP | Настройки`; the
   invariant tab provides token-global manual CRUD. Old routes redirect. One sidebar entry (`lib/days.ts`).
 - **Session config is the backbone** (`sessions.strategy` / `memory_enabled` / `profile_id` /
   `window_size`): fixed by `createSession`, read by `runAgentTurn`, never switchable mid-session. The
@@ -116,6 +119,24 @@ Days 13–14 extend the unified `/agent` workspace with task state and invariant
   is persisted in `run_json` and shown as `INV-*` badges.
 - Five pinned defaults are seeded per token. Pinned `slug` and `check` are immutable on the server; custom
   checkless rules can use the opt-in async `invariantGuard`, which fails open on guard errors.
+
+## MCP (Day 16)
+
+- `features/agent/mcp/server.ts` is the stdio MCP server entry: `McpServer` +
+  `StdioServerTransport`; `mcp/tools.ts` registers the tools (`registerTool` + `zod` schemas). It is a
+  spawned process, not imported by the app — `node` runs the `.ts` directly (Node ≥22 type stripping,
+  no `tsx`).
+- `features/agent/server/mcp.server.ts` is the deep client module: a private `withClient` opens
+  `StdioClientTransport` (`command: process.execPath`, path from `import.meta.url`), calls, then closes.
+  Public seam is `listMcpTools(): { ok: true; tools } | { ok: false; error }`; per-call lifecycle and
+  graceful errors (never throws). Client-safe types live in `domain/mcp/types.ts`.
+- UI: `components/McpPanel.tsx` (one component per file, `McpToolCard` separate) in the «MCP» tab via
+  `functions/list-mcp-tools.functions.ts` + `api/use-mcp-tools.ts`. Offline test `tests/mcp.test.ts`
+  spawns the local server and asserts the tool list.
+- Dev/test only: the entry is resolved by source path, so it is not present in a `vite build`. Forward
+  path: Day 17 adds `callTool` (reusing `withClient`) and wraps MCP tools as `AgentTool`s merged in
+  `AgentRuntime.createTools` (register `roles`/`argsExample`/`allowedTools`, mutating ones in
+  `MUTATING_TOOLS`). Day 18 (scheduling + sqlite persistence) decides its own process model.
 
 ## Context strategies
 

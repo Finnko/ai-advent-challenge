@@ -20,6 +20,7 @@ import BranchPanel from '../components/BranchPanel'
 import MemoryInspector from '../components/MemoryInspector'
 import MemoryPanel from '../components/MemoryPanel'
 import InvariantsPanel from '../components/InvariantsPanel'
+import McpPanel from '../components/McpPanel'
 
 import ProfileList from '../components/ProfileList'
 import ProfileEditor from '../components/ProfileEditor'
@@ -238,6 +239,7 @@ export default function AgentPage() {
                 >
                   Инварианты
                 </TabsTrigger>
+                <TabsTrigger value="mcp">MCP</TabsTrigger>
                 <TabsTrigger value="settings">Настройки</TabsTrigger>
               </TabsList>
 
@@ -249,6 +251,10 @@ export default function AgentPage() {
                   onUpdate={actions.updateInvariant}
                   onDelete={actions.deleteInvariant}
                 />
+              </TabsContent>
+
+              <TabsContent value="mcp">
+                <McpPanel />
               </TabsContent>
 
               <TabsContent value="dialog">
