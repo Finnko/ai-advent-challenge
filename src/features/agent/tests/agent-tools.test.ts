@@ -41,6 +41,7 @@ describe('bookMeetingRoom', () => {
     expect(store.bookings).toHaveLength(1)
     expect(store.bookings[0].capacity).toBe(ROOM_CAPACITY)
     expect(store.bookings[0].bookedBy).toBe('Пётр')
+    expect(store.bookings[0].participants).toEqual(['Пётр'])
   })
 
   it('понимает короткое имя комнаты без слова «Переговорка»', async () => {
@@ -275,14 +276,15 @@ describe('inviteToMeeting', () => {
     expect(outcome.text).toContain('Неизвестный сотрудник')
   })
 
-  it('не приглашает самого себя', async () => {
+  it('не падает, если приглашают самого организатора', async () => {
     const store = createFakeStore({ bookings: [createBooking()] })
     const outcome = await getTool(store, 'inviteToMeeting').run(
       { participants: ['Пётр'] },
       createIdentity(),
     )
-    expect(outcome.ok).toBe(false)
-    expect(outcome.text).toContain('нет других сотрудников')
+    expect(outcome.ok).toBe(true)
+    expect(outcome.text).toContain('уже приглашены')
+    expect(outcome.text).toContain('Пётр')
   })
 
   it('не дублирует уже приглашённых', async () => {
@@ -371,8 +373,19 @@ describe('listBookings', () => {
       createIdentity(),
     )
     expect(outcome.text).toContain('Ладога')
-    expect(outcome.text).toContain('участники: Иван')
+    expect(outcome.text).toContain('участники: Пётр, Иван')
     expect(outcome.text).toContain('(моя)')
+  })
+
+  it('показывает организатора среди участников', async () => {
+    const store = createFakeStore()
+    const identity = createIdentity()
+    await getTool(store, 'bookMeetingRoom').run(
+      { room: 'Иртыш', date: '2026-09-11', time: '16:00' },
+      identity,
+    )
+    const outcome = await getTool(store, 'listBookings').run({}, identity)
+    expect(outcome.text).toContain('участники: Пётр')
   })
 
   it('показывает встречи, куда пользователя пригласили', async () => {

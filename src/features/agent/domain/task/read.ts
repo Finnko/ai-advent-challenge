@@ -43,6 +43,11 @@ export function formatTaskStateBlock(state: TaskState): string {
   } else if (step.length > 0) {
     lines.push(`- Текущий шаг: ${step}`)
   }
+  if (state.stage === 'planning' || state.stage === 'execution') {
+    lines.push(
+      `- Согласие на изменяющие действия: ${state.approved ? 'получено' : 'не получено'}`,
+    )
+  }
   if (state.expectedAction.description.length > 0) {
     lines.push(
       `- Ожидаемое действие (${TASK_ACTOR_LABELS[state.expectedAction.actor]}): ${state.expectedAction.description}`,
@@ -70,6 +75,9 @@ function formatStepLine(state: TaskState): string {
 }
 
 function resolveStageBehavior(state: TaskState): string {
+  if (state.stage === 'execution' && !state.approved) {
+    return 'Этап исполнения без согласия: изменяющие действия недоступны. Справочные list* разрешены; для мутаций дождись явного подтверждения плана пользователем.'
+  }
   const known = STAGE_BEHAVIOR[state.stage]
   if (known) {
     return known

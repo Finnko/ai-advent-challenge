@@ -16,3 +16,7 @@ export type McpToolDescriptor = {
 export type McpToolsResult =
   | { ok: true; tools: McpToolDescriptor[] }
   | { ok: false; error: string }
+
+export type McpCallResult =
+  | { ok: true; text: string }
+  | { ok: false; error: string }

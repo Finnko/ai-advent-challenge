@@ -18,6 +18,7 @@ function taskState(overrides: Partial<TaskState> = {}): TaskState {
     title: 'Задача',
     stage: 'execution',
     previousStage: null,
+    approved: false,
     step: 'шаг',
     steps: [],
     stepIndex: 0,
@@ -114,6 +115,31 @@ describe('классификация хода', () => {
     }
   })
 
+  it('распознаёт согласие с опечаткой в одну правку', () => {
+    for (const text of [
+      'подтвреждаю',
+      'подтвердаю',
+      'согласн',
+      'приступаю',
+    ]) {
+      expect(looksLikeApproval(text)).toBe(true)
+    }
+  })
+
+  it('не считает согласием похожие слова и короткие токены', () => {
+    for (const text of [
+      'дальше',
+      'давай',
+      'окно',
+      'около',
+      'покажи',
+      'не надо',
+      'а что если',
+    ]) {
+      expect(looksLikeApproval(text)).toBe(false)
+    }
+  })
+
   it('коррекция перебивает согласие', () => {
     expect(looksLikeApproval('да, но ты сделал неверно, переделай')).toBe(false)
     expect(looksLikeApproval('не верно, исправь')).toBe(false)
@@ -136,7 +162,7 @@ describe('advanceAfterRun', () => {
     expect(result?.state.history).toHaveLength(1)
   })
 
-  it('не двигает execution на читающем ходе', () => {
+  it('не двигает execution на читающем ходе без плана', () => {
     expect(
       advanceAfterRun(
         taskState({ stage: 'execution' }),
@@ -144,6 +170,39 @@ describe('advanceAfterRun', () => {
         TEST_NOW.toISOString(),
       ),
     ).toBeNull()
+  })
+
+  it('двигает план на читающем шаге execution', () => {
+    const result = advanceAfterRun(
+      taskState({
+        stage: 'execution',
+        steps: ['Проверить участников', 'Пригласить'],
+        stepIndex: 0,
+        step: 'Проверить участников',
+      }),
+      run([act('listBookings')]),
+      TEST_NOW.toISOString(),
+    )
+    expect(result?.state.stage).toBe('execution')
+    expect(result?.state.stepIndex).toBe(1)
+    expect(result?.event).toMatchObject({
+      kind: 'step',
+      to: 'Пригласить',
+    })
+  })
+
+  it('переводит execution → validation, когда читающий шаг последний', () => {
+    const result = advanceAfterRun(
+      taskState({
+        stage: 'execution',
+        steps: ['Проверить участников'],
+        stepIndex: 0,
+        step: 'Проверить участников',
+      }),
+      run([act('listBookings')]),
+      TEST_NOW.toISOString(),
+    )
+    expect(result?.state.stage).toBe('validation')
   })
 
   it('переводит validation → done после успешной проверки', () => {

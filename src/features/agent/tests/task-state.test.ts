@@ -28,6 +28,7 @@ function state(stage: TaskStage, overrides: Partial<TaskState> = {}): TaskState 
     title: 'Задача',
     stage,
     previousStage: null,
+    approved: false,
     step: 'шаг',
     steps: [],
     stepIndex: 0,
@@ -290,6 +291,33 @@ describe('transitionTask — единая точка переходов', () => 
       to: 'done',
       reason: 'финал',
     })
+  })
+
+  it('сбрасывает согласие при возврате в planning', () => {
+    const current = state('done', { approved: true })
+    const outcome = transitionTask(current, 'planning', {
+      at: AT,
+      reason: 'Новая задача',
+    })
+    expect(outcome.status).toBe('applied')
+    if (outcome.status !== 'applied') {
+      return
+    }
+    expect(outcome.state.stage).toBe('planning')
+    expect(outcome.state.approved).toBe(false)
+  })
+
+  it('сохраняет согласие при переходе execution → validation', () => {
+    const current = state('execution', { approved: true })
+    const outcome = transitionTask(current, 'validation', {
+      at: AT,
+      reason: 'Проверка',
+    })
+    expect(outcome.status).toBe('applied')
+    if (outcome.status !== 'applied') {
+      return
+    }
+    expect(outcome.state.approved).toBe(true)
   })
 
   it('pause/resume/cancel проходят через ту же точку', () => {
