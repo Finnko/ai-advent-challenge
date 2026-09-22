@@ -13,7 +13,6 @@ import {
   TASK_STEPS_MAX,
   TASK_TITLE_MAX,
   isTaskActor,
-  isTerminalTaskStage,
 } from './types'
 
 export type TaskAnalysis = {
@@ -23,6 +22,24 @@ export type TaskAnalysis = {
   steps?: string[]
   expectedAction: { actor: TaskActor; description: string }
   reason?: string | null
+}
+
+export type TaskRejection = {
+  from: TaskStage
+  to: TaskStage
+  reason: string
+}
+
+export type TransitionOutcome =
+  | { status: 'applied'; state: TaskState; event: TaskEvent }
+  | { status: 'unchanged'; state: TaskState }
+  | { status: 'rejected'; state: TaskState; rejection: TaskRejection }
+
+export type TransitionOptions = {
+  at: string
+  reason: string
+  expectedAction?: TaskExpectedAction
+  steps?: string[]
 }
 
 const ALLOWED_TRANSITIONS: Record<TaskStage, TaskStage[]> = {
@@ -98,6 +115,52 @@ export function transitionEvent(transition: TaskTransition): TaskEvent {
   }
 }
 
+export function transitionTask(
+  state: TaskState,
+  to: TaskStage,
+  options: TransitionOptions,
+): TransitionOutcome {
+  const { at, reason } = options
+  if (to === state.stage) {
+    return { status: 'unchanged', state }
+  }
+  if (!canTransition(state.stage, to)) {
+    return {
+      status: 'rejected',
+      state,
+      rejection: { from: state.stage, to, reason },
+    }
+  }
+  const hasSteps = options.steps !== undefined
+  const step = hasSteps ? (options.steps?.[0] ?? '') : state.step
+  const expectedAction =
+    options.expectedAction ??
+    (hasSteps
+      ? { actor: 'agent' as const, description: step }
+      : state.expectedAction)
+  const transition: TaskTransition = {
+    from: state.stage,
+    to,
+    reason,
+    at,
+  }
+  return {
+    status: 'applied',
+    state: {
+      ...state,
+      stage: to,
+      previousStage: nextPreviousStage(state, to),
+      step,
+      steps: hasSteps ? (options.steps ?? []) : state.steps,
+      stepIndex: hasSteps ? 0 : state.stepIndex,
+      expectedAction,
+      updatedAt: at,
+      history: pushHistory(state.history, transition),
+    },
+    event: transitionEvent(transition),
+  }
+}
+
 export function createTaskState(analysis: TaskAnalysis, at: string): TaskState {
   const title = clampText(analysis.title ?? '', TASK_TITLE_MAX) || 'Задача'
   const steps = normalizeSteps(analysis.steps, analysis.step)
@@ -114,13 +177,12 @@ export function createTaskState(analysis: TaskAnalysis, at: string): TaskState {
   }
 }
 
-export function applyAnalysis(
+function describeAnalysis(
   state: TaskState,
   analysis: TaskAnalysis,
   at: string,
 ): TaskState {
-  const title =
-    clampText(analysis.title ?? '', TASK_TITLE_MAX) || state.title
+  const title = clampText(analysis.title ?? '', TASK_TITLE_MAX) || state.title
   const stageChanged = analysis.stage !== state.stage
   let steps = state.steps
   let stepIndex = state.stepIndex
@@ -131,7 +193,7 @@ export function applyAnalysis(
     steps = normalizeSteps(analysis.steps, analysis.step)
     stepIndex = Math.min(stepIndex, Math.max(steps.length - 1, 0))
   }
-  const described: TaskState = {
+  return {
     ...state,
     title,
     step: steps[stepIndex] ?? clampText(analysis.step, TASK_STEP_MAX),
@@ -140,26 +202,30 @@ export function applyAnalysis(
     expectedAction: normalizeExpected(analysis.expectedAction),
     updatedAt: at,
   }
+}
 
+export type ApplyAnalysisResult = {
+  state: TaskState
+  rejection: TaskRejection | null
+}
+
+export function applyAnalysis(
+  state: TaskState,
+  analysis: TaskAnalysis,
+  at: string,
+): ApplyAnalysisResult {
+  const described = describeAnalysis(state, analysis, at)
   if (analysis.stage === state.stage) {
-    return described
+    return { state: described, rejection: null }
   }
-  if (!canTransition(state.stage, analysis.stage)) {
-    return state
-  }
-
-  const transition: TaskTransition = {
-    from: state.stage,
-    to: analysis.stage,
-    reason: analysis.reason?.trim() || 'Обновление состояния',
+  const outcome = transitionTask(described, analysis.stage, {
     at,
+    reason: analysis.reason?.trim() || 'Обновление состояния',
+  })
+  if (outcome.status === 'rejected') {
+    return { state, rejection: outcome.rejection }
   }
-  return {
-    ...described,
-    stage: analysis.stage,
-    previousStage: nextPreviousStage(state, analysis.stage),
-    history: pushHistory(state.history, transition),
-  }
+  return { state: outcome.state, rejection: null }
 }
 
 export function pauseTask(
@@ -167,26 +233,15 @@ export function pauseTask(
   at: string,
   reason = 'Пауза',
 ): TaskState {
-  if (state.stage === 'paused' || isTerminalTaskStage(state.stage)) {
-    return state
-  }
-  const transition: TaskTransition = {
-    from: state.stage,
-    to: 'paused',
-    reason,
+  const outcome = transitionTask(state, 'paused', {
     at,
-  }
-  return {
-    ...state,
-    stage: 'paused',
-    previousStage: state.stage,
+    reason,
     expectedAction: {
       actor: 'user',
       description: 'Продолжить задачу, когда будете готовы.',
     },
-    updatedAt: at,
-    history: pushHistory(state.history, transition),
-  }
+  })
+  return outcome.status === 'applied' ? outcome.state : state
 }
 
 export function resumeTask(
@@ -198,19 +253,8 @@ export function resumeTask(
     return state
   }
   const target = state.previousStage ?? 'planning'
-  const transition: TaskTransition = {
-    from: 'paused',
-    to: target,
-    reason,
-    at,
-  }
-  return {
-    ...state,
-    stage: target,
-    previousStage: null,
-    updatedAt: at,
-    history: pushHistory(state.history, transition),
-  }
+  const outcome = transitionTask(state, target, { at, reason })
+  return outcome.status === 'applied' ? outcome.state : state
 }
 
 export function cancelTask(
@@ -218,24 +262,13 @@ export function cancelTask(
   at: string,
   reason = 'Отмена',
 ): TaskState {
-  if (isTerminalTaskStage(state.stage)) {
-    return state
-  }
-  const transition: TaskTransition = {
-    from: state.stage,
-    to: 'cancelled',
-    reason,
+  const outcome = transitionTask(state, 'cancelled', {
     at,
-  }
-  return {
-    ...state,
-    stage: 'cancelled',
-    previousStage: null,
+    reason,
     expectedAction: {
       actor: 'user',
       description: 'Задача отменена.',
     },
-    updatedAt: at,
-    history: pushHistory(state.history, transition),
-  }
+  })
+  return outcome.status === 'applied' ? outcome.state : state
 }

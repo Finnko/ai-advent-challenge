@@ -14,7 +14,7 @@ const STAGE_BEHAVIOR: Partial<Record<TaskStage, string>> = {
   cancelled:
     'Задача отменена: не выполняй действий, пока пользователь не начнёт новую.',
   planning:
-    'Этап планирования: не выполняй изменяющих действий. Предложи план и спроси подтверждение у пользователя; доступны только справочные инструменты (list*).',
+    'Этап планирования: не выполняй изменяющих действий. Представь полный план пунктами и попроси подтвердить все пункты; до подтверждения ничего не выполняй. Доступны только справочные инструменты (list*).',
   validation:
     'Этап проверки: изменяющие действия недоступны. Сверь результат с исходным запросом через справочные инструменты (list*) и подтверди его.',
 }
@@ -80,7 +80,10 @@ function resolveStageBehavior(state: TaskState): string {
   return 'Работай строго в рамках текущего шага. Не выполняй другие шаги; когда шаг завершён — верни tool: null.'
 }
 
-export function buildTaskStateLine(state: TaskState | null): string | null {
+export function buildTaskStateLine(
+  state: TaskState | null,
+  note?: string | null,
+): string | null {
   if (!state) {
     return null
   }
@@ -92,5 +95,6 @@ export function buildTaskStateLine(state: TaskState | null): string | null {
     `Текущий этап задачи: ${stage}.`,
     ...(stepLine ? [stepLine] : []),
     behavior,
+    ...(note && note.trim().length > 0 ? [note] : []),
   ].join('\n')
 }

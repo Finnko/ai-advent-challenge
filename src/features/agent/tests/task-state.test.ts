@@ -6,6 +6,7 @@ import {
   createTaskState,
   pauseTask,
   resumeTask,
+  transitionTask,
 } from '../domain/task/state'
 import type { TaskAnalysis } from '../domain/task/state'
 import type { TaskStage, TaskState } from '../domain/task/types'
@@ -74,7 +75,7 @@ describe('task state machine', () => {
       stepIndex: 1,
       step: 'b',
     })
-    const next = applyAnalysis(
+    const { state: next } = applyAnalysis(
       prev,
       analysis({
         stage: 'execution',
@@ -94,7 +95,7 @@ describe('task state machine', () => {
       stepIndex: 0,
       step: 'Первый',
     })
-    const next = applyAnalysis(
+    const { state: next } = applyAnalysis(
       prev,
       analysis({ stage: 'execution', step: 'Второй' }),
       AT,
@@ -109,7 +110,7 @@ describe('task state machine', () => {
       stepIndex: 2,
       step: 'c',
     })
-    const next = applyAnalysis(
+    const { state: next } = applyAnalysis(
       prev,
       analysis({ stage: 'execution', steps: ['a', 'b'] }),
       AT,
@@ -128,11 +129,12 @@ describe('task state machine', () => {
   })
 
   it('применяет допустимый переход и пишет историю', () => {
-    const next = applyAnalysis(
+    const { state: next, rejection } = applyAnalysis(
       state('planning'),
       analysis({ stage: 'execution', reason: 'Приступаем' }),
       AT,
     )
+    expect(rejection).toBeNull()
     expect(next.stage).toBe('execution')
     expect(next.step).toBe('Бронируем комнату')
     expect(next.history).toHaveLength(1)
@@ -154,12 +156,17 @@ describe('task state machine', () => {
 
   it('отклоняет нелегальный переход, полностью сохраняя прежнее состояние', () => {
     const prev = state('planning')
-    const next = applyAnalysis(
+    const { state: next, rejection } = applyAnalysis(
       prev,
       analysis({ stage: 'done', step: 'Готово' }),
       AT,
     )
     expect(next).toBe(prev)
+    expect(rejection).toEqual({
+      from: 'planning',
+      to: 'done',
+      reason: 'Обновление состояния',
+    })
     expect(next.stage).toBe('planning')
     expect(next.step).toBe('шаг')
     expect(next.updatedAt).toBe(AT)
@@ -213,7 +220,7 @@ describe('task state machine', () => {
 
   it('анализатор может возобновить задачу из паузы напрямую', () => {
     const paused = pauseTask(state('validation'), AT)
-    const resumed = applyAnalysis(
+    const { state: resumed } = applyAnalysis(
       paused,
       analysis({ stage: 'validation', step: 'Продолжаем' }),
       AT,
@@ -227,12 +234,80 @@ describe('task state machine', () => {
     const stages: TaskStage[] = ['execution', 'planning', 'execution', 'planning']
     for (let i = 0; i < TASK_HISTORY_LIMIT + 5; i += 1) {
       const target = stages[i % stages.length]
-      current = applyAnalysis(
-        current,
-        analysis({ stage: target }),
-        AT,
-      )
+      current = applyAnalysis(current, analysis({ stage: target }), AT).state
     }
     expect(current.history.length).toBe(TASK_HISTORY_LIMIT)
+  })
+})
+
+describe('transitionTask — единая точка переходов', () => {
+  it('применяет легальный переход и возвращает событие', () => {
+    const outcome = transitionTask(state('planning'), 'execution', {
+      at: AT,
+      reason: 'Приступаем',
+      steps: ['Забронировать'],
+    })
+    expect(outcome.status).toBe('applied')
+    if (outcome.status !== 'applied') {
+      return
+    }
+    expect(outcome.state.stage).toBe('execution')
+    expect(outcome.state.steps).toEqual(['Забронировать'])
+    expect(outcome.state.previousStage).toBeNull()
+    expect(outcome.event).toMatchObject({
+      kind: 'transition',
+      from: 'planning',
+      to: 'execution',
+    })
+  })
+
+  it('возвращает unchanged на том же этапе', () => {
+    const current = state('execution')
+    const outcome = transitionTask(current, 'execution', {
+      at: AT,
+      reason: 'повтор',
+    })
+    expect(outcome.status).toBe('unchanged')
+    if (outcome.status !== 'unchanged') {
+      return
+    }
+    expect(outcome.state).toBe(current)
+  })
+
+  it('возвращает rejected и не трогает состояние при нелегальном переходе', () => {
+    const current = state('planning')
+    const outcome = transitionTask(current, 'done', {
+      at: AT,
+      reason: 'финал',
+    })
+    expect(outcome.status).toBe('rejected')
+    if (outcome.status !== 'rejected') {
+      return
+    }
+    expect(outcome.state).toBe(current)
+    expect(outcome.rejection).toEqual({
+      from: 'planning',
+      to: 'done',
+      reason: 'финал',
+    })
+  })
+
+  it('pause/resume/cancel проходят через ту же точку', () => {
+    const paused = pauseTask(state('execution'), AT)
+    expect(paused.stage).toBe('paused')
+    expect(paused.previousStage).toBe('execution')
+    const resumed = resumeTask(paused, AT)
+    expect(resumed.stage).toBe('execution')
+    expect(resumed.previousStage).toBeNull()
+    const cancelled = cancelTask(state('validation'), AT)
+    expect(cancelled.stage).toBe('cancelled')
+  })
+
+  it('не отменяет терминальную задачу и не ставит на паузу дважды', () => {
+    const done = state('done')
+    expect(cancelTask(done, AT)).toBe(done)
+    expect(pauseTask(done, AT)).toBe(done)
+    const paused = state('paused', { previousStage: 'planning' })
+    expect(pauseTask(paused, AT)).toBe(paused)
   })
 })

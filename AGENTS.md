@@ -73,6 +73,14 @@ Days 13–14 extend the unified `/agent` workspace with task state and invariant
 - **`planning` is propose-and-wait**: mutating tools (`isMutatingTool` in `agent-tools.ts`) are hidden
   from `decide` and hard-denied at `act`; read-only `list*` tools stay available. Mutations run only in
   `execution`; `validation` (like `planning`) keeps only read-only `list*`.
+- **Controlled transitions (Day 15)**: every stage change goes through the single `transitionTask`
+  reducer in `domain/task/state.ts` over `ALLOWED_TRANSITIONS`; an illegal move returns `rejected` and
+  leaves the snapshot untouched (`applyAnalysis` surfaces the rejection). `planning → execution`
+  additionally requires explicit approval and a complete plan: `runAgentTurn` gates the analyzer's
+  analysis with `looksLikeApproval` (`domain/task/advance.ts`) and `expectedAction.actor !== 'user'`,
+  and keeps `planning` otherwise. Rejections are
+  observable — a `task` event `kind: 'rejected'` is persisted and a hint line is merged into the
+  turn's `taskLine` for both `decide` and `finalize` (via `AgentConfig.taskNote`).
 - **Auto transitions** (`domain/task/advance.ts`): `runAgentTurn` advances `execution → validation`
   after a successful mutating turn, and `validation → done` after a real read-only verification
   (`list*`) with no correction signal. A correction message (`looksLikeCorrection`) deterministically

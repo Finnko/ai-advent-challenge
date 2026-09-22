@@ -29,6 +29,20 @@ export default function TaskEventRow({ event }: { event: TaskEvent }) {
       </div>
     )
   }
+  if (event.kind === 'rejected') {
+    return (
+      <div className="flex items-center justify-center gap-2 py-1">
+        <span className="h-px w-8 bg-[var(--line)]" />
+        <Badge variant="warn" title={event.reason}>
+          переход отклонён · {event.from} → {event.to}
+        </Badge>
+        <span className="max-w-[60%] truncate text-xs text-[var(--ink-muted)]">
+          {event.reason}
+        </span>
+        <span className="h-px w-8 bg-[var(--line)]" />
+      </div>
+    )
+  }
   const paused = event.to === 'paused'
   return (
     <div className="flex items-center justify-center gap-2 py-1">

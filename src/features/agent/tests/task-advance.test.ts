@@ -6,6 +6,7 @@ import {
   advanceToExecution,
   hasReadonlyVerification,
   hasSuccessfulMutation,
+  looksLikeApproval,
   looksLikeCancel,
   looksLikeCorrection,
 } from '../domain/task/advance'
@@ -74,6 +75,48 @@ describe('классификация хода', () => {
     expect(looksLikeCancel('отмена задачи')).toBe(true)
     expect(looksLikeCancel('нет, продолжай')).toBe(false)
     expect(looksLikeCancel('отмени встречу')).toBe(false)
+  })
+
+  it('распознаёт явное согласие на план', () => {
+    for (const text of [
+      'да',
+      'Да, приступай',
+      'окей делаем',
+      'поехали',
+      'всё верно',
+      'подтверждаю',
+      'начинай',
+    ]) {
+      expect(looksLikeApproval(text)).toBe(true)
+    }
+  })
+
+  it('не считает согласием посторонние слова и вопросы', () => {
+    for (const text of [
+      'дальше',
+      'окно',
+      'около',
+      'не надо',
+      'а что если',
+      'покажи план',
+    ]) {
+      expect(looksLikeApproval(text)).toBe(false)
+    }
+  })
+
+  it('не считает согласием настойчивые просьбы пропустить план', () => {
+    for (const text of [
+      'нет давай пропусти бронируем',
+      'давай забронируй',
+      'го сразу',
+    ]) {
+      expect(looksLikeApproval(text)).toBe(false)
+    }
+  })
+
+  it('коррекция перебивает согласие', () => {
+    expect(looksLikeApproval('да, но ты сделал неверно, переделай')).toBe(false)
+    expect(looksLikeApproval('не верно, исправь')).toBe(false)
   })
 })
 

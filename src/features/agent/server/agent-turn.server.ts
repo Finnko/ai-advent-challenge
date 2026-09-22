@@ -12,6 +12,7 @@ import {
 import {
   advanceAfterRun,
   advanceToExecution,
+  looksLikeApproval,
   looksLikeCancel,
   looksLikeCorrection,
   looksLikeResume,
@@ -24,7 +25,7 @@ import {
   transitionEvent,
 } from '../domain/task/state'
 import type { AnalyzeTaskState } from '../domain/task/analyze'
-import type { TaskAnalysis } from '../domain/task/state'
+import type { TaskAnalysis, TaskRejection } from '../domain/task/state'
 import type { TaskEvent, TaskState } from '../domain/task/types'
 import { TIER_ENDPOINTS } from '@lib/llm'
 import type { AgentExecution, AgentRuntime } from './agent-service.server'
@@ -174,6 +175,7 @@ type TaskOutcome = {
   taskEvent: TaskEvent | null
   changed: boolean
   usage: SummaryUsage | null
+  rejection: TaskRejection | null
 }
 
 const ZERO_TOKENS: AgentRunResult['tokens'] = {
@@ -218,6 +220,17 @@ function eventFromHistory(
   return transition ? transitionEvent(transition) : null
 }
 
+function rejectionNote(
+  rejection: TaskRejection | null,
+  state: TaskState | null,
+): string | null {
+  if (!rejection) {
+    return null
+  }
+  const stay = state?.stage ?? rejection.from
+  return `Попытка перейти ${rejection.from} → ${rejection.to} отклонена: ${rejection.reason} Оставайся на этапе ${stay} и продолжай по плану.`
+}
+
 async function resolveTaskState(
   input: {
     enabled: boolean
@@ -235,6 +248,7 @@ async function resolveTaskState(
       taskEvent: null,
       changed: false,
       usage: null,
+      rejection: null,
     }
   }
   const current = await store.getTaskState(input.sessionId)
@@ -257,7 +271,13 @@ async function resolveTaskState(
   }
 
   if (!analysis) {
-    return { taskState: current, taskEvent: null, changed: false, usage }
+    return {
+      taskState: current,
+      taskEvent: null,
+      changed: false,
+      usage,
+      rejection: null,
+    }
   }
 
   if (!current) {
@@ -272,14 +292,36 @@ async function resolveTaskState(
       },
       changed: true,
       usage,
+      rejection: null,
     }
   }
-  const next = applyAnalysis(current, analysis, input.at)
+
+  let rejection: TaskRejection | null = null
+  const approved = looksLikeApproval(input.user)
+  const planIncomplete = analysis.expectedAction.actor === 'user'
+  if (
+    current.stage === 'planning' &&
+    analysis.stage === 'execution' &&
+    (!approved || planIncomplete)
+  ) {
+    rejection = {
+      from: 'planning',
+      to: 'execution',
+      reason: planIncomplete
+        ? 'В плане остались незакрытые пункты — сначала утвердите все пункты.'
+        : 'План ещё не утверждён пользователем.',
+    }
+    analysis = { ...analysis, stage: 'planning' }
+  }
+
+  const applied = applyAnalysis(current, analysis, input.at)
+  const next = applied.state
   return {
     taskState: next,
     taskEvent: next === current ? null : eventFromHistory(next, current),
     changed: next !== current,
     usage,
+    rejection: rejection ?? applied.rejection,
   }
 }
 
@@ -392,6 +434,8 @@ export async function runAgentTurn(
 
   let activeTaskState = taskOutcome.taskState
   let changed = taskOutcome.changed
+  const rejection = taskOutcome.rejection
+  const taskNote = rejectionNote(rejection, activeTaskState)
   let correctionEvent: TaskEvent | null = null
   if (
     activeTaskState &&
@@ -419,6 +463,7 @@ export async function runAgentTurn(
       windowSize: config.windowSize,
       profile,
       taskState: activeTaskState,
+      taskNote,
       isPaused: async () =>
         (await deps.store.getTaskState(sessionId))?.stage === 'paused',
       memory: {
@@ -445,6 +490,15 @@ export async function runAgentTurn(
   const concurrentPause =
     persisted?.stage === 'paused' && activeTaskState?.stage !== 'paused'
   const events: TaskEvent[] = [...preEvents]
+  if (rejection) {
+    events.push({
+      kind: 'rejected',
+      from: rejection.from,
+      to: rejection.to,
+      reason: rejection.reason,
+      at,
+    })
+  }
   let finalTaskState: TaskState | null = activeTaskState
   if (concurrentPause) {
     finalTaskState = persisted

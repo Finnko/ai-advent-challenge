@@ -92,6 +92,17 @@ describe('buildTaskStateMessages', () => {
     expect(user?.content).toContain('assistant: уточните время')
     expect(user?.content).toContain('продолжим')
   })
+
+  it('требует полностью определённый план перед execution', () => {
+    const messages = buildTaskStateMessages({
+      current: CURRENT,
+      history: [],
+      userMessage: 'приступай',
+    })
+    const system = messages.find((message) => message.role === 'system')
+    expect(system?.content).toContain('полностью определён')
+    expect(system?.content).toContain('открытые пункты')
+  })
 })
 
 describe('createAnalyzeTaskState', () => {

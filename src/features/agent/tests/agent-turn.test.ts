@@ -870,4 +870,188 @@ describe('runAgentTurn', () => {
     expect(result.taskState?.stage).not.toBe('cancelled')
     expect(getTask()?.stage).not.toBe('cancelled')
   })
+
+  it('не пускает planning → execution без явного согласия', async () => {
+    const { store, getTask, appended } = createTurnStore(
+      turnSession({ taskStateEnabled: true }),
+      taskState({ stage: 'planning' }),
+    )
+    const { runtime, captured } = makeRuntime({
+      analyzeTaskState: async () => ({
+        analysis: {
+          stage: 'execution',
+          step: 'Забронировать Ладогу',
+          expectedAction: { actor: 'agent', description: 'bookMeetingRoom' },
+          reason: 'Параметров достаточно',
+        },
+        usage: null,
+      }),
+    })
+
+    const result = await runAgentTurn(
+      {
+        token: 'tok-test',
+        sessionId: 7,
+        user: 'Ладога, завтра в 15:00, на час',
+      },
+      deps(store, runtime),
+    )
+
+    expect(result.taskState?.stage).toBe('planning')
+    expect(getTask()?.stage).toBe('planning')
+    const rejected = appended.find(
+      (message) =>
+        message.role === 'task' &&
+        (message.run as { kind?: string } | undefined)?.kind === 'rejected',
+    )
+    expect(rejected?.run).toMatchObject({
+      kind: 'rejected',
+      from: 'planning',
+      to: 'execution',
+    })
+    const userMessages = captured
+      .flat()
+      .filter((message) => message.role === 'user')
+    expect(userMessages.some((message) => message.content.includes('отклонена'))).toBe(
+      true,
+    )
+  })
+
+  it('не пускает planning → execution по настойчивой фразе «давай»', async () => {
+    const { store, getTask, appended } = createTurnStore(
+      turnSession({ taskStateEnabled: true }),
+      taskState({ stage: 'planning' }),
+    )
+    const { runtime } = makeRuntime({
+      analyzeTaskState: async () => ({
+        analysis: {
+          stage: 'execution',
+          step: 'Забронировать',
+          expectedAction: { actor: 'agent', description: 'bookMeetingRoom' },
+          reason: 'Пользователь торопит',
+        },
+        usage: null,
+      }),
+    })
+
+    const result = await runAgentTurn(
+      { token: 'tok-test', sessionId: 7, user: 'нет давай пропусти бронируем' },
+      deps(store, runtime),
+    )
+
+    expect(result.taskState?.stage).toBe('planning')
+    expect(getTask()?.stage).toBe('planning')
+    const rejected = appended.find(
+      (message) =>
+        message.role === 'task' &&
+        (message.run as { kind?: string } | undefined)?.kind === 'rejected',
+    )
+    expect(rejected?.run).toMatchObject({
+      kind: 'rejected',
+      from: 'planning',
+      to: 'execution',
+    })
+  })
+
+  it('пускает planning → execution по явному согласию', async () => {
+    const { store, getTask } = createTurnStore(
+      turnSession({ taskStateEnabled: true }),
+      taskState({ stage: 'planning' }),
+    )
+    const { runtime } = makeRuntime({
+      analyzeTaskState: async () => ({
+        analysis: {
+          stage: 'execution',
+          step: 'Забронировать Ладогу',
+          expectedAction: { actor: 'agent', description: 'bookMeetingRoom' },
+          reason: 'Пользователь подтвердил план',
+        },
+        usage: null,
+      }),
+    })
+
+    const result = await runAgentTurn(
+      { token: 'tok-test', sessionId: 7, user: 'да, приступай' },
+      deps(store, runtime),
+    )
+
+    expect(result.taskState?.stage).toBe('execution')
+    expect(getTask()?.stage).toBe('execution')
+  })
+
+  it('не пускает execution, пока в плане есть незакрытые пункты', async () => {
+    const { store, getTask, appended } = createTurnStore(
+      turnSession({ taskStateEnabled: true }),
+      taskState({ stage: 'planning' }),
+    )
+    const { runtime } = makeRuntime({
+      analyzeTaskState: async () => ({
+        analysis: {
+          stage: 'execution',
+          step: 'Забронировать',
+          expectedAction: {
+            actor: 'user',
+            description: 'Уточнить способ приглашения Ивана',
+          },
+          reason: 'Пользователь подтвердил',
+        },
+        usage: null,
+      }),
+    })
+
+    const result = await runAgentTurn(
+      { token: 'tok-test', sessionId: 7, user: 'подтверждаю, запускай' },
+      deps(store, runtime),
+    )
+
+    expect(result.taskState?.stage).toBe('planning')
+    expect(getTask()?.stage).toBe('planning')
+    const rejected = appended.find(
+      (message) =>
+        message.role === 'task' &&
+        (message.run as { kind?: string } | undefined)?.kind === 'rejected',
+    )
+    expect(rejected?.run).toMatchObject({
+      kind: 'rejected',
+      from: 'planning',
+      to: 'execution',
+      reason: 'В плане остались незакрытые пункты — сначала утвердите все пункты.',
+    })
+  })
+
+  it('отклоняет неадъяцентный прыжок планирование → готово', async () => {
+    const { store, getTask, appended } = createTurnStore(
+      turnSession({ taskStateEnabled: true }),
+      taskState({ stage: 'planning' }),
+    )
+    const { runtime } = makeRuntime({
+      analyzeTaskState: async () => ({
+        analysis: {
+          stage: 'done',
+          step: 'Готово',
+          expectedAction: { actor: 'user', description: 'Задача завершена' },
+          reason: 'Пользователь доволен',
+        },
+        usage: null,
+      }),
+    })
+
+    const result = await runAgentTurn(
+      { token: 'tok-test', sessionId: 7, user: 'спасибо' },
+      deps(store, runtime),
+    )
+
+    expect(result.taskState?.stage).toBe('planning')
+    expect(getTask()?.stage).toBe('planning')
+    const rejected = appended.find(
+      (message) =>
+        message.role === 'task' &&
+        (message.run as { kind?: string } | undefined)?.kind === 'rejected',
+    )
+    expect(rejected?.run).toMatchObject({
+      kind: 'rejected',
+      from: 'planning',
+      to: 'done',
+    })
+  })
 })
