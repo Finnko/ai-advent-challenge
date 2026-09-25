@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { AGENT_JUDGES, Agent } from '../domain/agent'
 import type {
   AgentIdentity,
+  AgentTool,
   CallLLM,
   LlmMessage,
   LlmReply,
@@ -62,6 +63,7 @@ function buildAgent(options: {
   contextBudgetTokens?: number
   responseLanguage?: string | null
   taskState?: TaskState
+  taskStateEnabled?: boolean
   taskNote?: string
   maxActionsPerTurn?: number
   isPaused?: () => boolean | Promise<boolean>
@@ -81,6 +83,7 @@ function buildAgent(options: {
     context: options.context,
     contextBudgetTokens: options.contextBudgetTokens,
     taskState: options.taskState,
+    taskStateEnabled: options.taskStateEnabled,
     taskNote: options.taskNote,
     maxActionsPerTurn: options.maxActionsPerTurn,
     isPaused: options.isPaused,
@@ -567,6 +570,37 @@ describe('этап planning и мульти-действия', () => {
     expect(decideUser).toContain('listBookings')
   })
 
+  it('в planning показывает параметры gated MCP-инструмента и дефолты в finalize', async () => {
+    const { callLLM, calls } = scriptedLLM({
+      decide: '{"tool": null, "args": {}}',
+      finalize: 'План: создать расписание для Санкт-Петербурга.',
+    })
+    const scheduleTool: AgentTool = {
+      name: 'mcp_schedule_weather_report',
+      description: 'Создаёт периодический сбор погоды по городу',
+      argsExample:
+        '{ "city": "<строка>", "intervalMinutes": <целое>, "windowHours": <целое> }',
+      roles: ['employee', 'manager'],
+      run: async () => ({ ok: true, text: 'ok', reference: null }),
+    }
+    const identity = createIdentity()
+    await new Agent({
+      capabilities: createCapabilities(identity, ['mcp_schedule_weather_report']),
+      tools: [scheduleTool],
+      judges: AGENT_JUDGES,
+      callLLM,
+      model: 'test-model',
+      today: '2026-09-10',
+      taskState: buildTaskState({ stage: 'planning' }),
+    }).run('запланируй погодный отчёт по Санкт-Петербургу')
+
+    const finalizeUser =
+      calls.find((call) => !call.isDecide)?.messages.at(-1)?.content ?? ''
+    expect(finalizeUser).toContain('станут доступны после подтверждения плана')
+    expect(finalizeUser).toContain('intervalMinutes')
+    expect(finalizeUser).toContain('каждые 60 минут')
+  })
+
   it('в planning не выполняет изменяющий инструмент, даже если он выбран', async () => {
     const store = createFakeStore()
     const { callLLM } = scriptedLLM({
@@ -589,6 +623,49 @@ describe('этап planning и мульти-действия', () => {
 
     expect(store.bookings).toHaveLength(0)
     expect(run.answer).toContain('planning')
+  })
+
+  it('fail-closed: без состояния задачи изменяющие инструменты запрещены', async () => {
+    const store = createFakeStore({ bookings: [createBooking()] })
+    const { callLLM } = scriptedLLM({
+      decide: JSON.stringify({
+        tool: 'inviteToMeeting',
+        args: { participants: ['Иван'] },
+      }),
+      finalize: 'Приступаем?',
+    })
+    const run = await buildAgent({
+      store,
+      callLLM,
+      taskStateEnabled: true,
+    }).run('Позови Ивана')
+
+    expect(store.bookings[0].participants).toEqual([])
+    expect(run.answer).toContain('Состояние задачи недоступно')
+  })
+
+  it('fail-closed не мешает утверждённому исполнению', async () => {
+    const store = createFakeStore({ bookings: [createBooking()] })
+    const { callLLM } = scriptedLLM({
+      decide: JSON.stringify({
+        tool: 'inviteToMeeting',
+        args: { participants: ['Иван'] },
+      }),
+      finalize: 'Иван приглашён. Код подтверждения: BOOK-TEST01',
+    })
+    const run = await buildAgent({
+      store,
+      callLLM,
+      taskStateEnabled: true,
+      taskState: buildTaskState({
+        stage: 'execution',
+        approved: true,
+        steps: ['Пригласить Ивана'],
+      }),
+    }).run('Позови Ивана')
+
+    expect(run.ok).toBe(true)
+    expect(store.bookings[0].participants).toEqual(['Иван'])
   })
 
   it('в planning разрешает справочные инструменты', async () => {

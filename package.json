@@ -8,7 +8,8 @@
   "scripts": {
     "dev": "vite dev --port 3000",
     "generate-routes": "tsr generate",
-    "build": "vite build",
+    "build": "vite build && npm run build:mcp",
+    "build:mcp": "node scripts/build-mcp.mjs",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -45,6 +46,7 @@
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^6.0.1",
+    "esbuild": "^0.28.2",
     "oxlint": "^1.82.0",
     "prettier": "^3.9.6",
     "typescript": "^6.0.2",

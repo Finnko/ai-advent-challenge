@@ -11,6 +11,7 @@ export type McpToolDescriptor = {
   title: string | null
   description: string | null
   inputSchema: JsonValue
+  server?: string
 }
 
 export type McpToolsResult =

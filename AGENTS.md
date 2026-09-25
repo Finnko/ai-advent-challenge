@@ -24,10 +24,12 @@ Days 13–17 extend the unified `/agent` workspace with task state, invariants a
 
 - `src/features/agent/` — the agent feature, self-contained for porting:
   `pages/` (public surface), `api/` (react-query hooks), `functions/` (`createServerFn`),
-  `server/` (deep `.server.ts` modules: `agent-turn`, `agent-service`, `task-state`, `mcp`, `mcp-tools`;
-  plus `store.server.ts` and the `store/` folder), `domain/` (isomorphic logic: `agent`, `agent-tools`,
-  `context/`, `memory/`, `profile/`, `session/`, `task/`, `invariants/`, `mcp/`, `tokens`),
-  `mcp/` (standalone stdio MCP server process — spawned, never imported/bundled),
+  `server/` (deep `.server.ts` modules: `agent-turn`, `agent-service`, `task-state`, `mcp`, `mcp-tools`,
+  `mcp-registry`, `jobs`; plus `store.server.ts` and the `store/` folder), `domain/` (isomorphic logic:
+  `agent`, `agent-tools`, `context/`, `memory/`, `profile/`, `session/`, `task/`, `invariants/`, `mcp/`,
+  `jobs/`, `tokens`),
+  `mcp/` (standalone stdio MCP server processes — spawned, never imported/bundled): `server|tools|db`
+  (`agent-mcp-demo`, read-only `agent.sqlite`) and `jobs/` (`agent-mcp-jobs`, own `jobs.sqlite`),
   `data/` (client-safe data), `components/`, `tests/`.
 - `src/lib/` — shared: `llm.ts`/`llm.server.ts` (transport), `functions/*.functions.ts` (Days 1–5 server
   fns + shared `validation.ts`), `day2.ts`…`day5.ts`, `days.ts` (sidebar), `utils.ts` (`cn`).
@@ -52,21 +54,28 @@ Days 13–17 extend the unified `/agent` workspace with task state, invariants a
 - **Invariants are global per token** and enforced deterministically before mutating tools and after
   finalize; the opt-in `invariantGuard` is a fallback, never a replacement. Pinned `slug`/`check` are
   immutable.
-- **MCP tools are read-only** and stay available in every task stage; discovery failure degrades to no
-  MCP tools. The MCP SDK reaches neither the LLM transport nor the browser.
+- **MCP tools**: `agent-mcp-demo` is read-only; `agent-mcp-jobs` writes its own `jobs.sqlite`. Mutating
+  MCP tools (`mcp_schedule_weather_report`, `mcp_cancel_schedule`) obey the same task-stage gate as
+  internal mutations; reference MCP tools stay available in every stage. Discovery/listing degrades per
+  server (a dead server removes only its tools). The MCP SDK reaches neither the LLM transport nor the
+  browser. MCP servers ship as compiled `.mjs` (`npm run build:mcp`), resolved by
+  `server/mcp-registry.server.ts` via `AGENT_MCP_DEMO_ENTRY`/`AGENT_MCP_JOBS_ENTRY` → `dist` → dev source.
 - **Conventions**: write no comments unless asked. Extract a decision into a small named function with
   early returns instead of nested ternaries or long `if/else if` ladders. Respond one chunk at a time
   (no streaming yet; the UI shows a 3-dots animation). Offline tests live in `src/**/*.test.ts`
-  (Vitest, node env; the agent testkit is an in-memory `AgentStore`), make no network/API calls, and
-  `npm run test` must stay green. Out of scope: streaming, deployment, a real auth/backend for `people`
-  (a seeded mock today). Work on `feature/dayN` branches; commit only when asked.
+  (Vitest, node env; the agent testkit is an in-memory `AgentStore`); they stay offline by default
+  through injection (e.g. `WeatherSource`, temp sqlite), and real-network tests run only under
+  `RUN_NETWORK_TESTS=1`. `npm run test` must stay green. Out of scope: streaming, a real auth/backend
+  for `people` (a seeded mock today). Work on `feature/dayN` branches; commit only when asked.
+  Deployment lives in `deploy/` (systemd + timer, Tailscale-only).
 
 ## Commands
 
 ```bash
 npm run dev             # dev server, http://localhost:3000
-npm run build           # production build (vite build)
-npm run test            # vitest run (offline)
+npm run build           # production build (vite build) + MCP bundles (build:mcp)
+npm run build:mcp       # esbuild MCP servers → dist/server/mcp/*.mjs
+npm run test            # vitest run (offline; network tests behind RUN_NETWORK_TESTS=1)
 npm run lint            # oxlint
 npx tsc --noEmit        # typecheck
 npm run generate-routes # regenerate route tree after adding routes
