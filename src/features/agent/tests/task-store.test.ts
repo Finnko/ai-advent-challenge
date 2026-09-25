@@ -32,6 +32,7 @@ function taskState(overrides: Partial<TaskState> = {}): TaskState {
     title: 'Забронировать переговорку',
     stage: 'planning',
     previousStage: null,
+    approved: false,
     step: 'Собираем параметры',
     steps: ['Собираем параметры'],
     stepIndex: 0,
@@ -95,6 +96,20 @@ describe('task state store', () => {
       from: 'paused',
       to: 'execution',
     })
+  })
+
+  it('сохраняет согласие на изменяющие действия', async () => {
+    const sessionId = await store.createSession('tok-approved', 'согласие')
+    await store.saveTaskState(
+      sessionId,
+      taskState({ stage: 'execution', approved: true }),
+    )
+    expect((await store.getTaskState(sessionId))?.approved).toBe(true)
+    await store.saveTaskState(
+      sessionId,
+      taskState({ stage: 'execution', approved: false }),
+    )
+    expect((await store.getTaskState(sessionId))?.approved).toBe(false)
   })
 
   it('изолирует состояние по сессиям', async () => {

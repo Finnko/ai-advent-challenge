@@ -122,6 +122,21 @@ export function canManageBooking(
   )
 }
 
+export function meetingAttendees(booking: {
+  bookedBy: string
+  participants: string[]
+}): string[] {
+  const names: string[] = []
+  for (const name of [booking.bookedBy, ...booking.participants]) {
+    if (
+      !names.some((existing) => normalizeName(existing) === normalizeName(name))
+    ) {
+      names.push(name)
+    }
+  }
+  return names
+}
+
 function validateRange(start: string, end: string): string | null {
   if (!start || !end) {
     return 'Укажи даты начала и конца периода.'
@@ -243,28 +258,22 @@ function resolveParticipants(
   }
   const names: string[] = []
   for (const candidate of requested) {
-    const canonical = identity.colleagues.find(
-      (name) => normalizeName(name) === normalizeName(candidate),
-    )
+    const isSelf = normalizeName(candidate) === normalizeName(identity.name)
+    const canonical = isSelf
+      ? identity.name
+      : identity.colleagues.find(
+          (name) => normalizeName(name) === normalizeName(candidate),
+        )
     if (!canonical) {
       return {
         ok: false,
         text: `Неизвестный сотрудник: «${candidate}». Доступные: ${identity.colleagues.join(', ')}.`,
       }
     }
-    if (normalizeName(canonical) === normalizeName(identity.name)) {
-      continue
-    }
     if (
       !names.some((name) => normalizeName(name) === normalizeName(canonical))
     ) {
       names.push(canonical)
-    }
-  }
-  if (names.length === 0) {
-    return {
-      ok: false,
-      text: 'Среди приглашённых нет других сотрудников, кроме вас.',
     }
   }
   return { ok: true, names }
@@ -596,7 +605,7 @@ const TOOL_RUNNERS: Record<
       title: plan.title,
       reference: plan.reference,
       bookedBy: identity.name,
-      participants: [],
+      participants: [identity.name],
     })
     return bookingOutcome(plan, room)
   },
@@ -628,10 +637,9 @@ const TOOL_RUNNERS: Record<
         normalizeName(row.bookedBy) === normalizeName(identity.name)
           ? 'моя'
           : row.bookedBy
+      const attendees = meetingAttendees(row)
       const guests =
-        row.participants.length > 0
-          ? ` · участники: ${row.participants.join(', ')}`
-          : ''
+        attendees.length > 0 ? ` · участники: ${attendees.join(', ')}` : ''
       return `- ${row.date} ${bookingTitle(row)} · ${row.room} — ${row.title} (${owner})${guests}`
     })
     return {
@@ -781,34 +789,42 @@ const TOOL_RUNNERS: Record<
         reference: null,
       }
     }
-    const merged = [...booking.participants]
+    const attendees = meetingAttendees(booking)
     const added: string[] = []
     for (const name of participants.names) {
-      if (
-        !merged.some((existing) => normalizeName(existing) === normalizeName(name))
-      ) {
-        merged.push(name)
+      const known =
+        attendees.some(
+          (existing) => normalizeName(existing) === normalizeName(name),
+        ) ||
+        added.some(
+          (existing) => normalizeName(existing) === normalizeName(name),
+        )
+      if (!known) {
         added.push(name)
       }
     }
     if (added.length === 0) {
       return {
         ok: true,
-        text: `Все указанные участники уже приглашены на ${room}, ${date} ${time}. Участники: ${merged.join(', ')}.`,
+        text: `Все указанные участники уже приглашены на ${room}, ${date} ${time}. Участники: ${attendees.join(', ')}.`,
         reference: booking.reference,
       }
     }
-    if (merged.length + 1 > ROOM_CAPACITY) {
+    const total = attendees.length + added.length
+    if (total > ROOM_CAPACITY) {
       return {
         ok: false,
-        text: `Участников (${merged.length + 1} вместе с организатором) больше вместимости комнаты (${ROOM_CAPACITY} чел.). Сократи список.`,
+        text: `Участников (${total} вместе с организатором) больше вместимости комнаты (${ROOM_CAPACITY} чел.). Сократи список.`,
         reference: null,
       }
     }
-    await store.updateBookingParticipants(room, date, time, merged)
+    await store.updateBookingParticipants(room, date, time, [
+      ...booking.participants,
+      ...added,
+    ])
     return {
       ok: true,
-      text: `Встреча ${room}, ${date} ${time} — приглашены: ${added.join(', ')}. Всего участников: ${merged.length + 1} вместе с организатором.`,
+      text: `Встреча ${room}, ${date} ${time} — приглашены: ${added.join(', ')}. Всего участников: ${total} вместе с организатором.`,
       reference: booking.reference,
     }
   },
@@ -1015,6 +1031,7 @@ const TOOL_RUNNERS: Record<
     const time = pickString(args, 'time')
     const booking = room ? await store.findBooking(room, date, time) : null
     if (!booking) {return { ok: false, text: 'Встреча не найдена.', reference: null }}
+    if (normalizeName(booking.bookedBy) === normalizeName(identity.name)) {return { ok: false, text: 'Вы организатор встречи — отменить её можно через cancelBooking.', reference: null }}
     if (!booking.participants.some((name) => normalizeName(name) === normalizeName(identity.name))) {return { ok: false, text: 'Вы не приглашены на эту встречу.', reference: null }}
     await store.updateBookingParticipants(room!, date, time, booking.participants.filter((name) => normalizeName(name) !== normalizeName(identity.name)))
     return { ok: true, text: `Вы вышли из встречи ${room}, ${date} ${time}.`, reference: booking.reference }

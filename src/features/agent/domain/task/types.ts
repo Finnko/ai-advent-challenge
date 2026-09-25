@@ -24,6 +24,7 @@ export type TaskState = {
   title: string
   stage: TaskStage
   previousStage: TaskStage | null
+  approved: boolean
   step: string
   steps: string[]
   stepIndex: number

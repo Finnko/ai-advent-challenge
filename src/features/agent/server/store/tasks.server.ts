@@ -10,6 +10,7 @@ type TaskStateRow = {
   title: string
   stage: string
   previous_stage: string | null
+  approved: number
   step: string
   steps_json: string
   step_index: number
@@ -59,7 +60,7 @@ export async function getTaskState(
   const db = await getDb()
   const row = db
     .prepare(
-      'SELECT title, stage, previous_stage, step, steps_json, step_index, expected_actor, expected_description, history_json, updated_at FROM task_states WHERE session_id = ?',
+      'SELECT title, stage, previous_stage, approved, step, steps_json, step_index, expected_actor, expected_description, history_json, updated_at FROM task_states WHERE session_id = ?',
     )
     .get(sessionId) as TaskStateRow | undefined
   if (!row || !isTaskStage(row.stage)) {
@@ -77,6 +78,7 @@ export async function getTaskState(
     title: row.title,
     stage: row.stage,
     previousStage: isTaskStage(row.previous_stage) ? row.previous_stage : null,
+    approved: row.approved === 1,
     step: row.step,
     steps,
     stepIndex,
@@ -93,13 +95,14 @@ export async function saveTaskState(
   const db = await getDb()
   db.prepare(
     `INSERT INTO task_states (
-       session_id, title, stage, previous_stage, step, steps_json, step_index,
+       session_id, title, stage, previous_stage, approved, step, steps_json, step_index,
        expected_actor, expected_description, history_json, updated_at
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(session_id) DO UPDATE SET
        title = excluded.title,
        stage = excluded.stage,
        previous_stage = excluded.previous_stage,
+       approved = excluded.approved,
        step = excluded.step,
        steps_json = excluded.steps_json,
        step_index = excluded.step_index,
@@ -112,6 +115,7 @@ export async function saveTaskState(
     state.title,
     state.stage,
     state.previousStage,
+    state.approved ? 1 : 0,
     state.step,
     JSON.stringify(state.steps ?? []),
     state.stepIndex ?? 0,

@@ -92,6 +92,7 @@ function buildTaskState(overrides: Partial<TaskState> = {}): TaskState {
     title: 'Задача',
     stage: 'execution',
     previousStage: null,
+    approved: false,
     step: 'шаг',
     steps: [],
     stepIndex: 0,
@@ -669,7 +670,7 @@ describe('этап planning и мульти-действия', () => {
     })
     await buildAgent({
       callLLM,
-      taskState: buildTaskState({ stage: 'execution' }),
+      taskState: buildTaskState({ stage: 'execution', approved: true }),
     }).run('позови Ивана')
 
     const decideUser =

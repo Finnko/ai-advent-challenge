@@ -51,6 +51,7 @@ import {
   listPeople,
   listSubordinates,
 } from './store.server'
+import { loadMcpTools } from './mcp-tools.server'
 
 export async function resolveCapabilitiesByToken(
   token: string,
@@ -135,6 +136,7 @@ export type AgentRuntime = {
   analyzeTaskState: AnalyzeTaskState
   store: AgentStore
   createTools: (store: AgentStore, now: Date) => AgentTool[]
+  loadMcpTools?: () => Promise<AgentTool[]>
   invariantGuard?: InvariantGuard
 }
 
@@ -146,6 +148,7 @@ export const defaultAgentRuntime: AgentRuntime = {
   analyzeTaskState: createAnalyzeTaskState(callFlash),
   store: createAgentStore(),
   createTools: createAgentTools,
+  loadMcpTools,
   invariantGuard: createInvariantGuard(callFlash),
 }
 
@@ -188,11 +191,23 @@ export async function executeAgent(
 ): Promise<AgentExecution> {
   const now = options.now ?? new Date()
   const store = runtime.store
-  const context = await buildAgentContext(store, options.capabilities)
+  const mcpTools = runtime.loadMcpTools
+    ? await runtime.loadMcpTools().catch(() => [])
+    : []
+  const capabilities = mcpTools.length
+    ? {
+        ...options.capabilities,
+        allowedTools: [
+          ...options.capabilities.allowedTools,
+          ...mcpTools.map((tool) => tool.name),
+        ],
+      }
+    : options.capabilities
+  const context = await buildAgentContext(store, capabilities)
   const taskState = options.taskState ?? null
   const agent = new Agent({
-    capabilities: options.capabilities,
-    tools: runtime.createTools(store, now),
+    capabilities,
+    tools: [...runtime.createTools(store, now), ...mcpTools],
     judges: AGENT_JUDGES,
     callLLM: runtime.callLLM,
     model: TIER_ENDPOINTS.medium.model,

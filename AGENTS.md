@@ -1,24 +1,32 @@
 # Project: AI Advent Challenge
 
-Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 16 (`feature/day16`).
-Days 13–16 extend the unified `/agent` workspace with task state, invariants and MCP.
+Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 17 (`feature/day17`).
+Days 13–17 extend the unified `/agent` workspace with task state, invariants and MCP.
+
+## Where to read more
+
+- `src/features/agent/README.md` — mechanics of the agent feature: turn execution, tools, task state
+  machine, invariants, context strategies, memory, profile, persistence and MCP, plus porting notes.
+  Read it before editing any of those.
+- `CONTEXT.md` — domain vocabulary (Ход, Задача, Этап, Инвариант, …).
+- `README.md` — day-by-day log of the challenge.
 
 ## Stack
 
 - **TanStack Start** (Vite + React 19 + TypeScript), file-based routing (`src/routes`).
 - **Tailwind v4** via `@tailwindcss/vite`. Tokens/theme (`data-theme`, light/dark) in `src/styles.css`.
 - Styling: bare Tailwind + semantic tokens (`.demo-*`/`.island-*` kit). Slate palette + indigo accents;
-  `--positive`/`--danger` reserved for meaning. Don't add component libraries unless asked.
+  `--positive`/`--danger` reserved for meaning. Add a component library only when asked.
 - **MCP SDK** (`@modelcontextprotocol/sdk` + `zod`) is the one allowed non-LLM SDK; it lives only in the
-  MCP server/client modules, never on the LLM transport layer (that stays raw `fetch`).
+  MCP server/client modules. The LLM transport stays raw `fetch`.
 
 ## Layout
 
-- `src/features/agent/` — the agent feature, self-contained for porting (see its `README.md`):
-  `pages/` (only public surface), `api/` (react-query hooks), `functions/` (`createServerFn`),
-  `server/` (`.server.ts` deep modules: `agent-turn`, `agent-service`, `store`, `mcp`), `domain/` (isomorphic
-  logic: `agent`, `agent-tools`, `context/`, `memory/`, `profile/`, `session/`, `task/`, `invariants/`,
-  `mcp/`, `tokens`),
+- `src/features/agent/` — the agent feature, self-contained for porting:
+  `pages/` (public surface), `api/` (react-query hooks), `functions/` (`createServerFn`),
+  `server/` (deep `.server.ts` modules: `agent-turn`, `agent-service`, `task-state`, `mcp`, `mcp-tools`;
+  plus `store.server.ts` and the `store/` folder), `domain/` (isomorphic logic: `agent`, `agent-tools`,
+  `context/`, `memory/`, `profile/`, `session/`, `task/`, `invariants/`, `mcp/`, `tokens`),
   `mcp/` (standalone stdio MCP server process — spawned, never imported/bundled),
   `data/` (client-safe data), `components/`, `tests/`.
 - `src/lib/` — shared: `llm.ts`/`llm.server.ts` (transport), `functions/*.functions.ts` (Days 1–5 server
@@ -27,184 +35,31 @@ Days 13–16 extend the unified `/agent` workspace with task state, invariants a
 - `src/routes/` — thin route wrappers. The unified `/agent` renders `pages/AgentPage`; the old
   `/agent-strategies|memory|profile` routes are `beforeLoad` redirect stubs to `/agent`.
 
-## Server & LLM rules
+## Hard rules
 
-- **Raw `fetch` only — no SDKs.** DeepSeek + Hugging Face router, wrapped by the generic
-  `callCompletions(endpoint, apiKey, messages, params)`.
-- Secrets read server-side from `process.env` (`DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL`, `HUGGING_FACE_TOKEN`).
-  **Keys never ship to the browser** — no `VITE_` key, no `import.meta.env`. `.env` gitignored.
-- Each `createServerFn` is a thin adapter: `validator → delegate` to a deep module. Server-only modules
-  use the `.server.ts` suffix; client-safe prompt/text data lives in `dayN.ts` / feature `data/`, never
-  in `functions/` or `.server.ts`.
-- The client sends only ids (tier / strategy / session), never model or prompt strings. Invariant CRUD is
-  the explicit exception: validated rule content is user-managed data and must be sent to its CRUD function.
-
-## Turn execution & session config (Day 13–14)
-
-- `features/agent/server/agent-turn.server.ts` — deep module of a Turn: `runAgentTurn({ token,
-  sessionId, user }, deps)` hydrates capabilities/session/active branch/history/summary/facts/
-  memory/profile, runs `executeAgent`, then appends the user and assistant messages.
-  `functions/run-agent.functions.ts` is only `validator → runAgentTurn(data)`.
-- Injectable seam: `TurnDeps = { resolveCapabilities, store: TurnStore, runtime: AgentRuntime,
-  now }`; `defaultTurnDeps` is the production wiring. Offline tests pass fakes (`tests/agent-turn.test.ts`).
-- `AgentRuntime` (in `agent-service.server.ts`): `{ callLLM, summarize, extractFacts, extractMemories,
-  analyzeTaskState, invariantGuard?, store, createTools }`; `defaultAgentRuntime` wires the DeepSeek
-  transport, task analyzer, invariant guard and `createAgentTools`.
-  `executeAgent(options, runtime = defaultAgentRuntime)` no longer builds transport/store itself.
-- **Session config is one module**: `domain/session/config.ts` owns `SessionConfig` /
-  `SessionConfigInput` / `SessionConfigDraft`, defaults (`sessionConfigInput`,
-  `DEFAULT_SESSION_CONFIG_DRAFT`), default-profile resolution (`resolveSessionConfig`),
-  draft→input (`sessionConfigDraftToInput`), immutability (`resolveActiveSessionConfig`) and
-  `clampWindowSize`. `parseSessionConfigInput` (`functions/validation.ts`) validates the wire shape.
-- `store.createSession(token, title, input: Partial<SessionConfigInput>)` delegates configuration
-  defaults to `domain/session/config.ts`; profile lookup remains server-side. The session is created
-  **upfront** via `api/create-session.ts` (`useCreateSession`) when the user clicks «Новая сессия»;
-  the dialog (chat + state bar + input) renders only with an active session.
-  `api/send-message.ts` sends only `{ token, sessionId, user }`. `pages/AgentPage.tsx` keeps a single
-  `SessionConfigDraft` for the **next** session (editable while a session is active) and shows the
-  active session's config read-only. `null` in the draft means the token's default profile; the UI
-  does not start no-profile sessions.
-
-## Agent behavior
-
-- Tools live in `features/agent/domain/agent-tools.ts`; `TOOLS_BY_ROLE` is derived from each tool's
-  `roles`, so capabilities, the decide prompt and `isPermitted` can't drift.
-- **Actions per turn**: `decide → act` loops up to `maxActionsPerTurn` (default 5) while the model
-  picks another tool, then one `finalize` over all tool reports. The loop stops on `tool: null`, a
-  failed tool, a repeated `tool+args`, or the cap. The `no-fabricated-actions` judge blocks answers
-  that claim an action absent from the reports.
-- **`planning` is propose-and-wait**: mutating tools (`isMutatingTool` in `agent-tools.ts`) are hidden
-  from `decide` and hard-denied at `act`; read-only `list*` tools stay available. Mutations run only in
-  `execution`; `validation` (like `planning`) keeps only read-only `list*`.
-- **Controlled transitions (Day 15)**: every stage change goes through the single `transitionTask`
-  reducer in `domain/task/state.ts` over `ALLOWED_TRANSITIONS`; an illegal move returns `rejected` and
-  leaves the snapshot untouched (`applyAnalysis` surfaces the rejection). `planning → execution`
-  additionally requires explicit approval and a complete plan: `runAgentTurn` gates the analyzer's
-  analysis with `looksLikeApproval` (`domain/task/advance.ts`) and `expectedAction.actor !== 'user'`,
-  and keeps `planning` otherwise. Rejections are
-  observable — a `task` event `kind: 'rejected'` is persisted and a hint line is merged into the
-  turn's `taskLine` for both `decide` and `finalize` (via `AgentConfig.taskNote`).
-- **Auto transitions** (`domain/task/advance.ts`): `runAgentTurn` advances `execution → validation`
-  after a successful mutating turn, and `validation → done` after a real read-only verification
-  (`list*`) with no correction signal. A correction message (`looksLikeCorrection`) deterministically
-  returns `validation → execution`. `done` is also reachable by explicit confirmation (analyzer).
-- **Cooperative pause**: `AgentConfig.isPaused` is checked at the top of each action-loop iteration
-  (after the first), so a pause issued mid-run stops before the next action. `runAgentTurn` supplies a
-  probe reading `task_states`.
-- `executeAgent` builds a small `context` string (last managed booking / pending vacation) and passes it
-  as `AgentConfig.context`; `decide` retries once with a nudge when it returns `tool: null` for an
-  action-like request.
-- Room names resolve case/prefix-insensitively; groups over `ROOM_CAPACITY` are refused; `listVacations`
-  output omits reference codes.
-- Tools get a `ToolClock` (`createAgentTools(store, now)`); `bookMeetingRoom` refuses slots in the past, and
-  `listBookings` hides past meetings by default (override with `includePast`/`from`/`to`).
-- An API failure (e.g. raw 400 on a huge prompt) becomes a graceful blocked `AgentRunResult`, never a
-  thrown error.
-- The role-derived registry includes vacation cancellation/rejection, booking rescheduling/update,
-  room schedules and declining meeting invites. `screenArgs` may normalize a tool's destination before
-  deterministic invariant checks; the actual tool remains the source of truth for execution.
-
-## Unified agent workspace (post-Day 12)
-
-- One route `/agent` (`pages/AgentPage`) with tabs `Диалог | Инварианты | MCP | Настройки`; the
-  invariant tab provides token-global manual CRUD. Old routes redirect. One sidebar entry (`lib/days.ts`).
-- **Session config is the backbone** (`sessions.strategy` / `memory_enabled` / `profile_id` /
-  `window_size`): fixed by `createSession`, read by `runAgentTurn`, never switchable mid-session. The
-  session is created upfront (`api/create-session.ts`); `api/send-message.ts` then calls `runAgent`
-  (→ `runAgentTurn`) with only ids and text; invariant CRUD is the explicit exception and sends validated
-  rule content because the rule itself is user-managed data.
-- `sessions.invariant_set_id` remains reserved and unused; invariants are global per token. They are
-  loaded server-side into stable system blocks immediately after the base system message. Deterministic
-  action checks run before mutating tools and answer checks run after finalize; `AgentRunResult.invariantHits`
-  is persisted in `run_json` and shown as `INV-*` badges.
-- Five pinned defaults are seeded per token. Pinned `slug` and `check` are immutable on the server; custom
-  checkless rules can use the opt-in async `invariantGuard`, which fails open on guard errors.
-
-## MCP (Day 16)
-
-- `features/agent/mcp/server.ts` is the stdio MCP server entry: `McpServer` +
-  `StdioServerTransport`; `mcp/tools.ts` registers the tools (`registerTool` + `zod` schemas). It is a
-  spawned process, not imported by the app — `node` runs the `.ts` directly (Node ≥22 type stripping,
-  no `tsx`).
-- `features/agent/server/mcp.server.ts` is the deep client module: a private `withClient` opens
-  `StdioClientTransport` (`command: process.execPath`, path from `import.meta.url`), calls, then closes.
-  Public seam is `listMcpTools(): { ok: true; tools } | { ok: false; error }`; per-call lifecycle and
-  graceful errors (never throws). Client-safe types live in `domain/mcp/types.ts`.
-- UI: `components/McpPanel.tsx` (one component per file, `McpToolCard` separate) in the «MCP» tab via
-  `functions/list-mcp-tools.functions.ts` + `api/use-mcp-tools.ts`. Offline test `tests/mcp.test.ts`
-  spawns the local server and asserts the tool list.
-- Dev/test only: the entry is resolved by source path, so it is not present in a `vite build`. Forward
-  path: Day 17 adds `callTool` (reusing `withClient`) and wraps MCP tools as `AgentTool`s merged in
-  `AgentRuntime.createTools` (register `roles`/`argsExample`/`allowedTools`, mutating ones in
-  `MUTATING_TOOLS`). Day 18 (scheduling + sqlite persistence) decides its own process model.
-
-## Context strategies
-
-- Seam in `features/agent/domain/context/`: `ContextStrategyId = 'summary' | 'none' | 'window' | 'facts'
-  | 'branch'`, `ContextStrategy.prepare(input)` → `PreparedContext { history, blocks, note }`.
-- **Strategy is fixed per session** (`sessions.strategy`): set by `createSession`, read by
-  `runAgentTurn`; never switchable mid-session.
-- Short-term memory is the `window` strategy; the sliding-window size is per session
-  (`sessions.window_size`, `PrepareInput.windowSize`, default `WINDOW_SIZE = 10`).
-- Strategy blocks are inserted as **separate `system` messages** after the base system and before raw
-  history, in both `decide` and `finalize`. Profile and memory blocks go **after** the history, in order
-  `profile → long-term → working` (last, right before the user turn) so stale prior replies don't override
-  fresher profile/memory. Base system is byte-identical across stages; volatile content (tools, rooms,
-  context, stage instruction) goes in the last user message, so the cache prefix survives.
-- Pure modules (no env/fetch — offline tests): `compression.ts`, `facts.ts`.
-
-## Invariants (Day 14)
-
-- Rules live in `domain/invariants/`, are manually managed through token-scoped CRUD and seeded with five
-  pinned defaults. Pinned rules cannot be deleted; their slug and check are immutable on the server and in
-  the UI.
-- `cancelVacation`, `rejectVacation`, `rescheduleBooking`, `getRoomSchedule`, `updateBooking`, and
-  `declineInvite` are available through the same role-derived tool registry.
-- Deterministic checks run before mutating tools and after finalize; checkless custom rules may use the
-  opt-in `invariantGuard` fallback. Guard calls never replace deterministic enforcement.
-
-## Memory model (Day 11)
-
-- Three layers, each stored separately: **short-term** = active-branch `messages`; **working** =
-  `working_memory` keyed by `session_id`; **long-term** = `long_term_memory` keyed by `token`
-  (survives sessions and scenarios).
-- Seam in `features/agent/domain/memory/`: `types.ts` (layers/entries), `extract.ts` (LLM candidates
-  tagged with a layer), `router.ts` (`MemoryRouter` validates and routes to a layer), `read.ts`
-  (merge, long-term cap, system-block assembly).
-- Memory blocks are inserted as separate `system` messages in order `long-term → working`, after the
-  strategy's blocks and the history (last, right before the user turn). `SystemBlock.kind` covers
-  `'working' | 'long-term'`. A precedence line (`MEMORY_PRECEDENCE_LINE`) is added to the last user
-  message when memory blocks are present: memory is authoritative over earlier history.
-- Memory is fixed per session via `sessions.memory_enabled` (set by `createSession`, read by
-  `runAgentTurn`).
-  Auto-extraction runs each turn; manual entries (`source='manual'`) survive auto overwrites; long-term
-  is capped at `LONG_TERM_LIMIT`.
-
-## User profile (Day 12)
-
-- Seam in `features/agent/domain/profile/`: `types.ts` (fields, limits, labels) and `read.ts`
-  (`formatProfileBlock` / `buildProfileBlocks`); stored in the `profiles` table keyed by `token`.
-- Profile is **fixed per session** (`sessions.profile_id`): set by `createSession` (explicit id or
-  default), read by `runAgentTurn`. `deleteProfile` nulls the sessions and transfers the default
-  to the most recent remaining profile; a partial unique index keeps **one default per token**.
-- `SystemBlock.kind` includes `'profile'`; the block is inserted after history and before memory, and
-  `PROFILE_PRECEDENCE_LINE` is merged into the last user message alongside `MEMORY_PRECEDENCE_LINE`.
-- Profile is loaded server-side from the session; the client sends only ids. Limits live in
-  `functions/validation.ts` (`requireProfileName`, `optionalProfileField`: name≤60, field≤120,
-  constraints≤500, instructions≤1200).
-
-## Persistence
-
-- `features/agent/server/store.server.ts` is a `node:sqlite` singleton. **Never import `node:sqlite`
-  statically in client-reachable code** — always `await import('node:sqlite')` inside a `.server.ts`.
-- DB path `~/.ai-advent-challenge/agent.sqlite` (override `AGENT_DB_PATH`); legacy `data/agent.sqlite`
-  is migrated on first open, and an existing DB is snapshotted to `<db>.backups/` (last 5).
-- Migrations are idempotent (`PRAGMA table_info` + `ALTER`). Branches are copy-on-fork; `loadMessages`
-  and `appendMessage` are scoped to the active branch. Sessions carry
-  `strategy`/`scenario`/`memory_enabled`/`profile_id`/`window_size` (+ reserved `task_state_enabled` /
-  `invariant_set_id`); task snapshots live in `task_states`, invariant rules in `invariants`, memory in
-  `working_memory` and `long_term_memory`, profiles in `profiles` (separate from
-  `session_facts`/`session_summaries`).
+- **Server & LLM**: keep the LLM transport on raw `fetch`, wrapped by the generic
+  `callCompletions(endpoint, apiKey, messages, params)`. Read secrets server-side from `process.env`
+  (`DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL`, `HUGGING_FACE_TOKEN`) and keep them out of the browser bundle
+  (ids only, no `VITE_` keys, no `import.meta.env`). Each `createServerFn` is a thin adapter:
+  `validator → delegate` to a deep module. Server-only modules use the `.server.ts` suffix; client-safe
+  prompt/text data lives in `dayN.ts` / feature `data/`.
+- **The client sends ids, not content** — tier / strategy / session. Invariant CRUD is the explicit
+  exception: the rule itself is user-managed data and is sent to its CRUD function.
+- **Persistence**: `features/agent/server/store.server.ts` is a `node:sqlite` singleton. Import
+  `node:sqlite` dynamically (`await import`) inside a `.server.ts`.
+- **Session config is immutable**: strategy, memory, profile, window size and task state are fixed by
+  `createSession` and read by `runAgentTurn`; a different config means a new session.
+- **Invariants are global per token** and enforced deterministically before mutating tools and after
+  finalize; the opt-in `invariantGuard` is a fallback, never a replacement. Pinned `slug`/`check` are
+  immutable.
+- **MCP tools are read-only** and stay available in every task stage; discovery failure degrades to no
+  MCP tools. The MCP SDK reaches neither the LLM transport nor the browser.
+- **Conventions**: write no comments unless asked. Extract a decision into a small named function with
+  early returns instead of nested ternaries or long `if/else if` ladders. Respond one chunk at a time
+  (no streaming yet; the UI shows a 3-dots animation). Offline tests live in `src/**/*.test.ts`
+  (Vitest, node env; the agent testkit is an in-memory `AgentStore`), make no network/API calls, and
+  `npm run test` must stay green. Out of scope: streaming, deployment, a real auth/backend for `people`
+  (a seeded mock today). Work on `feature/dayN` branches; commit only when asked.
 
 ## Commands
 
@@ -216,18 +71,6 @@ npm run lint            # oxlint
 npx tsc --noEmit        # typecheck
 npm run generate-routes # regenerate route tree after adding routes
 ```
-
-## Conventions
-
-- No comments in code unless asked.
-- Avoid nested conditional expressions and long `if/else if` ladders that compute a single value.
-  Extract the decision into a small named function with early returns (e.g. `resolveBlockReason(...)`)
-  so each branch reads as a plain guard and the call site stays flat.
-- Respond one chunk at a time (no streaming yet); the UI shows a 3-dots animation while waiting.
-- Offline tests live in `src/**/*.test.ts` (Vitest, node env; the agent testkit is an in-memory
-  `AgentStore`). `npm run test` must stay green; no network/API calls in tests.
-- Out of scope: streaming, deployment, a real auth/backend for `people` (today a seeded mock).
-- Work happens on `feature/dayN` branches; commit only when asked.
 
 <!-- intent-skills:start -->
 # TanStack Intent - before editing files, run the matching guidance command.

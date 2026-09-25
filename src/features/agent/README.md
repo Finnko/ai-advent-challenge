@@ -2,8 +2,9 @@
 
 Корпоративный LLM-агент: инструменты по ролям, персистентность в SQLite, управление контекстом
 стратегиями (`summary` / `none` / `window` / `facts` / `branch`), явная модель памяти
-(краткосрочная = скользящее окно, рабочая, долговременная), профиль пользователя (Day 12) и
-состояние задачи как конечный автомат (Day 13).
+(краткосрочная = скользящее окно, рабочая, долговременная), профиль пользователя (Day 12),
+состояние задачи как конечный автомат (Day 13, ужесточено в Day 15), инварианты (Day 14)
+и MCP-инструменты (Day 16–17).
 
 Всё собрано в **один рабочий экран** `/agent` с табами. Фича спроектирована так, чтобы её можно
 было перенести в другой TanStack Start проект.
@@ -12,15 +13,17 @@
 
 ```
 src/features/agent/
-  pages/       # AgentPage — единственная публичная поверхность (табы Диалог/Задача/Инварианты/Настройки)
-  api/         # клиентские хуки react-query (bulletproof-стиль): queryOptions + useX/mutations
-  functions/   # createServerFn-обёртки (сетевой шов)
-  server/      # *.server.ts — глубокие server-only модули (agent-turn, agent-service, store)
-  domain/      # изоморфная логика без env/fetch (agent, tools, контекст, память, профиль, задача, session, токены)
-  data/        # клиентские данные без env (примеры, подписи инструментов)
-  components/  # UI фичи
-  tests/       # офлайн-тесты (vitest, node env)
-  types.ts     # wire-типы ответов API
+  pages/         # AgentPage — единственная публичная поверхность (табы Диалог/Инварианты/MCP/Настройки)
+  api/           # клиентские хуки react-query (bulletproof-стиль): queryOptions + useX/mutations
+  functions/     # createServerFn-обёртки (сетевой шов)
+  server/        # *.server.ts — глубокие server-only модули (agent-turn, agent-service, task-state, mcp, mcp-tools)
+  server/store/  # модули хранилища (db, sessions, tasks, invariants, profiles, agent-records)
+  domain/        # изоморфная логика без env/fetch (agent, agent-tools, context, memory, profile, task, invariants, session, mcp, tokens)
+  mcp/           # автономный stdio MCP-сервер (спавнится, не импортируется/не бандлится): server, tools, db
+  data/          # клиентские данные без env (примеры, подписи инструментов)
+  components/    # UI фичи
+  tests/         # офлайн-тесты (vitest, node env)
+  types.ts       # wire-типы ответов API
 ```
 
 Слои: `pages` → `api` → `functions` (`createServerFn`) → `server`/`domain`. Роутов приложения два
@@ -29,9 +32,10 @@ src/features/agent/
 
 ## Единый рабочий экран
 
-- Табы `Диалог | Задача | Инварианты | Настройки`. `Задача` показывает состояние активной задачи и
-  переходы, `Инварианты` — глобальный для token CRUD правил, `Настройки` — конфиг новой сессии, CRUD
-  профилей и слои памяти.
+- Табы `Диалог | Инварианты | MCP | Настройки`. `Инварианты` — глобальный для token CRUD правил,
+  `MCP` — список инструментов MCP-сервера, `Настройки` — конфиг новой сессии, CRUD профилей и слои
+  памяти. Состояние активной задачи — не отдельный таб, а компактная строка `TaskStateBar` над полем
+  ввода в «Диалоге».
 - Поток: настроил черновик конфига во вкладке «Настройки» → нажал «Новая сессия» (сессия создаётся
   сразу с этим конфигом) или выбрал существующую → работаешь в «Диалоге». Пока сессия не выбрана,
   чата нет. Конфиг фиксируется за сессией; чтобы изменить — новая сессия.
@@ -46,7 +50,8 @@ adapter: `validator → runAgentTurn`.
 Шов `TurnDeps = { resolveCapabilities, store: TurnStore, runtime: AgentRuntime, now }`;
 `defaultTurnDeps` — продакшн-проводка, офлайн-тесты (`tests/agent-turn.test.ts`) подставляют фейки.
 `AgentRuntime` (`agent-service.server.ts`) держит транспорт и инструменты: `executeAgent(options,
-runtime = defaultAgentRuntime)` не собирает их сам.
+runtime = defaultAgentRuntime)` не собирает их сам. Сбой API (например, сырой 400 на слишком большой
+промпт) превращается в заблокированный `AgentRunResult`, а не в брошенное исключение.
 
 ## Конфиг сессии
 
@@ -72,6 +77,19 @@ runtime = defaultAgentRuntime)` не собирает их сам.
 `AgentPage` держит один `SessionConfigDraft`. `runAgentTurn` читает конфиг из сессии и прокидывает в
 `executeAgent`; `windowSize` уходит в `ContextStrategy.prepare` через `PrepareInput.windowSize`.
 
+## Контекстные стратегии
+
+- Шов — `domain/context/`: `ContextStrategyId = 'summary' | 'none' | 'window' | 'facts' | 'branch'`,
+  `ContextStrategy.prepare(input)` → `PreparedContext { history, blocks, note }`.
+- Стратегия фиксируется за сессией (`sessions.strategy`), её ставит `createSession` и читает
+  `runAgentTurn`; на середине сессии она не переключается.
+- Блоки стратегии вставляются отдельными `system`-сообщениями после базового system и перед голой
+  историей — и в `decide`, и в `finalize`. Базовый system байт-в-байт одинаков между этапами, а
+  волатильное (инструменты, комнаты, context, инструкция этапа) уходит в последнее user-сообщение —
+  так префикс кеша выживает.
+- Чистые модули без env/fetch (офлайн-тесты): `domain/compression.ts` (`splitHistory`,
+  `toLlmMessages`) и стратегии `domain/context/`.
+
 ## Модель памяти
 
 Слои раздельны:
@@ -81,10 +99,13 @@ runtime = defaultAgentRuntime)` не собирает их сам.
 - **рабочая** — `working_memory` (keyed by `session_id`), сбрасывается с сессией.
 - **долговременная** — `long_term_memory` (keyed by `token`), переживает сессии.
 
-`MemoryRouter` (`domain/memory/router.ts`) раскладывает кандидатов от `createExtractMemories` по
-слоям. Слои вставляются отдельными `system`-блоками `long-term → working` после истории и перед
-user-ходом. Дедуп — last-write-wins, ручная запись не перетирается авто, долговременная память
-ограничена `LONG_TERM_LIMIT`.
+Шов — `domain/memory/`: `types.ts` (слои/записи), `extract.ts` (LLM-кандидаты с меткой слоя),
+`router.ts` (`MemoryRouter` валидирует и раскладывает по слоям), `read.ts` (слияние, лимит
+долговременной, сборка system-блоков). Слои вставляются отдельными `system`-блоками
+`long-term → working` после истории и перед user-ходом; `SystemBlock.kind` покрывает
+`'working' | 'long-term'`. Дедуп — last-write-wins, ручная запись (`source='manual'`) не перетирается
+авто, долговременная память ограничена `LONG_TERM_LIMIT`. Строка приоритета
+(`MEMORY_PRECEDENCE_LINE`) добавляется в последнее user-сообщение: память авторитетнее ранней истории.
 
 ## Профиль пользователя (Day 12)
 
@@ -99,6 +120,26 @@ user-ходом. Дедуп — last-write-wins, ручная запись не 
   `profile → long-term → working`; строка приоритета идёт в последнее user-сообщение.
 - Лимиты — в `functions/validation.ts` (`requireProfileName`, `optionalProfileField`: имя ≤60,
   поле ≤120, ограничения ≤500, инструкции ≤1200).
+
+## Инструменты
+
+- Реестр — `domain/agent-tools.ts`. `TOOLS_BY_ROLE` выводится из поля `roles` каждого инструмента,
+  поэтому способности, decide-промпт и `isPermitted` не расходятся.
+- **Действия за Ход**: `decide → act` повторяется в пределах `maxActionsPerTurn` (default 5), пока
+  модель выбирает следующий инструмент, затем один `finalize` по всем отчётам. Цикл останавливается
+  на `tool: null`, ошибке инструмента, повторе `tool+args` или лимите; судья `no-fabricated-actions`
+  блокирует ответ, приписывающий невыполненное действие.
+- `executeAgent` собирает короткий `context` (последняя управляемая бронь / ожидающая заявка на
+  отпуск) и кладёт его в `AgentConfig.context`; если на action-подобный запрос `decide` вернул
+  `tool: null`, следует один повтор с подсказкой.
+- Комнаты резолвятся без учёта регистра и префикса; группы сверх `ROOM_CAPACITY` отклоняются;
+  `listVacations` не показывает референсные коды.
+- Инструменты получают `ToolClock` (`createAgentTools(store, now)`): `bookMeetingRoom` отказывает на
+  слот в прошлом, `listBookings` по умолчанию скрывает прошедшие встречи (переопределяется
+  `includePast`/`from`/`to`).
+- Реестр ролей включает отмену/отклонение отпуска, перенос/обновление брони, расписание комнат и
+  отклонение приглашения. `screenArgs` может нормализовать адресата до детерминированных проверок
+  инвариантов; источником истины при исполнении остаётся сам инструмент.
 
 ## Состояние задачи (Day 13, ужесточено в Day 15)
 
@@ -118,15 +159,17 @@ user-ходом. Дедуп — last-write-wins, ручная запись не 
   при `paused` вызов инструментов жёстко блокируется.
 - **`planning` = предложи и жди**: изменяющие инструменты (`isMutatingTool` в `agent-tools.ts`)
   скрыты из decide и жёстко отклоняются на act; справочные `list*` доступны. Мутации выполняются
-  только на `execution`, куда задача уходит по явному согласию пользователя; на `validation` тоже
-  только `list*`.
+  только на `execution` при выставленном `TaskState.approved`; на `validation` тоже только `list*`.
+  Чисто справочные задачи идут по этапам без согласия.
 - **Контроль переходов (Day 15)**: любой переход валидируется в `transitionTask` по графу
-  `ALLOWED_TRANSITIONS`; нелегальный возвращает `rejected` и не меняет состояние. Дополнительно
-  `planning → execution` невозможен без явного согласия пользователя и при незакрытых пунктах плана:
-  `runAgentTurn` проверяет `looksLikeApproval` (в `advance.ts`) и `expectedAction.actor !== 'user'`, и
-  иначе оставляет задачу в `planning`. Отказ наблюдаем: пишется `task`-событие `kind: 'rejected'` и
-  строка-подсказка подмешивается в `taskLine` текущего хода (decide + finalize), чтобы ассистент
-  озвучил его, а не продолжал выполнение.
+  `ALLOWED_TRANSITIONS`; нелегальный возвращает `rejected` и не меняет состояние. `planning → execution`
+  невозможен при незакрытых пунктах плана (`expectedAction.actor === 'user'`): `runAgentTurn` оставляет
+  задачу в `planning`, пишет `task`-событие `kind: 'rejected'` и подмешивает строку-подсказку в
+  `taskLine` (decide + finalize), чтобы ассистент озвучил отказ. Согласие пользователя больше не
+  запирает сам переход: `runAgentTurn` распознаёт его через `looksLikeApproval` (в `advance.ts`,
+  устойчиво к опечаткам в одну правку) и выставляет `TaskState.approved`. Изменяющие инструменты
+  требуют этого флага, поэтому мутация без согласия отклоняется даже на этапе `execution`. Флаг
+  хранится в `task_states.approved` и сбрасывается при возврате в `planning`.
 - **Авто-переходы** (`domain/task/advance.ts`): `execution → validation` после успешного мутирующего
   действия и `validation → done` **только после реальной справочной проверки** (`list*`) и без
   признаков правки; `done` также по явному подтверждению (анализатор). Если пользователь сообщает,
@@ -135,16 +178,11 @@ user-ходом. Дедуп — last-write-wins, ручная запись не 
 - **Кооперативная пауза**: `AgentConfig.isPaused` проверяется в начале каждой итерации цикла действий
   (после первого), поэтому пауза, поставленная во время хода, останавливает цикл между действиями;
   `runAgentTurn` даёт пробу по `task_states`.
-- **Действия за Ход**: `decide → act` повторяется в пределах `maxActionsPerTurn` (default 5), пока
-  модель выбирает следующий инструмент. Решения и отчёты возвращаются в decide, финализация собирает
-  все `ОТЧЁТЫ` и требует все коды подтверждения. Цикл останавливается на `tool: null`, ошибке,
-  повторе `tool+args` или лимите; судья `no-fabricated-actions` не даёт ответу приписать
-  невыполненное действие.
 - UI: переходы рисуются **inline в ленте чата** (`ChatThread` + `TaskEventRow`) как персистентные
   `task`-сообщения (`messages.role = 'task'`, событие в `run_json`). Их пишут и анализатор
   (`runAgentTurn`, между репликами user/assistant), и кнопки (`applyTaskAction`). `task`-сообщения
   не попадают в историю LLM. Текущие этап/шаг/ожидаемое действие и кнопки Пауза/Продолжить/Отменить —
-  компактной строкой `TaskStateBar` над полем ввода; отдельного таба «Задача» нет.
+  компактной строкой `TaskStateBar` над полем ввода.
 
 ## Инварианты (Day 14)
 
@@ -154,9 +192,49 @@ user-ходом. Дедуп — last-write-wins, ручная запись не 
 - `SystemBlock.kind = 'invariants'` ставится сразу после base system. Проверки action выполняются до
   mutating tool, проверки ответа — после finalize; сработавшие `INV-*` попадают в `invariantHits` и UI.
 - Pinned-правила нельзя удалить; их `slug` и `check` неизменяемы на сервере и в UI. Кастомные правила
-  без `check` проверяются только prompt-ом, а при opt-in runtime — дополнительным `invariantGuard`.
+  без `check` проверяются только prompt-ом, а при opt-in runtime — дополнительным `invariantGuard`
+  (падает открыто при ошибке guard, детерминированную проверку не заменяет).
 - Новые инструменты: `cancelVacation`, `rejectVacation`, `rescheduleBooking`, `getRoomSchedule`,
   `updateBooking`, `declineInvite`.
+
+## MCP (Day 16–17)
+
+- `mcp/server.ts` — stdio-сервер (`McpServer` + `StdioServerTransport`), регистрирует инструменты в
+  `mcp/tools.ts` (`registerTool` + zod-схемы). Это **спавн-процесс**, приложение его не импортирует:
+  `node` исполняет `.ts` напрямую (Node ≥22 type stripping), поэтому в `vite build` его нет.
+- `server/mcp.server.ts` — глубокий клиент: `withClient` открывает `StdioClientTransport` на вызов,
+  закрывает после. Публичный шов `listMcpTools()` и `callTool(name, args)` возвращают
+  `{ ok } | { ok: false; error }`, никогда не бросают. `AGENT_DB_PATH` форвардится в дочерний процесс
+  явно (SDK наследует только безопасный набор env).
+- **DB-инструменты (Day 17)**: `mcp/db.ts` открывает `agent.sqlite` **read-only** (`DatabaseSync` с
+  `readOnly: true`, без миграций/бэкапов) и отдаёт `db_overview`, `bookings_by_room`,
+  `employee_schedule`. Префикс `mcp_` добавляется только на слое адаптера агента
+  (`domain/mcp/agent-tools.ts`), поэтому на проводе имена чистые.
+- **Интеграция с агентом (Day 17)**: `domain/mcp/args-example.ts` строит `argsExample` из JSON-схемы;
+  `domain/mcp/agent-tools.ts` превращает descriptors в `AgentTool` (обе роли, `run` делегирует в
+  `callTool`); `server/mcp-tools.server.ts` собирает `loadMcpTools()`. `AgentRuntime.loadMcpTools?`
+  вызывается внутри `executeAgent`: инструменты добавляются к `createTools(...)`, их имена — в
+  `capabilities.allowedTools` (видны `decide`, `isPermitted`, судье `business-rules`). Read-only →
+  доступны и на `planning`/`validation`. Сбой обнаружения деградирует к отсутствию MCP-инструментов;
+  write-бэкенд остаётся in-process.
+- UI: `components/McpPanel.tsx` + `McpToolCard.tsx` во вкладке «MCP». Тесты: `tests/mcp.test.ts`
+  (спавнит сервер, список + `now` + DB-инструменты на временной БД) и `tests/mcp-agent.test.ts`
+  (адаптер + `executeAgent`, вызывающий MCP-инструмент).
+- Dev/test only: вход резолвится по исходному пути, поэтому присутствия в `vite build` нет. Day 18
+  (scheduling + sqlite persistence) решит свою модель процесса и переезд записи в MCP.
+
+## Персистентность
+
+- `server/store.server.ts` — singleton `node:sqlite`. `node:sqlite` импортируется только динамически
+  (`await import`) внутри `.server.ts`, чтобы не попасть в клиентский бандл.
+- Путь БД — `~/.ai-advent-challenge/agent.sqlite` (override `AGENT_DB_PATH`); легаси
+  `data/agent.sqlite` мигрирует на первом открытии, а существующая БД снимается в `<db>.backups/`
+  (последние `BACKUP_LIMIT = 5`).
+- Миграции идемпотентны (`PRAGMA table_info` + `ALTER`). Ветки copy-on-fork; `loadMessages` и
+  `appendMessage` работают в рамках активной ветки.
+- Таблицы: `sessions` (`strategy`/`scenario`/`memory_enabled`/`profile_id`/`window_size`/
+  `task_state_enabled` + зарезервированный `invariant_set_id`), `task_states`, `invariants`,
+  `working_memory`, `long_term_memory`, `profiles`, `session_facts`, `session_summaries`.
 
 ## Внешние зависимости (общие, не входят в фичу)
 
@@ -171,7 +249,7 @@ user-ходом. Дедуп — last-write-wins, ручная запись не 
 
 npm-зависимости: `@tanstack/react-query`, `@tanstack/react-router`, `@tanstack/react-start`,
 `gpt-tokenizer` (токены), `@radix-ui/react-tabs`, `@radix-ui/react-select`, `clsx`, `tailwind-merge`,
-`react`, `react-dom`.
+`react`, `react-dom`, а для MCP — `@modelcontextprotocol/sdk` и `zod`.
 
 Env: `DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL`, `HUGGING_FACE_TOKEN`; путь БД — `AGENT_DB_PATH`
 (по умолчанию `~/.ai-advent-challenge/agent.sqlite`).
@@ -182,8 +260,10 @@ Env: `DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL`, `HUGGING_FACE_TOKEN`; путь БД �
 2. Скопировать внешние зависимости из списка выше.
 3. Завести роут `/agent`, рендерящий `pages/AgentPage` (и, при желании, редиректы со старых путей).
 4. Прописать env и поднять `QueryClientProvider`.
-5. Прогнать `npm run test` — тесты фичи офлайн (мокают LLM через `tests/agent-testkit.ts`).
+5. Для MCP: Node ≥22 (сервер исполняет `.ts` через type stripping) и форвард `AGENT_DB_PATH` в
+   дочерний процесс.
+6. Прогнать `npm run test` — тесты фичи офлайн (мокают LLM через `tests/agent-testkit.ts`).
 
 Правила, за которые лучше не выходить: серверные ключи никогда не уходят в браузер; `node:sqlite`
-импортируется только динамически внутри `.server.ts`; промпты/тексты лежат в `data/`/`domain/`,
-а не в `functions/`.
+импортируется только динамически внутри `.server.ts`; MCP SDK не доходит ни до LLM-транспорта, ни до
+браузера; промпты/тексты лежат в `data/`/`domain/`, а не в `functions/`.

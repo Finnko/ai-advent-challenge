@@ -960,7 +960,9 @@ export class Agent {
 
     const historyTokensSent = historyTokens
 
-    const stageMutatingBlocked = taskState !== null && taskState.stage !== 'execution'
+    const stageMutatingBlocked =
+      taskState !== null &&
+      (taskState.stage !== 'execution' || !taskState.approved)
     const allowedToolNames = taskPaused
       ? []
       : capabilities.allowedTools.filter(
@@ -1027,6 +1029,9 @@ export class Agent {
         return 'Задача на паузе: инструменты не вызываются. Коротко подтверди паузу и жди пользователя.'
       }
       if (stageMutatingBlocked && isMutatingTool(tool)) {
+        if (taskState && taskState.stage === 'execution' && !taskState.approved) {
+          return 'План ещё не утверждён пользователем: изменяющие действия недоступны — дождись явного согласия.'
+        }
         return `Этап ${taskState?.stage ?? 'текущий'}: изменяющие действия недоступны — предложи план или выполни проверку справочными инструментами.`
       }
       return `Инструмент ${tool} недоступен для роли ${capabilities.identity.role}.`

@@ -55,7 +55,7 @@ describe('Day 14 tools', () => {
   })
 
   it('N6 removes the current user from invitees', async () => {
-    const booking = createBooking({ participants: ['Пётр', 'Иван'] })
+    const booking = createBooking({ bookedBy: 'Анна', participants: ['Пётр', 'Иван'] })
     const { tool: decline, store } = tool('declineInvite', createFakeStore({ bookings: [booking] }))
     const outcome = await decline.run({ room: 'Ладога', date: '2026-09-11', time: '16:00' }, createIdentity())
     expect(outcome.ok).toBe(true)

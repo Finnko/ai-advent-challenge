@@ -215,6 +215,7 @@ CREATE TABLE IF NOT EXISTS task_states (
   title TEXT NOT NULL,
   stage TEXT NOT NULL,
   previous_stage TEXT,
+  approved INTEGER NOT NULL DEFAULT 0,
   step TEXT NOT NULL,
   steps_json TEXT NOT NULL DEFAULT '[]',
   step_index INTEGER NOT NULL DEFAULT 0,
@@ -663,6 +664,7 @@ export function migrateTaskStates(db: SqliteDatabase): void {
       title TEXT NOT NULL,
       stage TEXT NOT NULL,
       previous_stage TEXT,
+      approved INTEGER NOT NULL DEFAULT 0,
       step TEXT NOT NULL,
       steps_json TEXT NOT NULL DEFAULT '[]',
       step_index INTEGER NOT NULL DEFAULT 0,
@@ -681,6 +683,11 @@ export function migrateTaskStates(db: SqliteDatabase): void {
   if (!columns.includes('step_index')) {
     db.exec(
       'ALTER TABLE task_states ADD COLUMN step_index INTEGER NOT NULL DEFAULT 0',
+    )
+  }
+  if (!columns.includes('approved')) {
+    db.exec(
+      'ALTER TABLE task_states ADD COLUMN approved INTEGER NOT NULL DEFAULT 0',
     )
   }
 }

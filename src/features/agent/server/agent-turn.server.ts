@@ -297,25 +297,31 @@ async function resolveTaskState(
   }
 
   let rejection: TaskRejection | null = null
-  const approved = looksLikeApproval(input.user)
   const planIncomplete = analysis.expectedAction.actor === 'user'
   if (
     current.stage === 'planning' &&
     analysis.stage === 'execution' &&
-    (!approved || planIncomplete)
+    planIncomplete
   ) {
     rejection = {
       from: 'planning',
       to: 'execution',
-      reason: planIncomplete
-        ? 'В плане остались незакрытые пункты — сначала утвердите все пункты.'
-        : 'План ещё не утверждён пользователем.',
+      reason: 'В плане остались незакрытые пункты — сначала утвердите все пункты.',
     }
     analysis = { ...analysis, stage: 'planning' }
   }
 
+  const consent =
+    current.stage === 'planning' &&
+    analysis.stage === 'execution' &&
+    !planIncomplete &&
+    looksLikeApproval(input.user)
+
   const applied = applyAnalysis(current, analysis, input.at)
-  const next = applied.state
+  let next = applied.state
+  if (consent && !next.approved) {
+    next = { ...next, approved: true, updatedAt: input.at }
+  }
   return {
     taskState: next,
     taskEvent: next === current ? null : eventFromHistory(next, current),

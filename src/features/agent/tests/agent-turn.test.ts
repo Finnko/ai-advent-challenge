@@ -38,6 +38,7 @@ function taskState(overrides: Partial<TaskState> = {}): TaskState {
     title: 'Задача',
     stage: 'execution',
     previousStage: null,
+    approved: false,
     step: 'шаг',
     steps: [],
     stepIndex: 0,
@@ -470,7 +471,7 @@ describe('runAgentTurn', () => {
     const agentStore = createFakeStore({ bookings: [booking] })
     const { store, savedTask, getTask, appended } = createTurnStore(
       turnSession({ taskStateEnabled: true }),
-      taskState({ stage: 'execution' }),
+      taskState({ stage: 'execution', approved: true }),
     )
     const { runtime } = makeRuntime({
       store: agentStore,
@@ -517,6 +518,7 @@ describe('runAgentTurn', () => {
       turnSession({ taskStateEnabled: true }),
       taskState({
         stage: 'execution',
+        approved: true,
         steps: ['Забронировать', 'Пригласить'],
         stepIndex: 0,
         step: 'Забронировать',
@@ -556,6 +558,50 @@ describe('runAgentTurn', () => {
     expect(
       appended.find((message) => message.role === 'task')?.run,
     ).toMatchObject({ kind: 'step', index: 1, to: 'Пригласить' })
+  })
+
+  it('двигает читающий шаг плана execution, не зацикливаясь', async () => {
+    const booking = createBooking()
+    const { store, getTask } = createTurnStore(
+      turnSession({ taskStateEnabled: true }),
+      taskState({
+        stage: 'execution',
+        steps: ['Проверить участников', 'Пригласить Анну'],
+        stepIndex: 0,
+        step: 'Проверить участников',
+      }),
+    )
+    const { runtime } = makeRuntime({
+      store: createFakeStore({ bookings: [booking] }),
+      createTools: (s) => createAgentTools(s, TEST_NOW),
+      callLLM: async ({ response_format }) => ({
+        content: response_format
+          ? JSON.stringify({ tool: 'listBookings', args: {} })
+          : 'Участники: Пётр.',
+        usage: { prompt_tokens: 3, completion_tokens: 2 },
+        latencyMs: 0,
+      }),
+    })
+    const caps: AgentCapabilities = {
+      identity: {
+        name: 'Пётр',
+        role: 'employee',
+        title: 'Линейный сотрудник',
+        subordinates: [],
+        colleagues: [],
+      },
+      allowedTools: ['listBookings'],
+    }
+
+    const result = await runAgentTurn(
+      { token: 'tok-test', sessionId: 7, user: 'проверь участников' },
+      deps(store, runtime, caps),
+    )
+
+    expect(result.taskState?.stage).toBe('execution')
+    expect(result.taskState?.stepIndex).toBe(1)
+    expect(result.taskState?.step).toBe('Пригласить Анну')
+    expect(getTask()?.stepIndex).toBe(1)
   })
 
   it('после успешной проверки переводит validation в done', async () => {
@@ -871,12 +917,15 @@ describe('runAgentTurn', () => {
     expect(getTask()?.stage).not.toBe('cancelled')
   })
 
-  it('не пускает planning → execution без явного согласия', async () => {
-    const { store, getTask, appended } = createTurnStore(
+  it('без явного согласия не выполняет изменяющее действие', async () => {
+    const { store, getTask } = createTurnStore(
       turnSession({ taskStateEnabled: true }),
-      taskState({ stage: 'planning' }),
+      taskState({ stage: 'planning', steps: ['Забронировать'] }),
     )
-    const { runtime, captured } = makeRuntime({
+    const agentStore = createFakeStore()
+    const { runtime } = makeRuntime({
+      store: agentStore,
+      createTools: (s) => createAgentTools(s, TEST_NOW),
       analyzeTaskState: async () => ({
         analysis: {
           stage: 'execution',
@@ -886,7 +935,27 @@ describe('runAgentTurn', () => {
         },
         usage: null,
       }),
+      callLLM: async ({ response_format }) => ({
+        content: response_format
+          ? JSON.stringify({
+              tool: 'bookMeetingRoom',
+              args: { room: 'Иртыш', date: '2026-09-11', time: '16:00' },
+            })
+          : 'План ещё не утверждён.',
+        usage: { prompt_tokens: 3, completion_tokens: 2 },
+        latencyMs: 0,
+      }),
     })
+    const caps: AgentCapabilities = {
+      identity: {
+        name: 'Пётр',
+        role: 'employee',
+        title: 'Линейный сотрудник',
+        subordinates: [],
+        colleagues: [],
+      },
+      allowedTools: ['bookMeetingRoom'],
+    }
 
     const result = await runAgentTurn(
       {
@@ -894,31 +963,19 @@ describe('runAgentTurn', () => {
         sessionId: 7,
         user: 'Ладога, завтра в 15:00, на час',
       },
-      deps(store, runtime),
+      deps(store, runtime, caps),
     )
 
-    expect(result.taskState?.stage).toBe('planning')
-    expect(getTask()?.stage).toBe('planning')
-    const rejected = appended.find(
-      (message) =>
-        message.role === 'task' &&
-        (message.run as { kind?: string } | undefined)?.kind === 'rejected',
-    )
-    expect(rejected?.run).toMatchObject({
-      kind: 'rejected',
-      from: 'planning',
-      to: 'execution',
-    })
-    const userMessages = captured
-      .flat()
-      .filter((message) => message.role === 'user')
-    expect(userMessages.some((message) => message.content.includes('отклонена'))).toBe(
-      true,
-    )
+    expect(result.taskState?.stage).toBe('execution')
+    expect(result.taskState?.approved).toBe(false)
+    expect(getTask()?.approved).toBe(false)
+    expect(agentStore.bookings).toHaveLength(0)
+    const act = result.run.trace.find((step) => step.stage === 'act')
+    expect(act && act.stage === 'act' ? act.outcome.ok : true).toBe(false)
   })
 
-  it('не пускает planning → execution по настойчивой фразе «давай»', async () => {
-    const { store, getTask, appended } = createTurnStore(
+  it('не считает настойчивую фразу «давай» согласием', async () => {
+    const { store, getTask } = createTurnStore(
       turnSession({ taskStateEnabled: true }),
       taskState({ stage: 'planning' }),
     )
@@ -939,18 +996,9 @@ describe('runAgentTurn', () => {
       deps(store, runtime),
     )
 
-    expect(result.taskState?.stage).toBe('planning')
-    expect(getTask()?.stage).toBe('planning')
-    const rejected = appended.find(
-      (message) =>
-        message.role === 'task' &&
-        (message.run as { kind?: string } | undefined)?.kind === 'rejected',
-    )
-    expect(rejected?.run).toMatchObject({
-      kind: 'rejected',
-      from: 'planning',
-      to: 'execution',
-    })
+    expect(result.taskState?.stage).toBe('execution')
+    expect(result.taskState?.approved).toBe(false)
+    expect(getTask()?.approved).toBe(false)
   })
 
   it('пускает planning → execution по явному согласию', async () => {
@@ -976,7 +1024,105 @@ describe('runAgentTurn', () => {
     )
 
     expect(result.taskState?.stage).toBe('execution')
+    expect(result.taskState?.approved).toBe(true)
     expect(getTask()?.stage).toBe('execution')
+    expect(getTask()?.approved).toBe(true)
+  })
+
+  it('распознаёт согласие с опечаткой и открывает изменяющие действия', async () => {
+    const { store } = createTurnStore(
+      turnSession({ taskStateEnabled: true }),
+      taskState({ stage: 'planning', steps: ['Забронировать'] }),
+    )
+    const agentStore = createFakeStore()
+    const { runtime } = makeRuntime({
+      store: agentStore,
+      createTools: (s) => createAgentTools(s, TEST_NOW),
+      analyzeTaskState: async () => ({
+        analysis: {
+          stage: 'execution',
+          step: 'Забронировать',
+          expectedAction: { actor: 'agent', description: 'bookMeetingRoom' },
+          reason: 'Пользователь подтвердил план',
+        },
+        usage: null,
+      }),
+      callLLM: async ({ response_format }) => ({
+        content: response_format
+          ? JSON.stringify({
+              tool: 'bookMeetingRoom',
+              args: { room: 'Иртыш', date: '2026-09-11', time: '16:00' },
+            })
+          : 'Готово.',
+        usage: { prompt_tokens: 3, completion_tokens: 2 },
+        latencyMs: 0,
+      }),
+    })
+    const caps: AgentCapabilities = {
+      identity: {
+        name: 'Пётр',
+        role: 'employee',
+        title: 'Линейный сотрудник',
+        subordinates: [],
+        colleagues: [],
+      },
+      allowedTools: ['bookMeetingRoom'],
+    }
+
+    const result = await runAgentTurn(
+      { token: 'tok-test', sessionId: 7, user: 'подтвреждаю' },
+      deps(store, runtime, caps),
+    )
+
+    expect(result.taskState?.approved).toBe(true)
+    expect(agentStore.bookings).toHaveLength(1)
+  })
+
+  it('выполняет справочную задачу без согласия', async () => {
+    const booking = createBooking()
+    const { store } = createTurnStore(
+      turnSession({ taskStateEnabled: true }),
+      taskState({ stage: 'planning', steps: ['Показать встречи'] }),
+    )
+    const { runtime } = makeRuntime({
+      store: createFakeStore({ bookings: [booking] }),
+      createTools: (s) => createAgentTools(s, TEST_NOW),
+      analyzeTaskState: async () => ({
+        analysis: {
+          stage: 'execution',
+          step: 'Показать встречи',
+          expectedAction: { actor: 'agent', description: 'listBookings' },
+          reason: 'Справочная задача',
+        },
+        usage: null,
+      }),
+      callLLM: async ({ response_format }) => ({
+        content: response_format
+          ? JSON.stringify({ tool: 'listBookings', args: {} })
+          : 'Вот встречи.',
+        usage: { prompt_tokens: 3, completion_tokens: 2 },
+        latencyMs: 0,
+      }),
+    })
+    const caps: AgentCapabilities = {
+      identity: {
+        name: 'Пётр',
+        role: 'employee',
+        title: 'Линейный сотрудник',
+        subordinates: [],
+        colleagues: [],
+      },
+      allowedTools: ['listBookings'],
+    }
+
+    const result = await runAgentTurn(
+      { token: 'tok-test', sessionId: 7, user: 'покажи все встречи на завтра' },
+      deps(store, runtime, caps),
+    )
+
+    expect(result.taskState?.approved).toBe(false)
+    const act = result.run.trace.find((step) => step.stage === 'act')
+    expect(act && act.stage === 'act' ? act.outcome.ok : false).toBe(true)
   })
 
   it('не пускает execution, пока в плане есть незакрытые пункты', async () => {

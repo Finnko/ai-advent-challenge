@@ -11,6 +11,7 @@ const CURRENT: TaskState = {
   title: 'Забронировать переговорку',
   stage: 'paused',
   previousStage: 'planning',
+  approved: false,
   step: 'Собираем параметры',
   steps: [],
   stepIndex: 0,
