@@ -414,7 +414,7 @@ export type ToolDefinition = {
   mutating: boolean
 }
 
-const MUTATING_TOOLS = new Set<AgentToolName>([
+const MUTATING_TOOLS = new Set<string>([
   'bookMeetingRoom',
   'inviteToMeeting',
   'cancelBooking',
@@ -425,10 +425,12 @@ const MUTATING_TOOLS = new Set<AgentToolName>([
   'rescheduleBooking',
   'updateBooking',
   'declineInvite',
+  'mcp_schedule_weather_report',
+  'mcp_cancel_schedule',
 ])
 
 export function isMutatingTool(name: string): boolean {
-  return MUTATING_TOOLS.has(name as AgentToolName)
+  return MUTATING_TOOLS.has(name)
 }
 
 export const TOOL_DEFINITIONS: ToolDefinition[] = [

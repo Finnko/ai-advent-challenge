@@ -312,6 +312,7 @@ export type AgentConfig = {
   responseLanguage?: string | null
   context?: string
   taskState?: TaskState | null
+  taskStateEnabled?: boolean
   taskNote?: string | null
   contextBudgetTokens?: number
   maxActionsPerTurn?: number
@@ -556,6 +557,13 @@ const DECIDE_TOOL_HINTS: Record<string, string[]> = {
   getRoomSchedule: ['Расписание конкретной переговорки на дату решай через getRoomSchedule.'],
   updateBooking: ['Изменение темы или длительности встречи решай через updateBooking.'],
   declineInvite: ['Если пользователь хочет выйти из приглашённой встречи, используй declineInvite.'],
+  mcp_list_schedules: [
+    'Существующие расписания ≠ доступные города. Наличие расписания не требуется, чтобы создать новое для другого города: доступные города перечислены в описании schedule_weather_report, а новый город добавляется вызовом schedule_weather_report. Не отказывай на основании mcp_list_schedules.',
+  ],
+  mcp_schedule_weather_report: [
+    'Создание расписания для города, у которого расписания ещё нет, — обычный путь добавления нового города. Город бери из списка в описании инструмента.',
+    'Параметры расписания: city (город из списка), intervalMinutes (15–1440), windowHours (1–720). Если пользователь их не задал — предложи дефолты «каждые 60 минут, окно 1 час, старт сейчас» и попроси подтвердить весь план целиком. Формат, получатель и период отчёта параметрами инструмента не являются — не уточняй их.',
+  ],
 }
 
 function buildPrecedenceLine(
@@ -586,6 +594,25 @@ function buildBaseSystem(caps: AgentCapabilities, today: string): string {
       ? [`Сотрудники компании: ${caps.identity.colleagues.join(', ')}.`]
       : []),
     HARDENING_LINE,
+  ].join('\n')
+}
+
+function buildGatedCatalog(
+  tools: AgentTool[],
+  gatedToolNames: string[],
+): string | null {
+  const gated = gatedToolNames
+    .map((name) => tools.find((t) => t.name === name))
+    .filter((t): t is AgentTool => Boolean(t))
+  if (gated.length === 0) {
+    return null
+  }
+  return [
+    'Инструменты, которые станут доступны после подтверждения плана (сейчас их НЕ вызывай, но используй их параметры, чтобы предложить конкретный план):',
+    ...gated.map(
+      (t) => `- ${t.name}: ${t.description}. Аргументы: ${t.argsExample}`,
+    ),
+    ...gated.flatMap((t) => DECIDE_TOOL_HINTS[t.name] ?? []),
   ].join('\n')
 }
 
@@ -652,6 +679,7 @@ function buildFinalizeUser(
   hasProfileBlocks: boolean,
   taskLine: string | null,
   hasInvariantBlocks: boolean,
+  capabilityCatalog: string | null,
 ): string {
   return [
     `Запрос пользователя:\n${request}`,
@@ -660,6 +688,7 @@ function buildFinalizeUser(
     '',
     ...(precedenceLine ? [precedenceLine, ''] : []),
     ...(taskLine ? [taskLine, ''] : []),
+    ...(capabilityCatalog ? [capabilityCatalog, ''] : []),
     ...(hasInvariantBlocks
       ? ['Если решение нарушает инвариант — откажись, укажи INV-<id> и предложи совместимый вариант.', '']
       : []),
@@ -961,13 +990,20 @@ export class Agent {
     const historyTokensSent = historyTokens
 
     const stageMutatingBlocked =
-      taskState !== null &&
-      (taskState.stage !== 'execution' || !taskState.approved)
+      (taskState !== null &&
+        (taskState.stage !== 'execution' || !taskState.approved)) ||
+      (this.config.taskStateEnabled === true && taskState === null)
     const allowedToolNames = taskPaused
       ? []
       : capabilities.allowedTools.filter(
           (name) => !(stageMutatingBlocked && isMutatingTool(name)),
         )
+    const capabilityCatalog = buildGatedCatalog(
+      tools,
+      capabilities.allowedTools.filter(
+        (name) => !allowedToolNames.includes(name),
+      ),
+    )
     const maxActions = Math.max(
       1,
       this.config.maxActionsPerTurn ?? DEFAULT_MAX_ACTIONS_PER_TURN,
@@ -1029,10 +1065,13 @@ export class Agent {
         return 'Задача на паузе: инструменты не вызываются. Коротко подтверди паузу и жди пользователя.'
       }
       if (stageMutatingBlocked && isMutatingTool(tool)) {
-        if (taskState && taskState.stage === 'execution' && !taskState.approved) {
+        if (!taskState) {
+          return 'Состояние задачи недоступно: изменяющие действия запрещены до подтверждения плана.'
+        }
+        if (taskState.stage === 'execution' && !taskState.approved) {
           return 'План ещё не утверждён пользователем: изменяющие действия недоступны — дождись явного согласия.'
         }
-        return `Этап ${taskState?.stage ?? 'текущий'}: изменяющие действия недоступны — предложи план или выполни проверку справочными инструментами.`
+        return `Этап ${taskState.stage}: изменяющие действия недоступны — предложи план или выполни проверку справочными инструментами.`
       }
       return `Инструмент ${tool} недоступен для роли ${capabilities.identity.role}.`
     }
@@ -1173,6 +1212,7 @@ export class Agent {
         hasProfileBlocks,
         taskLine,
         hasInvariantBlocks,
+        capabilityCatalog,
       )
       const finalizeReply = await callLLM({
         messages: [

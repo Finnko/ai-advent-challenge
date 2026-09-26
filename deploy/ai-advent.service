@@ -1,0 +1,30 @@
+[Unit]
+Description=AI Advent Challenge agent (TanStack Start preview on 127.0.0.1:3000)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=aiadvent
+Group=aiadvent
+WorkingDirectory=/opt/ai-advent-challenge
+EnvironmentFile=/etc/ai-advent.env
+Environment=HOME=/var/lib/ai-advent
+Environment=NPM_CONFIG_CACHE=/var/lib/ai-advent/npm-cache
+Environment=NPM_CONFIG_UPDATE_NOTIFIER=false
+ExecStart=/usr/bin/npm run preview -- --host 127.0.0.1 --port 3000
+Restart=always
+RestartSec=5
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/ai-advent /opt/ai-advent-challenge/node_modules/.vite-temp
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

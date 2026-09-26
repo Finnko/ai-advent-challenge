@@ -173,6 +173,7 @@ export type ExecuteOptions = {
   memory?: MemoryOptions
   profile?: ProfileRecord | null
   taskState?: TaskState | null
+  taskStateEnabled?: boolean
   taskNote?: string | null
   isPaused?: () => boolean | Promise<boolean>
   now?: Date
@@ -215,6 +216,7 @@ export async function executeAgent(
     responseLanguage: options.profile?.language ?? null,
     context,
     taskState,
+    taskStateEnabled: options.taskStateEnabled,
     taskNote: options.taskNote,
     isPaused: options.isPaused,
     invariants: options.invariants,

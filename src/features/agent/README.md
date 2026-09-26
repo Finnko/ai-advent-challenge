@@ -197,31 +197,41 @@ runtime = defaultAgentRuntime)` не собирает их сам. Сбой API 
 - Новые инструменты: `cancelVacation`, `rejectVacation`, `rescheduleBooking`, `getRoomSchedule`,
   `updateBooking`, `declineInvite`.
 
-## MCP (Day 16–17)
+## MCP (Day 16–18)
 
-- `mcp/server.ts` — stdio-сервер (`McpServer` + `StdioServerTransport`), регистрирует инструменты в
-  `mcp/tools.ts` (`registerTool` + zod-схемы). Это **спавн-процесс**, приложение его не импортирует:
-  `node` исполняет `.ts` напрямую (Node ≥22 type stripping), поэтому в `vite build` его нет.
-- `server/mcp.server.ts` — глубокий клиент: `withClient` открывает `StdioClientTransport` на вызов,
-  закрывает после. Публичный шов `listMcpTools()` и `callTool(name, args)` возвращают
-  `{ ok } | { ok: false; error }`, никогда не бросают. `AGENT_DB_PATH` форвардится в дочерний процесс
-  явно (SDK наследует только безопасный набор env).
-- **DB-инструменты (Day 17)**: `mcp/db.ts` открывает `agent.sqlite` **read-only** (`DatabaseSync` с
-  `readOnly: true`, без миграций/бэкапов) и отдаёт `db_overview`, `bookings_by_room`,
-  `employee_schedule`. Префикс `mcp_` добавляется только на слое адаптера агента
-  (`domain/mcp/agent-tools.ts`), поэтому на проводе имена чистые.
-- **Интеграция с агентом (Day 17)**: `domain/mcp/args-example.ts` строит `argsExample` из JSON-схемы;
-  `domain/mcp/agent-tools.ts` превращает descriptors в `AgentTool` (обе роли, `run` делегирует в
-  `callTool`); `server/mcp-tools.server.ts` собирает `loadMcpTools()`. `AgentRuntime.loadMcpTools?`
-  вызывается внутри `executeAgent`: инструменты добавляются к `createTools(...)`, их имена — в
-  `capabilities.allowedTools` (видны `decide`, `isPermitted`, судье `business-rules`). Read-only →
-  доступны и на `planning`/`validation`. Сбой обнаружения деградирует к отсутствию MCP-инструментов;
-  write-бэкенд остаётся in-process.
-- UI: `components/McpPanel.tsx` + `McpToolCard.tsx` во вкладке «MCP». Тесты: `tests/mcp.test.ts`
-  (спавнит сервер, список + `now` + DB-инструменты на временной БД) и `tests/mcp-agent.test.ts`
-  (адаптер + `executeAgent`, вызывающий MCP-инструмент).
-- Dev/test only: вход резолвится по исходному пути, поэтому присутствия в `vite build` нет. Day 18
-  (scheduling + sqlite persistence) решит свою модель процесса и переезд записи в MCP.
+- **Два stdio-сервера** (спавн-процессы, приложение их не импортирует):
+  `mcp/server.ts` + `mcp/tools.ts` + `mcp/db.ts` — `agent-mcp-demo`, read-only `agent.sqlite`
+  (`db_overview`, `bookings_by_room`, `employee_schedule`, `now`, `echo`);
+  `mcp/jobs/server.ts` + `mcp/jobs/{register,db,weather,tools}.ts` — `agent-mcp-jobs`, пишет свой
+  `jobs.sqlite` (`schedule_weather_report`, `cancel_schedule`, `list_schedules`, `get_weather_report`,
+  `get_weather_at`, `run_due_jobs`).
+- **Сборка**: `npm run build:mcp` (`scripts/build-mcp.mjs`, esbuild) бандлит оба входа в
+  `dist/server/mcp/{mcp-demo,mcp-jobs}.mjs` (`--platform=node --format=esm --packages=external`).
+  `npm run build` = `vite build && build:mcp`. В dev/test вход отдаётся исходным `.ts` (Node ≥22 type
+  stripping), поэтому относительные импорты в `domain/jobs/**` и `mcp/jobs/**` — с явным `.ts`.
+- **Registry**: `server/mcp-registry.server.ts` — список серверов (entry, `childEnv`, `hiddenTools`) и
+  `resolveMcpEntry(kind)`: `AGENT_MCP_DEMO_ENTRY`/`AGENT_MCP_JOBS_ENTRY` → `dist/server/mcp/*.mjs`
+  (через `process.cwd()`, т.к. в билде серверные чанки лежат в `dist/server/assets`) → dev-исходник.
+- **Клиент**: `server/mcp.server.ts` — `withClient(entry, env)`, `listToolsFor(config)` и
+  `callToolOn(config, name, args)`; `listMcpTools()` сливает инструменты серверов, сбой одного
+  деградирует построчно; `callTool(name)` маршрутизирует по имени, `callToolOnServer(kind, …)` — явно.
+- **Интеграция с агентом**: `server/mcp-tools.server.ts` собирает `loadMcpTools()` per-server и
+  исключает `hiddenTools` (`run_due_jobs` агенту не предлагается). `domain/mcp/agent-tools.ts`
+  добавляет префикс `mcp_`; `isMutatingTool` знает `mcp_schedule_weather_report`/`mcp_cancel_schedule`,
+  поэтому они под тем же гейтом Этапа, что и внутренние мутации. Справочные `mcp_*` доступны везде.
+- **Jobs (Day 18)**: `domain/jobs/` — города (белый список, tz `Europe/Moscow`), `WeatherSource`
+  (инъекция), агрегаты (min/сред/макс), расписание (интервал 15–1440 мин, окно 1–720 ч, ≤5 расписаний),
+  покрытие. Open-Meteo (`mcp/jobs/weather.ts`) без ключа: `current` для live и `hourly&past_days=7` для
+  bootstrap. `jobs.sqlite`: `schedules`/`runs`/`summaries`/`meta`, ретеншн 30 дней / 5000 прогонов,
+  `0600`. Bootstrap — **per-city при создании первого расписания** (маркер `coverage:<city>` в `meta`).
+  `get_weather_at` — ближайший сэмпл в пределах ±½ интервала его расписания, иначе честное «данных нет».
+- **Тик**: systemd timer раз в 15 минут дёргает серверный роут `GET /jobs/tick`
+  (`routes/jobs.tick.ts` → `server/jobs.server.ts` → MCP `run_due_jobs`). Долгоживущего планировщика
+  нет; тот же путь у кнопки «Выполнить сейчас» (`functions/run-jobs.functions.ts`).
+- UI: `components/McpPanel.tsx` (вкладка «MCP») + секция «Расписания» (`SchedulesPanel`, `ScheduleCard`,
+  `JobRunRow`, `api/use-jobs.ts`). Тесты: `tests/mcp.test.ts` (оба сервера), `tests/mcp-jobs.test.ts`
+  (инъекция `WeatherSource` + временная БД), `tests/mcp-agent.test.ts` (адаптер + `executeAgent`).
+  Сетевые тесты Open-Meteo — только под `RUN_NETWORK_TESTS=1`.
 
 ## Персистентность
 
@@ -251,8 +261,10 @@ npm-зависимости: `@tanstack/react-query`, `@tanstack/react-router`, `
 `gpt-tokenizer` (токены), `@radix-ui/react-tabs`, `@radix-ui/react-select`, `clsx`, `tailwind-merge`,
 `react`, `react-dom`, а для MCP — `@modelcontextprotocol/sdk` и `zod`.
 
-Env: `DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL`, `HUGGING_FACE_TOKEN`; путь БД — `AGENT_DB_PATH`
-(по умолчанию `~/.ai-advent-challenge/agent.sqlite`).
+Env: `DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL`, `HUGGING_FACE_TOKEN`; путь БД —
+`AGENT_DB_PATH` (по умолчанию `~/.ai-advent-challenge/agent.sqlite`); для jobs — `JOBS_DB_PATH`
+(по умолчанию `~/.ai-advent-challenge/jobs.sqlite`) и опциональные
+`AGENT_MCP_DEMO_ENTRY`/`AGENT_MCP_JOBS_ENTRY`.
 
 ## Как портировать
 
@@ -260,8 +272,9 @@ Env: `DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL`, `HUGGING_FACE_TOKEN`; путь БД �
 2. Скопировать внешние зависимости из списка выше.
 3. Завести роут `/agent`, рендерящий `pages/AgentPage` (и, при желании, редиректы со старых путей).
 4. Прописать env и поднять `QueryClientProvider`.
-5. Для MCP: Node ≥22 (сервер исполняет `.ts` через type stripping) и форвард `AGENT_DB_PATH` в
-   дочерний процесс.
+5. Для MCP: Node ≥22; собрать бандлы (`npm run build:mcp`) и/или задать
+   `AGENT_MCP_DEMO_ENTRY`/`AGENT_MCP_JOBS_ENTRY`; форвардить `AGENT_DB_PATH`/`JOBS_DB_PATH` в дочерние
+   процессы; поднять `GET /jobs/tick` по таймеру. Деплой — `deploy/` (systemd + timer, Tailscale-only).
 6. Прогнать `npm run test` — тесты фичи офлайн (мокают LLM через `tests/agent-testkit.ts`).
 
 Правила, за которые лучше не выходить: серверные ключи никогда не уходят в браузер; `node:sqlite`

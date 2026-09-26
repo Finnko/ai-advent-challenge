@@ -18,6 +18,9 @@ const config = defineConfig({
       { find: '@', replacement: srcDir },
     ],
   },
+  preview: {
+    allowedHosts: true,
+  },
   plugins: [devtools(), tailwindcss(), tanstackStart(), viteReact()],
 })
 

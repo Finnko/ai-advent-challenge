@@ -6,10 +6,16 @@ import { callTool, listMcpTools } from '../server/mcp.server'
 
 const TOOL_NAMES = [
   'bookings_by_room',
+  'cancel_schedule',
   'db_overview',
   'echo',
   'employee_schedule',
+  'get_weather_at',
+  'get_weather_report',
+  'list_schedules',
   'now',
+  'run_due_jobs',
+  'schedule_weather_report',
 ]
 
 let dir: string
@@ -62,10 +68,12 @@ beforeAll(async () => {
   const dbPath = join(dir, 'agent.sqlite')
   await seedDatabase(dbPath)
   process.env.AGENT_DB_PATH = dbPath
+  process.env.JOBS_DB_PATH = join(dir, 'jobs.sqlite')
 })
 
 afterAll(() => {
   delete process.env.AGENT_DB_PATH
+  delete process.env.JOBS_DB_PATH
   rmSync(dir, { recursive: true, force: true })
 })
 

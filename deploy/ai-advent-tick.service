@@ -1,0 +1,12 @@
+[Unit]
+Description=AI Advent jobs tick (one-shot), triggered by ai-advent-tick.timer
+
+[Service]
+Type=oneshot
+User=aiadvent
+Group=aiadvent
+ExecStart=/usr/bin/curl -fsS --max-time 60 http://127.0.0.1:3000/jobs/tick
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true

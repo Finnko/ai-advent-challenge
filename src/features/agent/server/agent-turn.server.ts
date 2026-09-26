@@ -469,6 +469,7 @@ export async function runAgentTurn(
       windowSize: config.windowSize,
       profile,
       taskState: activeTaskState,
+      taskStateEnabled: config.taskStateEnabled,
       taskNote,
       isPaused: async () =>
         (await deps.store.getTaskState(sessionId))?.stage === 'paused',
