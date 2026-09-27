@@ -114,11 +114,15 @@ export function createResearchToolkit(
         typeof args.targetWords === 'number' && Number.isFinite(args.targetWords)
           ? Math.max(1, Math.round(args.targetWords))
           : undefined
+      const maxSentences =
+        args.maxSentences === undefined
+          ? undefined
+          : clampSummarizeSentences(args.maxSentences)
       const summary = summarizeText(
         text,
         targetWords !== undefined
           ? { words: targetWords }
-          : clampSummarizeSentences(args.maxSentences),
+          : maxSentences,
       )
       if (!summary) {
         return fail('В тексте нет предложений для пересказа.')

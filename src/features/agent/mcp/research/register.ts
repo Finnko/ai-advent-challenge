@@ -81,7 +81,7 @@ export function registerResearchTools(
           .max(SUMMARIZE_MAX_SENTENCES)
           .optional()
           .describe(
-            `Верхняя граница числа предложений, если не задан targetWords (${SUMMARIZE_MIN_SENTENCES}–${SUMMARIZE_MAX_SENTENCES}, по умолчанию 5)`,
+            `Верхняя граница числа предложений (${SUMMARIZE_MIN_SENTENCES}–${SUMMARIZE_MAX_SENTENCES}); если не задана, вход сохраняется целиком`,
           ),
       },
       annotations: { readOnlyHint: true },

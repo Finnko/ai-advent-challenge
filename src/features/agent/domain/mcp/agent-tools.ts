@@ -35,7 +35,10 @@ function truncateReport(text: string): string {
 
 function toOutcome(result: McpCallResult): ToolOutcome {
   if (result.ok) {
-    return { ok: true, text: truncateReport(result.text), reference: null }
+    const text = truncateReport(result.text)
+    return text === result.text
+      ? { ok: true, text, reference: null }
+      : { ok: true, text, reference: null, refText: result.text }
   }
   return { ok: false, text: `MCP: ${result.error}`, reference: null }
 }

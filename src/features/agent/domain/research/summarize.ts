@@ -9,17 +9,28 @@ import {
 const SENTENCE_BOUNDARY = /(?<=[.!?…])\s+|\n+/u
 const WORD_PATTERN = /[a-zа-яё0-9]+/gi
 const SOURCE_HEADER = /^\s*\d+\.\s+.*https?:\/\//u
+const NON_TERMINAL_ABBREVIATION = /(?:^|\s)(?:мин|сред|макс)\.$/iu
 
 function normalizeSentence(sentence: string): string {
   return sentence.replace(/\s+/g, ' ').trim()
 }
 
 export function splitSentences(text: string): string[] {
-  return text
+  const parts = text
     .replace(/\r\n?/g, '\n')
     .split(SENTENCE_BOUNDARY)
     .map(normalizeSentence)
     .filter((sentence) => sentence.length > 0)
+  const sentences: string[] = []
+  for (const part of parts) {
+    const previous = sentences.at(-1)
+    if (previous && NON_TERMINAL_ABBREVIATION.test(previous)) {
+      sentences[sentences.length - 1] = `${previous} ${part}`
+      continue
+    }
+    sentences.push(part)
+  }
+  return sentences
 }
 
 export function countWords(text: string): number {
@@ -46,12 +57,14 @@ type TextBlock = {
 }
 
 type Selection =
+  | { kind: 'all' }
   | { kind: 'sentences'; budget: number }
   | { kind: 'words'; budget: number }
 
 export type SummarizeBudget =
   | number
   | { sentences?: number; words?: number }
+  | undefined
 
 function parseBlocks(text: string): TextBlock[] {
   const lines = text.replace(/\r\n?/g, '\n').split('\n')
@@ -80,6 +93,9 @@ function parseBlocks(text: string): TextBlock[] {
 }
 
 function resolveSelection(budget: SummarizeBudget): Selection {
+  if (budget === undefined) {
+    return { kind: 'all' }
+  }
   if (typeof budget === 'number') {
     return { kind: 'sentences', budget: clampSummarizeSentences(budget) }
   }
@@ -89,7 +105,13 @@ function resolveSelection(budget: SummarizeBudget): Selection {
       budget: Math.min(Math.max(1, Math.round(budget.words)), SUMMARIZE_MAX_WORDS),
     }
   }
-  return { kind: 'sentences', budget: clampSummarizeSentences(budget.sentences) }
+  if (typeof budget.sentences === 'number') {
+    return {
+      kind: 'sentences',
+      budget: clampSummarizeSentences(budget.sentences),
+    }
+  }
+  return { kind: 'all' }
 }
 
 export function volumeNote(
@@ -109,6 +131,9 @@ export function stripVolumeNote(text: string): string {
 }
 
 function reached(selection: Selection, sentences: number, words: number): boolean {
+  if (selection.kind === 'all') {
+    return false
+  }
   return selection.kind === 'words'
     ? words >= selection.budget
     : sentences >= selection.budget
@@ -171,6 +196,12 @@ function render(blocks: TextBlock[], counts: number[]): string {
 export function summarizeText(text: string, budget: SummarizeBudget): string {
   const blocks = parseBlocks(text)
   const selection = resolveSelection(budget)
+  if (selection.kind === 'all') {
+    return render(
+      blocks,
+      blocks.map((block) => block.sentences.length),
+    )
+  }
   const totalSentences = blocks.reduce(
     (total, block) => total + block.sentences.length,
     0,

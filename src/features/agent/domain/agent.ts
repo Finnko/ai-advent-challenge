@@ -110,6 +110,7 @@ export type ToolOutcome = {
   ok: boolean
   text: string
   reference: string | null
+  refText?: string
 }
 
 export type VacationRecord = {
@@ -846,6 +847,14 @@ function formatToolReport(actions: AgentAction[]): string {
   return actions.map(formatActionReport).join('\n\n')
 }
 
+function traceOutcome(outcome: ToolOutcome): ToolOutcome {
+  return {
+    ok: outcome.ok,
+    text: outcome.text,
+    reference: outcome.reference,
+  }
+}
+
 function resolveGuardMessage(verdict: InvariantGuardVerdict): string {
   if (verdict.reason) {
     return verdict.reason
@@ -855,7 +864,12 @@ function resolveGuardMessage(verdict: InvariantGuardVerdict): string {
     : 'Ответ нарушает пользовательский инвариант.'
 }
 
-export type ToolOutput = { id: number; tool: string; text: string }
+export type ToolOutput = {
+  id: number
+  tool: string
+  text: string
+  refText?: string
+}
 
 function isToolArgRef(value: unknown): value is ToolArgRef {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
@@ -867,10 +881,11 @@ function isToolArgRef(value: unknown): value is ToolArgRef {
 
 function refValue(ref: string, outputs: ToolOutput[]): string | null {
   if (ref === 'last') {
-    return outputs.at(-1)?.text ?? null
+    const output = outputs.at(-1)
+    return output ? output.refText ?? output.text : null
   }
   const output = outputs.find((entry) => String(entry.id) === ref)
-  return output ? output.text : null
+  return output ? output.refText ?? output.text : null
 }
 
 export function resolveArgRefs(
@@ -1253,7 +1268,7 @@ export class Agent {
         stage: 'act',
         tool,
         args: rawArgs,
-        outcome,
+        outcome: traceOutcome(outcome),
         mutating: requestedTool.mutating ?? true,
       })
       if (!outcome.ok) {
@@ -1303,6 +1318,7 @@ export class Agent {
         id: outputs.length + 1,
         tool: decided.tool,
         text: outcome.text,
+        refText: outcome.refText,
       }
       outputs.push(output)
       loopMessages.push({

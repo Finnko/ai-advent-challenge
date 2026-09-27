@@ -1,4 +1,10 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
@@ -337,6 +343,66 @@ describe('MCP pipeline: search → summarize → save_to_file', () => {
     expect(existsSync(savedPath)).toBe(true)
     expect(readFileSync(savedPath, 'utf8')).toBe(outputs.summarize)
     expect(largestDecideChars).toBeLessThan(300)
+  })
+
+  it('сохраняет полный вывод MCP по ссылке при длинном preview', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'chain-long-ref-'))
+    const fullSummary = `Курс и погода.\n${'Брони по переговоркам: Ладога — 6. '.repeat(140)}`
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = []
+
+    const call = async (
+      name: string,
+      args: Record<string, unknown>,
+    ): Promise<McpCallResult> => {
+      calls.push({ name, args })
+      if (name === 'search') {
+        return { ok: true, text: 'исходные данные' }
+      }
+      if (name === 'summarize') {
+        return { ok: true, text: fullSummary }
+      }
+      const path = join(dir, 'long-report.md')
+      writeFileSync(path, String(args.content))
+      return { ok: true, text: `Сохранено: ${path}` }
+    }
+
+    const tools = buildMcpAgentTools(DESCRIPTORS, call)
+    const steps = [
+      () => ({ tool: 'mcp_search', args: { query: 'курс евро' } }),
+      () => ({
+        tool: 'mcp_summarize',
+        args: { text: { $ref: '1' } },
+      }),
+      () => ({
+        tool: 'mcp_save_to_file',
+        args: { name: 'long-report', content: { $ref: 'last' } },
+      }),
+      () => ({ tool: null, args: {} }),
+    ]
+    const runtime: AgentRuntime = {
+      callLLM: scriptedChain(steps, 'Готово: длинный отчёт сохранён.'),
+      summarize: unused,
+      extractFacts: unused,
+      extractMemories: async () => ({ candidates: [], usage: null }),
+      analyzeTaskState: async () => ({ analysis: null, usage: null }),
+      store: createFakeStore(),
+      createTools: () => [],
+      loadMcpTools: async () => tools,
+    }
+
+    const execution = await executeAgent(
+      {
+        capabilities: createCapabilities(createIdentity(), []),
+        user: 'Собери длинный отчёт и сохрани в файл.',
+        strategy: noneStrategy,
+        rows: [],
+      },
+      runtime,
+    )
+
+    expect(execution.run.ok).toBe(true)
+    expect(calls[2].args.content).toBe(fullSummary)
+    expect(readFileSync(join(dir, 'long-report.md'), 'utf8')).toBe(fullSummary)
   })
 
   it('добирает источники, пока не наберёт targetWords, и сохраняет чистый отчёт', async () => {
