@@ -50,6 +50,7 @@ export function buildMcpAgentTools(
       description: toolDescription(descriptor),
       argsExample: formatArgsExample(descriptor.inputSchema),
       roles: ['employee', 'manager'],
+      mutating: descriptor.mutating,
       run: async (args) => toOutcome(await call(descriptor.name, args)),
     }),
   )

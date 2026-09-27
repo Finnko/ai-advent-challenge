@@ -6,22 +6,8 @@ import {
   SUMMARIZE_MAX_SENTENCES,
   SUMMARIZE_MIN_SENTENCES,
 } from '../../domain/research/types.ts'
-import type { ResearchToolResult, ResearchToolkit } from './tools.ts'
-
-type ToolResponse = {
-  content: Array<{ type: 'text'; text: string }>
-  isError?: boolean
-}
-
-function toResponse(result: ResearchToolResult): ToolResponse {
-  if (result.ok) {
-    return { content: [{ type: 'text', text: result.text }] }
-  }
-  return {
-    content: [{ type: 'text', text: result.text }],
-    isError: true,
-  }
-}
+import { toResponse } from '../shared/response.ts'
+import type { ResearchToolkit } from './tools.ts'
 
 export function registerResearchTools(
   server: McpServer,
@@ -33,8 +19,12 @@ export function registerResearchTools(
       title: 'Поиск в интернете',
       description:
         'Ищет публичную информацию в интернете (Wikipedia, ru) по поисковому ' +
-        'запросу и возвращает до limit результатов: заголовок, ссылку и краткую ' +
-        'выдержку. Первый шаг пайплайна поиска. Справочный инструмент.',
+        'запросу и возвращает до limit результатов: заголовок, ссылку и текст ' +
+        'статьи (по умолчанию вводный лид; при full = true — расширенный ' +
+        'фрагмент статьи). Первый шаг пайплайна поиска; его вывод передавай в ' +
+        'summarize дословно. Если нужен большой объём отчёта — вызывай search ' +
+        'с full = true и/или большим limit, при необходимости несколько раз, и ' +
+        'склеивай результаты. Справочный инструмент.',
       inputSchema: {
         query: z.string().describe('Поисковый запрос'),
         limit: z
@@ -46,7 +36,14 @@ export function registerResearchTools(
           .describe(
             `Сколько результатов вернуть (${SEARCH_MIN_LIMIT}–${SEARCH_MAX_LIMIT}, по умолчанию 5)`,
           ),
+        full: z
+          .boolean()
+          .optional()
+          .describe(
+            'Вернуть расширенный фрагмент статьи, а не только лид. Используй, когда нужен большой объём источника.',
+          ),
       },
+      annotations: { readOnlyHint: true },
     },
     async (args) => toResponse(await toolkit.search(args)),
   )
@@ -56,12 +53,27 @@ export function registerResearchTools(
     {
       title: 'Краткое содержание',
       description:
-        'Делает краткое содержание переданного текста: до maxSentences самых ' +
-        'значимых предложений в исходном порядке. Детерминированное ' +
-        'экстрактивное сжатие без обращения к LLM — второй шаг пайплайна. ' +
-        'Справочный инструмент.',
+        'Сжимает переданный текст, выбирая связные предложения в исходном ' +
+        'порядке и сохраняя границы и ссылки источников. Детерминированное ' +
+        'экстрактивное сжатие без обращения к LLM: формулировки и факты не ' +
+        'переписываются. Второй шаг пайплайна; на вход подавай сырой вывод ' +
+        'search, вывод — дословно в save_to_file. Если targetWords задан и ' +
+        'источника не хватает, инструмент возвращает максимум возможного и ' +
+        'помечает недостачу — тогда добавь результатов search и повтори ' +
+        'summarize, не спрашивая пользователя.',
       inputSchema: {
-        text: z.string().describe('Текст для сжатия'),
+        text: z
+          .string()
+          .describe('Сырой текст-источник (например, вывод search) для сжатия'),
+        targetWords: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe(
+            'Желаемый объём в словах (цель из плана или запроса). Если не задан — ' +
+              'объём выбирается по контексту',
+          ),
         maxSentences: z
           .number()
           .int()
@@ -69,9 +81,10 @@ export function registerResearchTools(
           .max(SUMMARIZE_MAX_SENTENCES)
           .optional()
           .describe(
-            `Сколько предложений оставить (${SUMMARIZE_MIN_SENTENCES}–${SUMMARIZE_MAX_SENTENCES}, по умолчанию 5)`,
+            `Верхняя граница числа предложений, если не задан targetWords (${SUMMARIZE_MIN_SENTENCES}–${SUMMARIZE_MAX_SENTENCES}, по умолчанию 5)`,
           ),
       },
+      annotations: { readOnlyHint: true },
     },
     async (args) => toResponse(await toolkit.summarize(args)),
   )
@@ -82,12 +95,15 @@ export function registerResearchTools(
       title: 'Сохранить отчёт в файл',
       description:
         'Сохраняет переданный текст в файл отчёта по имени name (безопасное имя, ' +
-        'расширение .md добавляется автоматически) и возвращает путь. ' +
+        'расширение .md добавляется автоматически) и возвращает путь. Пишет ' +
+        'содержимое дословно — передавай вывод summarize (служебная строка ' +
+        '«[Объём: …]» в файл не попадает). ' +
         'Изменяющий инструмент — финальный шаг пайплайна.',
       inputSchema: {
         name: z.string().describe('Имя отчёта без пути, например euro-usd-report'),
         content: z.string().describe('Текст отчёта для сохранения'),
       },
+      annotations: { readOnlyHint: false },
     },
     async (args) => toResponse(await toolkit.saveToFile(args)),
   )
@@ -100,6 +116,7 @@ export function registerResearchTools(
         'Перечисляет сохранённые отчёты с размером и временем изменения. ' +
         'Если отчётов нет — честно сообщает об этом. Справочный инструмент, ' +
         'подходит для проверки результата.',
+      annotations: { readOnlyHint: true },
     },
     async () => toResponse(await toolkit.listReports()),
   )
@@ -114,6 +131,7 @@ export function registerResearchTools(
       inputSchema: {
         name: z.string().describe('Имя отчёта из list_reports'),
       },
+      annotations: { readOnlyHint: true },
     },
     async (args) => toResponse(await toolkit.readReport(args)),
   )

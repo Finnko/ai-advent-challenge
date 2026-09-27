@@ -18,6 +18,7 @@ function descriptor(
   name: string,
   server: string,
   properties: Record<string, JsonValue>,
+  mutating = false,
 ): McpToolDescriptor {
   return {
     name,
@@ -25,6 +26,7 @@ function descriptor(
     description: `Тул ${name}.`,
     inputSchema: { type: 'object', properties, required: [] },
     server,
+    mutating,
   }
 }
 
@@ -37,10 +39,15 @@ const DESCRIPTORS: McpToolDescriptor[] = [
     text: { type: 'string' },
     maxSentences: { type: 'integer' },
   }),
-  descriptor('save_to_file', 'agent-mcp-research', {
-    name: { type: 'string' },
-    content: { type: 'string' },
-  }),
+  descriptor(
+    'save_to_file',
+    'agent-mcp-research',
+    {
+      name: { type: 'string' },
+      content: { type: 'string' },
+    },
+    true,
+  ),
   descriptor('list_reports', 'agent-mcp-research', {}),
 ]
 

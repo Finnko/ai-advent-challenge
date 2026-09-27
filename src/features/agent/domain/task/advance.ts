@@ -1,5 +1,4 @@
 import type { AgentRunResult } from '../agent'
-import { isMutatingTool } from '../agent-tools'
 import { transitionTask } from './state'
 import type { TaskEvent, TaskState, TaskStage } from './types'
 
@@ -159,8 +158,7 @@ export function hasSuccessfulMutation(
   run: Pick<AgentRunResult, 'trace'>,
 ): boolean {
   return run.trace.some(
-    (step) =>
-      step.stage === 'act' && step.outcome.ok && isMutatingTool(step.tool),
+    (step) => step.stage === 'act' && step.outcome.ok && step.mutating,
   )
 }
 
@@ -168,8 +166,7 @@ export function hasReadonlyVerification(
   run: Pick<AgentRunResult, 'trace'>,
 ): boolean {
   return run.trace.some(
-    (step) =>
-      step.stage === 'act' && step.outcome.ok && !isMutatingTool(step.tool),
+    (step) => step.stage === 'act' && step.outcome.ok && !step.mutating,
   )
 }
 
@@ -235,31 +232,12 @@ export function advanceAfterRun(
     return null
   }
   if (state.stage === 'execution' && hasSuccessfulMutation(run)) {
-    return (
-      advanceStep(state, at) ??
-      advanceStage(
-        state,
-        'validation',
-        at,
-        'Действие выполнено — переходим к проверке результата.',
-        VALIDATION_DEFAULT_STEPS,
-      )
-    )
-  }
-  if (
-    state.stage === 'execution' &&
-    hasSuccessfulAction(run) &&
-    state.steps.length > 0
-  ) {
-    return (
-      advanceStep(state, at) ??
-      advanceStage(
-        state,
-        'validation',
-        at,
-        'Шаги плана выполнены — переходим к проверке результата.',
-        VALIDATION_DEFAULT_STEPS,
-      )
+    return advanceStage(
+      state,
+      'validation',
+      at,
+      'Действие выполнено — переходим к проверке результата.',
+      VALIDATION_DEFAULT_STEPS,
     )
   }
   if (

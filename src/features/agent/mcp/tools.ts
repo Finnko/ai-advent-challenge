@@ -1,19 +1,16 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
+import { errorMessage, type ToolResponse } from './shared/response.ts'
 import { bookingsByRoom, dbOverview, employeeSchedule } from './db.ts'
-
-type ToolResponse = {
-  content: Array<{ type: 'text'; text: string }>
-  isError?: boolean
-}
 
 async function textResult(load: () => Promise<string>): Promise<ToolResponse> {
   try {
     return { content: [{ type: 'text', text: await load() }] }
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
     return {
-      content: [{ type: 'text', text: `Ошибка чтения базы: ${message}` }],
+      content: [
+        { type: 'text', text: `Ошибка чтения базы: ${errorMessage(error)}` },
+      ],
       isError: true,
     }
   }
@@ -27,6 +24,7 @@ export function registerDemoTools(server: McpServer): void {
       description:
         'Возвращает текущие дату и время сервера в формате ISO 8601. ' +
         'Демонстрационный инструмент без входных параметров.',
+      annotations: { readOnlyHint: true },
     },
     async () => ({
       content: [{ type: 'text', text: new Date().toISOString() }],
@@ -43,6 +41,7 @@ export function registerDemoTools(server: McpServer): void {
       inputSchema: {
         text: z.string().describe('Текст, который нужно вернуть'),
       },
+      annotations: { readOnlyHint: true },
     },
     async ({ text }) => ({
       content: [{ type: 'text', text }],
@@ -56,6 +55,7 @@ export function registerDemoTools(server: McpServer): void {
       description:
         'Возвращает счётчики записей по таблицам базы агента: сотрудники, ' +
         'сессии, сообщения, брони, отпуска, инварианты, профили. Без входных параметров.',
+      annotations: { readOnlyHint: true },
     },
     async () => textResult(() => dbOverview()),
   )
@@ -77,6 +77,7 @@ export function registerDemoTools(server: McpServer): void {
           .optional()
           .describe('Конец периода, YYYY-MM-DD (необязательно)'),
       },
+      annotations: { readOnlyHint: true },
     },
     async ({ from, to }) => textResult(() => bookingsByRoom(from, to)),
   )
@@ -99,6 +100,7 @@ export function registerDemoTools(server: McpServer): void {
           .optional()
           .describe('Конец периода, YYYY-MM-DD (необязательно)'),
       },
+      annotations: { readOnlyHint: true },
     },
     async ({ employeeName, from, to }) =>
       textResult(() => employeeSchedule(employeeName, from, to)),

@@ -1,10 +1,13 @@
 export const SEARCH_DEFAULT_LIMIT = 5
 export const SEARCH_MIN_LIMIT = 1
 export const SEARCH_MAX_LIMIT = 10
+export const SEARCH_SNIPPET_MAX_CHARS = 4000
 
 export const SUMMARIZE_DEFAULT_SENTENCES = 5
 export const SUMMARIZE_MIN_SENTENCES = 1
 export const SUMMARIZE_MAX_SENTENCES = 15
+export const SUMMARIZE_MAX_WORDS = 5000
+export const VOLUME_NOTE_PREFIX = '[Объём:'
 
 export const REPORT_EXTENSION = '.md'
 export const REPORT_MAX_NAME_LENGTH = 80
@@ -17,8 +20,16 @@ export type SearchResult = {
   snippet: string
 }
 
+export type WebSearchOptions = {
+  full?: boolean
+}
+
 export type WebSource = {
-  search(query: string, limit: number): Promise<SearchResult[]>
+  search(
+    query: string,
+    limit: number,
+    options?: WebSearchOptions,
+  ): Promise<SearchResult[]>
 }
 
 export type ReportEntry = {

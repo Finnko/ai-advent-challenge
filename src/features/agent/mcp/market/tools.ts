@@ -3,12 +3,16 @@ import {
   RATE_DEFAULT_QUOTE,
   type MarketSource,
 } from '../../domain/market/types.ts'
+import {
+  errorMessage,
+  fail,
+  ok,
+  type ToolResult,
+} from '../shared/response.ts'
 
 type Args = Record<string, unknown>
 
-export type MarketToolResult =
-  | { ok: true; text: string }
-  | { ok: false; text: string }
+export type MarketToolResult = ToolResult
 
 export type MarketToolkitDeps = {
   rates: MarketSource
@@ -20,14 +24,6 @@ export type MarketToolkit = {
 
 const CURRENCY_PATTERN = /^[A-Za-z]{3}$/
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
-
-function ok(text: string): MarketToolResult {
-  return { ok: true, text }
-}
-
-function fail(text: string): MarketToolResult {
-  return { ok: false, text }
-}
 
 function normalizeCurrency(value: unknown, fallback: string): string | null {
   if (value === undefined || value === null || value === '') {
@@ -84,8 +80,7 @@ export function createMarketToolkit(deps: MarketToolkitDeps): MarketToolkit {
         const rate = await deps.rates.rate(base, quote, date)
         return ok(formatRate(rate))
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
-        return fail(`Не удалось получить курс: ${message}`)
+        return fail(`Не удалось получить курс: ${errorMessage(error)}`)
       }
     },
   }

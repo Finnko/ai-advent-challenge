@@ -1,5 +1,5 @@
 import { createServerFn } from '@tanstack/react-start'
-import { listProfiles as listProfilesInStore } from '../server/store.server'
+import { listProfiles as listProfilesInStore } from '../server/store/profiles.server'
 import { asObject, requireToken } from './validation'
 
 export const listProfiles = createServerFn({ method: 'POST' })

@@ -20,7 +20,7 @@ fi
 
 TAILNET_HOST="${TAILNET_HOST:-}"
 KEY="${SSH_KEY:-$HOME/.ssh/ai_advent_ed25519}"
-BRANCH="${DEPLOY_BRANCH:-feature/day18}"
+BRANCH="${DEPLOY_BRANCH:-feature/day19-20}"
 REMOTE_DIR="${REMOTE_DIR:-/opt/ai-advent-challenge}"
 
 [[ -n "$TAILNET_HOST" ]] || { echo "Задай TAILNET_HOST в $ENV_FILE"; exit 1; }

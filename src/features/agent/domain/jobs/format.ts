@@ -1,4 +1,5 @@
 import { describeWeatherCode } from './codes.ts'
+import { round1 } from './round.ts'
 import type { WeatherSample } from './types.ts'
 
 export function formatMoment(value: string | null): string {
@@ -18,18 +19,19 @@ export function formatMoment(value: string | null): string {
   })
 }
 
-function round1(value: number): number {
-  return Math.round(value * 10) / 10
-}
-
-export function sampleText(value: WeatherSample | null): string {
+export function sampleText(
+  value: WeatherSample | null,
+  observedAt?: string,
+): string {
   if (!value) {
     return '—'
   }
-  return [
+  const parts = [
     `${round1(value.temperatureC)} °C`,
     `влажность ${Math.round(value.humidity)}%`,
     `ветер ${round1(value.windSpeedKmh)} км/ч`,
     describeWeatherCode(value.weatherCode),
-  ].join(' · ')
+  ]
+  const prefix = observedAt ? `${observedAt}: ` : ''
+  return `${prefix}${parts.join(' · ')}`
 }

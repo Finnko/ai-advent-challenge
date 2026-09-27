@@ -33,6 +33,7 @@ const DESCRIPTORS: McpToolDescriptor[] = [
       required: ['query'],
     },
     server: 'agent-mcp-research',
+    mutating: false,
   },
   {
     name: 'summarize',
@@ -44,6 +45,7 @@ const DESCRIPTORS: McpToolDescriptor[] = [
       required: ['text'],
     },
     server: 'agent-mcp-research',
+    mutating: false,
   },
   {
     name: 'save_to_file',
@@ -55,6 +57,7 @@ const DESCRIPTORS: McpToolDescriptor[] = [
       required: ['name', 'content'],
     },
     server: 'agent-mcp-research',
+    mutating: true,
   },
 ]
 
@@ -74,6 +77,34 @@ function fakeWeb(): WebSource {
   return {
     async search() {
       return results
+    },
+  }
+}
+
+function variableWeb(): WebSource {
+  let calls = 0
+  const short: SearchResult[] = [
+    {
+      title: 'Евро',
+      url: 'https://ru.wikipedia.org/wiki/Евро',
+      snippet: `${SEARCH_TOKEN}. Курс евро вырос.`,
+    },
+  ]
+  const long: SearchResult[] = [
+    {
+      title: 'Евро',
+      url: 'https://ru.wikipedia.org/wiki/Евро',
+      snippet: Array.from(
+        { length: 20 },
+        (_, index) =>
+          `Факт номер ${index + 1} про евро и валютную политику ЕЦБ.`,
+      ).join(' '),
+    },
+  ]
+  return {
+    async search() {
+      calls += 1
+      return calls === 1 ? short : long
     },
   }
 }
@@ -209,5 +240,198 @@ describe('MCP pipeline: search → summarize → save_to_file', () => {
     expect(saved).toBe(outputs.summarize)
     expect(outputs.summarize.length).toBeGreaterThan(0)
     expect(outputs.summarize.length).toBeLessThan(outputs.search.length)
+  })
+
+  it('передаёт данные между инструментами ссылками $ref, не копируя текст в decide', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'chain-ref-'))
+    const toolkit = createResearchToolkit({
+      web: fakeWeb(),
+      reports: createFileReportsStore(dir),
+    })
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = []
+    const outputs: Record<string, string> = {}
+    let largestDecideChars = 0
+
+    const runTool = (
+      name: string,
+      args: Record<string, unknown>,
+    ): Promise<ResearchToolResult> => {
+      if (name === 'search') {
+        return toolkit.search(args)
+      }
+      if (name === 'summarize') {
+        return toolkit.summarize(args)
+      }
+      return toolkit.saveToFile(args)
+    }
+
+    const call = async (
+      name: string,
+      args: Record<string, unknown>,
+    ): Promise<McpCallResult> => {
+      calls.push({ name, args })
+      const result = await runTool(name, args)
+      if (!result.ok) {
+        return { ok: false, error: result.text }
+      }
+      outputs[name] = result.text
+      return { ok: true, text: result.text }
+    }
+
+    const tools = buildMcpAgentTools(DESCRIPTORS, call)
+    const steps = [
+      () => ({ tool: 'mcp_search', args: { query: 'курс евро доллар' } }),
+      () => ({
+        tool: 'mcp_summarize',
+        args: { text: { $ref: '1' }, targetWords: 2 },
+      }),
+      () => ({
+        tool: 'mcp_save_to_file',
+        args: { name: 'euro-ref', content: { $ref: 'last' } },
+      }),
+      () => ({ tool: null, args: {} }),
+    ]
+
+    const base = scriptedChain(steps, 'Готово: отчёт сохранён по ссылке.')
+    const callLLM: CallLLM = async (params) => {
+      const reply = await base(params)
+      if (params.response_format) {
+        largestDecideChars = Math.max(largestDecideChars, reply.content.length)
+      }
+      return reply
+    }
+
+    const runtime: AgentRuntime = {
+      callLLM,
+      summarize: unused,
+      extractFacts: unused,
+      extractMemories: async () => ({ candidates: [], usage: null }),
+      analyzeTaskState: async () => ({ analysis: null, usage: null }),
+      store: createFakeStore(),
+      createTools: () => [],
+      loadMcpTools: async () => tools,
+    }
+
+    const execution = await executeAgent(
+      {
+        capabilities: createCapabilities(createIdentity(), []),
+        user: 'Собери мини-отчёт по евро/доллар и сохрани в файл.',
+        strategy: noneStrategy,
+        rows: [],
+      },
+      runtime,
+    )
+
+    expect(execution.run.ok).toBe(true)
+    const acts = execution.run.trace.filter((step) => step.stage === 'act')
+    expect(acts.map((step) => step.tool)).toEqual([
+      'mcp_search',
+      'mcp_summarize',
+      'mcp_save_to_file',
+    ])
+    expect(outputs.search).toContain(SEARCH_TOKEN)
+    expect(calls[1].args.text).toBe(outputs.search)
+    expect(calls[2].args.content).toBe(outputs.summarize)
+
+    const savedPath = join(dir, 'euro-ref.md')
+    expect(existsSync(savedPath)).toBe(true)
+    expect(readFileSync(savedPath, 'utf8')).toBe(outputs.summarize)
+    expect(largestDecideChars).toBeLessThan(300)
+  })
+
+  it('добирает источники, пока не наберёт targetWords, и сохраняет чистый отчёт', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'chain-volume-'))
+    const toolkit = createResearchToolkit({
+      web: variableWeb(),
+      reports: createFileReportsStore(dir),
+    })
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = []
+    const outputs: Record<string, string> = {}
+    const resultTexts: string[] = []
+
+    const runTool = (
+      name: string,
+      args: Record<string, unknown>,
+    ): Promise<ResearchToolResult> => {
+      if (name === 'search') {
+        return toolkit.search(args)
+      }
+      if (name === 'summarize') {
+        return toolkit.summarize(args)
+      }
+      return toolkit.saveToFile(args)
+    }
+
+    const call = async (
+      name: string,
+      args: Record<string, unknown>,
+    ): Promise<McpCallResult> => {
+      calls.push({ name, args })
+      const result = await runTool(name, args)
+      if (!result.ok) {
+        return { ok: false, error: result.text }
+      }
+      outputs[name] = result.text
+      resultTexts.push(result.text)
+      return { ok: true, text: result.text }
+    }
+
+    const tools = buildMcpAgentTools(DESCRIPTORS, call)
+    const steps = [
+      () => ({ tool: 'mcp_search', args: { query: 'курс евро' } }),
+      () => ({
+        tool: 'mcp_summarize',
+        args: { text: outputs.search, targetWords: 60 },
+      }),
+      () => ({ tool: 'mcp_search', args: { query: 'евро ЕЦБ', full: true } }),
+      () => ({
+        tool: 'mcp_summarize',
+        args: { text: outputs.search, targetWords: 60 },
+      }),
+      () => ({
+        tool: 'mcp_save_to_file',
+        args: { name: 'euro-volume', content: outputs.summarize },
+      }),
+      () => ({ tool: null, args: {} }),
+    ]
+
+    const runtime: AgentRuntime = {
+      callLLM: scriptedChain(steps, 'Готово: отчёт сохранён.'),
+      summarize: unused,
+      extractFacts: unused,
+      extractMemories: async () => ({ candidates: [], usage: null }),
+      analyzeTaskState: async () => ({ analysis: null, usage: null }),
+      store: createFakeStore(),
+      createTools: () => [],
+      loadMcpTools: async () => tools,
+    }
+
+    const execution = await executeAgent(
+      {
+        capabilities: createCapabilities(createIdentity(), []),
+        user: 'Собери отчёт по евро на 60 слов и сохрани.',
+        strategy: noneStrategy,
+        rows: [],
+      },
+      runtime,
+    )
+
+    expect(execution.run.ok).toBe(true)
+    const acts = execution.run.trace.filter((step) => step.stage === 'act')
+    expect(acts.map((step) => step.tool)).toEqual([
+      'mcp_search',
+      'mcp_summarize',
+      'mcp_search',
+      'mcp_summarize',
+      'mcp_save_to_file',
+    ])
+    expect(resultTexts[1]).toContain('[Объём:')
+    expect(resultTexts[3]).not.toContain('[Объём:')
+
+    const savedPath = join(dir, 'euro-volume.md')
+    expect(existsSync(savedPath)).toBe(true)
+    const saved = readFileSync(savedPath, 'utf8')
+    expect(saved).not.toContain('[Объём:')
+    expect(saved).toBe(outputs.summarize)
   })
 })

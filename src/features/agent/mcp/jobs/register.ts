@@ -7,22 +7,8 @@ import {
   MIN_INTERVAL_MINUTES,
   MIN_WINDOW_HOURS,
 } from '../../domain/jobs/types.ts'
-import type { JobToolResult, JobsToolkit } from './tools.ts'
-
-type ToolResponse = {
-  content: Array<{ type: 'text'; text: string }>
-  isError?: boolean
-}
-
-function toResponse(result: JobToolResult): ToolResponse {
-  if (result.ok) {
-    return { content: [{ type: 'text', text: result.text }] }
-  }
-  return {
-    content: [{ type: 'text', text: result.text }],
-    isError: true,
-  }
-}
+import { toResponse } from '../shared/response.ts'
+import type { JobsToolkit } from './tools.ts'
 
 export function registerJobsTools(
   server: McpServer,
@@ -59,6 +45,7 @@ export function registerJobsTools(
             `Окно агрегации, часы (${MIN_WINDOW_HOURS}–${MAX_WINDOW_HOURS})`,
           ),
       },
+      annotations: { readOnlyHint: false },
     },
     async (args) => toResponse(await toolkit.scheduleWeatherReport(args)),
   )
@@ -72,6 +59,7 @@ export function registerJobsTools(
       inputSchema: {
         id: z.number().int().positive().describe('id расписания из list_schedules'),
       },
+      annotations: { readOnlyHint: false, destructiveHint: true },
     },
     async (args) => toResponse(await toolkit.cancelSchedule(args)),
   )
@@ -86,6 +74,7 @@ export function registerJobsTools(
         'доступные города перечислены в schedule_weather_report, а отсутствие ' +
         'города в расписаниях не мешает создать для него новое расписание. ' +
         'Справочный инструмент.',
+      annotations: { readOnlyHint: true },
     },
     async () => toResponse(await toolkit.listSchedules()),
   )
@@ -111,6 +100,7 @@ export function registerJobsTools(
           .optional()
           .describe('Окно агрегации в часах (необязательно)'),
       },
+      annotations: { readOnlyHint: true },
     },
     async (args) => toResponse(await toolkit.getWeatherReport(args)),
   )
@@ -128,6 +118,7 @@ export function registerJobsTools(
           .string()
           .describe('Дата и время в формате ISO 8601 (например 2026-09-24T15:00:00Z)'),
       },
+      annotations: { readOnlyHint: true },
     },
     async (args) => toResponse(await toolkit.getWeatherAt(args)),
   )
@@ -140,6 +131,7 @@ export function registerJobsTools(
         'Системный тик: запускает все расписания, у которых наступило время, ' +
         'сохраняет прогоны и обновляет сводки. Вызывается планировщиком и ' +
         'кнопкой «Выполнить сейчас», агенту не предлагается.',
+      annotations: { readOnlyHint: false },
     },
     async () => toResponse(await toolkit.runDueJobs()),
   )

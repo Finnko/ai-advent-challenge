@@ -6,8 +6,9 @@ import {
   nearestObservation,
 } from '../../domain/jobs/aggregate.ts'
 import { coverageKey, missingDataText } from '../../domain/jobs/coverage.ts'
-import { describeWeatherCode } from '../../domain/jobs/codes.ts'
+import { sampleText } from '../../domain/jobs/format.ts'
 import { computeNextRun, validateScheduleInput } from '../../domain/jobs/schedule.ts'
+import { scheduleView } from '../../domain/jobs/view.ts'
 import {
   BOOTSTRAP_DAYS,
   MAX_SCHEDULES,
@@ -21,12 +22,12 @@ import {
   type WeatherSource,
 } from '../../domain/jobs/types.ts'
 import type { JobsStore } from './db.ts'
+import { round1 } from '../../domain/jobs/round.ts'
+import { fail, ok, type ToolResult } from '../shared/response.ts'
 
 type Args = Record<string, unknown>
 
-export type JobToolResult =
-  | { ok: true; text: string }
-  | { ok: false; text: string }
+export type JobToolResult = ToolResult
 
 export type JobsToolkitDeps = {
   store: JobsStore
@@ -43,18 +44,6 @@ export type JobsToolkit = {
   runDueJobs: () => Promise<JobToolResult>
 }
 
-function ok(text: string): JobToolResult {
-  return { ok: true, text }
-}
-
-function fail(text: string): JobToolResult {
-  return { ok: false, text }
-}
-
-function round1(value: number): number {
-  return Math.round(value * 10) / 10
-}
-
 function toSample(observation: WeatherObservation): WeatherSample {
   return {
     temperatureC: observation.temperatureC,
@@ -62,17 +51,6 @@ function toSample(observation: WeatherObservation): WeatherSample {
     weatherCode: observation.weatherCode,
     windSpeedKmh: observation.windSpeedKmh,
   }
-}
-
-function sampleLine(sample: WeatherSample, observedAt?: string): string {
-  const parts = [
-    `${round1(sample.temperatureC)} °C`,
-    `влажность ${Math.round(sample.humidity)}%`,
-    `ветер ${round1(sample.windSpeedKmh)} км/ч`,
-    describeWeatherCode(sample.weatherCode),
-  ]
-  const prefix = observedAt ? `${observedAt}: ` : ''
-  return `${prefix}${parts.join(', ')}`
 }
 
 function formatSummary(
@@ -94,7 +72,7 @@ function formatLastRun(run: RunRecord | null): string {
     return '—'
   }
   if (run.value && run.observedAt) {
-    return `${run.observedAt} — ${sampleLine(run.value)}`
+    return `${run.observedAt} — ${sampleText(run.value)}`
   }
   if (run.error) {
     return `ошибка: ${run.error}`
@@ -103,14 +81,12 @@ function formatLastRun(run: RunRecord | null): string {
 }
 
 function formatSchedule(store: JobsStore, schedule: Schedule): string {
-  const city = findCityById(schedule.city)
-  const name = city?.name ?? schedule.city
-  const coverage = store.getMeta(coverageKey(schedule.city)) ?? '—'
+  const view = scheduleView(store, schedule)
   const last = formatLastRun(store.latestRun(schedule.id))
   return [
-    `#${schedule.id} ${name} · каждые ${schedule.intervalMinutes} мин · окно ${schedule.windowHours} ч`,
+    `#${view.id} ${view.cityName} · каждые ${view.intervalMinutes} мин · окно ${view.windowHours} ч`,
     `  последний прогон: ${last}`,
-    `  следующий: ${schedule.nextRunAt} · покрытие с ${coverage}`,
+    `  следующий: ${view.nextRunAt} · покрытие с ${view.coverageStart ?? '—'}`,
   ].join('\n')
 }
 
@@ -278,7 +254,7 @@ export function createJobsToolkit(deps: JobsToolkitDeps): JobsToolkit {
           createdAt: ranAt,
         })
       }
-      return `#${schedule.id} ${city.name}: ${sampleLine(observation)}.`
+      return `#${schedule.id} ${city.name}: ${sampleText(toSample(observation), observation.observedAt)}.`
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       record(store, {
@@ -418,7 +394,7 @@ export function createJobsToolkit(deps: JobsToolkitDeps): JobsToolkit {
         return ok(missingDataText(city, coverage))
       }
       return ok(
-        `${city.name}, ${sampleLine(found.observation, found.observation.observedAt)} (расписание #${found.scheduleId}).`,
+        `${city.name}, ${sampleText(found.observation, found.observation.observedAt)} (расписание #${found.scheduleId}).`,
       )
     },
 

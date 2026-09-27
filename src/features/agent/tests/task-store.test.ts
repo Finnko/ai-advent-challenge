@@ -5,7 +5,9 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { resumeTask } from '../domain/task/state'
 import type { TaskState } from '../domain/task/types'
 
-type Store = typeof import('../server/store.server')
+type Store = typeof import('../server/store/sessions.server') &
+  typeof import('../server/store/tasks.server') &
+  typeof import('../server/store/messages.server')
 type TaskStateServer = typeof import('../server/task-state.server')
 
 let tempDir: string
@@ -18,7 +20,11 @@ beforeAll(async () => {
   await writeFile(dbPath, '')
   process.env.AGENT_DB_PATH = dbPath
   vi.resetModules()
-  store = await import('../server/store.server')
+  store = {
+    ...(await import('../server/store/sessions.server')),
+    ...(await import('../server/store/tasks.server')),
+    ...(await import('../server/store/messages.server')),
+  }
   taskStateServer = await import('../server/task-state.server')
 })
 
@@ -147,6 +153,20 @@ describe('task state store', () => {
       from: 'paused',
       to: 'execution',
     })
+  })
+
+  it('кнопка утверждения открывает согласие на исполнении', async () => {
+    const sessionId = await store.createSession('tok-approve', 'утверждение')
+    await store.saveTaskState(
+      sessionId,
+      taskState({ stage: 'execution', approved: false }),
+    )
+
+    await taskStateServer.applyTaskAction(sessionId, 'approve')
+
+    const persisted = await store.getTaskState(sessionId)
+    expect(persisted?.stage).toBe('execution')
+    expect(persisted?.approved).toBe(true)
   })
 
   it('обновляет дефолтный заголовок сессии', async () => {

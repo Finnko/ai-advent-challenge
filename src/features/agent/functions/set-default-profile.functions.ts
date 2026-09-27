@@ -1,5 +1,5 @@
 import { createServerFn } from '@tanstack/react-start'
-import { setDefaultProfile as setDefaultProfileInStore } from '../server/store.server'
+import { setDefaultProfile as setDefaultProfileInStore } from '../server/store/profiles.server'
 import { asObject, requireProfileId, requireToken } from './validation'
 
 export const setDefaultProfile = createServerFn({ method: 'POST' })

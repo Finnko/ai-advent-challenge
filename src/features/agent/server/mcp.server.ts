@@ -14,6 +14,10 @@ import {
   type McpServerKind,
 } from './mcp-registry.server'
 
+function isMutatingAnnotations(annotations: Tool['annotations']): boolean {
+  return annotations?.readOnlyHint !== true
+}
+
 function toDescriptor(tool: Tool, server: string): McpToolDescriptor {
   return {
     name: tool.name,
@@ -21,6 +25,7 @@ function toDescriptor(tool: Tool, server: string): McpToolDescriptor {
     description: tool.description ?? null,
     inputSchema: (tool.inputSchema ?? {}) as JsonValue,
     server,
+    mutating: isMutatingAnnotations(tool.annotations),
   }
 }
 

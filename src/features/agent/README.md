@@ -14,12 +14,14 @@
 ```
 src/features/agent/
   pages/         # AgentPage — единственная публичная поверхность (табы Диалог/Инварианты/MCP/Настройки)
-  api/           # клиентские хуки react-query (bulletproof-стиль): queryOptions + useX/mutations
+  api/           # клиентские хуки react-query (bulletproof-стиль): queryOptions + useX/mutations;
+                 # workspace-хуки по заботам — use-session/settings/task-workspace + композиция
   functions/     # createServerFn-обёртки (сетевой шов)
-  server/        # *.server.ts — глубокие server-only модули (agent-turn, agent-service, task-state, mcp, mcp-tools)
-  server/store/  # модули хранилища (db, sessions, tasks, invariants, profiles, agent-records)
-  domain/        # изоморфная логика без env/fetch (agent, agent-tools, context, memory, profile, task, invariants, session, mcp, tokens)
-  mcp/           # автономный stdio MCP-сервер (спавнится, не импортируется/не бандлится): server, tools, db
+  server/        # *.server.ts — глубокие server-only модули (agent-turn, agent-service, task-turn, task-state, mcp, mcp-tools)
+  server/store/  # модули хранилища по концептам (db, sessions, branches, messages, facts, memory, people, tasks, invariants, profiles, agent-records)
+  shared/        # нейтральные node-утилиты для server и mcp (разрешение пути sqlite)
+  domain/        # изоморфная логика без env/fetch (agent, agent-tools, context, memory, profile, task, invariants, session, mcp, jobs, tokens)
+  mcp/           # автономный stdio MCP-сервер (спавнится, не импортируется/не бандлится): server, tools, db, shared
   data/          # клиентские данные без env (примеры, подписи инструментов)
   components/    # UI фичи
   tests/         # офлайн-тесты (vitest, node env)
@@ -44,7 +46,10 @@ src/features/agent/
 
 `server/agent-turn.server.ts` — глубокий модуль Хода. `runAgentTurn({ token, sessionId, user }, deps)`
 сам гидрирует способности, сессию, активную ветку, историю, сводку, факты, память и профиль,
-запускает `executeAgent` и сохраняет обе реплики. `functions/run-agent.functions.ts` — тонкий
+запускает `executeAgent` и сохраняет обе реплики. Оркестрация Задачи вокруг Хода вынесена в
+`server/task-turn.server.ts` (`beginTaskTurn` — отмена/пауза-возобновление, `resolveTaskState` —
+анализ, `resolveCorrection`, `completeTaskTurn` — авто-переходы и сохранение), поэтому
+`runAgentTurn` читается как «load → execute → persist». `functions/run-agent.functions.ts` — тонкий
 adapter: `validator → runAgentTurn`.
 
 Шов `TurnDeps = { resolveCapabilities, store: TurnStore, runtime: AgentRuntime, now }`;
@@ -157,19 +162,33 @@ runtime = defaultAgentRuntime)` не собирает их сам. Сбой API 
   reducer'у.
 - Блок `kind: 'task-state'` вставляется последним system-блоком в оба этапа (decide/finalize);
   при `paused` вызов инструментов жёстко блокируется.
-- **`planning` = предложи и жди**: изменяющие инструменты (`isMutatingTool` в `agent-tools.ts`)
+- **`planning` = предложи и жди**: изменяющие инструменты (флаг `AgentTool.mutating`; у внутренних
+  он из `ToolDefinition.mutating`, у MCP — из аннотации сервера)
   скрыты из decide и жёстко отклоняются на act; справочные `list*` доступны. Мутации выполняются
   только на `execution` при выставленном `TaskState.approved`; на `validation` тоже только `list*`.
   Чисто справочные задачи идут по этапам без согласия.
 - **Контроль переходов (Day 15)**: любой переход валидируется в `transitionTask` по графу
   `ALLOWED_TRANSITIONS`; нелегальный возвращает `rejected` и не меняет состояние. `planning → execution`
-  невозможен при незакрытых пунктах плана (`expectedAction.actor === 'user'`): `runAgentTurn` оставляет
-  задачу в `planning`, пишет `task`-событие `kind: 'rejected'` и подмешивает строку-подсказку в
-  `taskLine` (decide + finalize), чтобы ассистент озвучил отказ. Согласие пользователя больше не
-  запирает сам переход: `runAgentTurn` распознаёт его через `looksLikeApproval` (в `advance.ts`,
-  устойчиво к опечаткам в одну правку) и выставляет `TaskState.approved`. Изменяющие инструменты
-  требуют этого флага, поэтому мутация без согласия отклоняется даже на этапе `execution`. Флаг
-  хранится в `task_states.approved` и сбрасывается при возврате в `planning`.
+  невозможен при незакрытых пунктах плана (`expectedAction.actor === 'user'`), **если пользователь не
+  дал явного согласия**: тогда `runAgentTurn` оставляет задачу в `planning`, пишет `task`-событие
+  `kind: 'rejected'` и подмешивает строку-подсказку в `taskLine` (decide + finalize), чтобы ассистент
+  озвучил отказ. Согласие пользователя больше не запирает сам переход: `runAgentTurn` распознаёт его
+  через `looksLikeApproval` (в `advance.ts`, устойчиво к опечаткам в одну правку) и выставляет
+  `TaskState.approved`. Изменяющие инструменты требуют этого флага, поэтому мутация без согласия
+  отклоняется даже на этапе `execution`. Флаг хранится в `task_states.approved` и сбрасывается при
+  возврате в `planning`.
+- **Один аппрув на весь план (fix)**: явное одобрение (`looksLikeApproval`) авторитетно — оно
+  восстанавливает `approved` и переводит в `execution` даже при незакрытых пунктах, а также
+  нормализует `expectedAction` на `actor='agent'` (в `resolveTaskState` и `approveTask`). Пока
+  `execution` + `approved`, `buildTaskStateLine` (`read.ts`) прямо велит исполнять шаг и **не
+  переспрашивать согласие**, а `resolveTaskState` форсит `actor='agent'` даже если анализатор вернул
+  `actor='user'`; это убирает повторные запросы подтверждения на каждом шаге. Откат
+  `execution → planning` от анализатора игнорируется, если пользователь не просит пересмотреть план
+  (`looksLikeCorrection`), а `execution → validation` не принимается от анализатора — на `validation`
+  задача уходит только через `advanceAfterRun` после успешного действия, чтобы пайплайн не рвался на
+  середине. Анализатор получает в состоянии `approved` и `steps` и правило не переизобретать
+  согласованный план. Ручной выход из тупика — действие `approve` (`applyTaskAction`), кнопка
+  «Утвердить план» в `TaskStateBar`.
 - **Авто-переходы** (`domain/task/advance.ts`): `execution → validation` после успешного мутирующего
   действия и `validation → done` **только после реальной справочной проверки** (`list*`) и без
   признаков правки; `done` также по явному подтверждению (анализатор). Если пользователь сообщает,
@@ -181,8 +200,8 @@ runtime = defaultAgentRuntime)` не собирает их сам. Сбой API 
 - UI: переходы рисуются **inline в ленте чата** (`ChatThread` + `TaskEventRow`) как персистентные
   `task`-сообщения (`messages.role = 'task'`, событие в `run_json`). Их пишут и анализатор
   (`runAgentTurn`, между репликами user/assistant), и кнопки (`applyTaskAction`). `task`-сообщения
-  не попадают в историю LLM. Текущие этап/шаг/ожидаемое действие и кнопки Пауза/Продолжить/Отменить —
-  компактной строкой `TaskStateBar` над полем ввода.
+  не попадают в историю LLM. Текущие этап/шаг/ожидаемое действие и кнопки
+  Утвердить план/Пауза/Продолжить/Отменить — компактной строкой `TaskStateBar` над полем ввода.
 
 ## Инварианты (Day 14)
 
@@ -229,21 +248,42 @@ runtime = defaultAgentRuntime)` не собирает их сам. Сбой API 
 - **Интеграция с агентом**: `server/mcp-tools.server.ts` собирает `loadMcpTools()` per-server и
   исключает `hiddenTools` (`run_due_jobs` агенту не предлагается). `domain/mcp/agent-tools.ts`
   добавляет префикс `mcp_`, провенанс сервера в describe (`[research] …` — из `descriptor.server`) и
-  обрезает текст отчёта до 4000 символов; `isMutatingTool` знает
-  `mcp_schedule_weather_report`/`mcp_cancel_schedule`/`mcp_save_to_file`, поэтому они под тем же гейтом
-  Этапа, что и внутренние мутации. Справочные `mcp_*` доступны везде.
-- **Pipeline (Day 19)**: `search → summarize → save_to_file` ведёт обычный цикл `decide→act` (модель
-  передаёт вывод предыдущего инструмента в аргументы следующего, до `maxActionsPerTurn`); отдельного
-  движка пайплайна нет. `summarize` — детерминированное экстрактивное сжатие (`domain/research/
-  summarize.ts`, без LLM), `search` — Wikipedia ru через инъектируемый `WebSource`
-  (`mcp/research/web.ts`), `save_to_file` пишет `.md` в `REPORTS_DIR` (injectable `ReportsStore`,
-  санитайз имени). Так как `save_to_file` мутирующий, цепочка целиком идёт на стадии `execution`
-  +`approved`, а `list_reports`/`read_report` подтверждают результат на `validation`.
+  обрезает текст отчёта до 4000 символов. Мутируемость приходит аннотацией MCP: каждый сервер
+  помечает инструменты `annotations: { readOnlyHint }`, хост в `toDescriptor` вычисляет
+  `descriptor.mutating` (readOnlyHint ≠ true → изменяющий, fail-closed), а `buildMcpAgentTools`
+  кладёт его в `AgentTool.mutating`. Поэтому мутации `mcp_schedule_weather_report`/`mcp_cancel_schedule`/
+  `mcp_save_to_file` под тем же гейтом Этапа, что и внутренние, без хардкода имён. Справочные `mcp_*`
+  доступны везде. Добавление/переименование MCP-инструмента не требует правок в `domain/`.
+- **Pipeline (Day 19)**: `search → summarize → save_to_file` ведёт обычный цикл `decide→act` (до
+  `maxActionsPerTurn`); отдельного движка пайплайна нет. Данные между инструментами ходят
+  **ссылками на вывод** `{"$ref": "<output_id>"}` / `{"$ref": "last"}` (массив `["1","2"]` объединяет
+  выводы): хост в `resolveArgRefs` (`domain/agent.ts`) подставляет сохранённый текст перед вызовом,
+  поэтому модель не копирует крупные тексты в decide и её ответ не обрезается по `max_tokens`. В
+  отчёте инструмента возвращается `output_id` и подсказка. `search` — Wikipedia ru через инъектируемый `WebSource`
+  (`mcp/research/web.ts`): `generator=search` + `prop=extracts` отдаёт лид статьи и URL; флаг `full`
+  переключает на расширенный фрагмент статьи (`exchars`, до 4000 символов), чтобы набрать сырьё под
+  большой объём. `summarize` (`domain/research/summarize.ts`, без LLM) — **верное** экстрактивное
+  сжатие: выход есть подмножество исходных предложений дословно, в исходном порядке, с сохранением
+  границ и ссылок источников; выбираются связные предложения (лид источника входит всегда), поэтому
+  оговорка/статус не отрывается от перечисления. Объём — необязательный `targetWords` (из плана/
+  запроса), иначе эвристика по контексту. При заданном `targetWords` выбор идёт только по словам (без
+  потолка в 15 предложений; safety-bound `SUMMARIZE_MAX_WORDS`). Если источника не хватает, инструмент
+  не падает: возвращает максимум возможного и помечает недостачу `[Объём: N из M слов]` — тогда агент
+  сам добирает источники (`search full: true` / больше запросов) и повторяет `summarize`, не спрашивая
+  пользователя; объём — цель, а не гарантия, выдумывать/переписывать факты запрещено (защита от
+  подсунутого моделью пересказа). `save_to_file` пишет `.md` в `REPORTS_DIR` дословно, срезая
+  служебную пометку объёма (injectable `ReportsStore`, санитайз имени). Так как `save_to_file`
+  мутирующий, цепочка целиком идёт на стадии `execution` +`approved`, а `list_reports`/`read_report`
+  подтверждают результат на `validation`. Успешная мутация переводит `execution → validation`
+  терминально (один раз, `advanceAfterRun`); справочные действия шаг не двигают. Контракт пайплайна
+  («сырой search → в summarize ссылкой, вывод summarize → в save_to_file ссылкой, сам не пересказывай,
+  при недостаче добери источников») проговорён в `DECIDE_TOOL_HINTS` (`domain/agent.ts`) и в описаниях
+  инструментов (`mcp/research/register.ts`).
 - **Orchestration (Day 20)**: `agent-mcp-market` (`exchange_rate { base?, quote?, date? }`, дефолт
   EUR/USD) — отдельный сервер, который агент комбинирует с остальными. Длинный флоу на одном ходу
   (например `db_overview`/`search`/`get_weather_report`/`exchange_rate` → `summarize` → `save_to_file`
   → `list_reports`) ведёт тот же цикл `decide→act`; выбор сервера и порядок вызовов задают
-  описания инструментов, а данные между ними ходят через отчёты в промпте.
+  описания инструментов, а данные между ними ходят ссылками `$ref` на выводы инструментов цикла.
 
 
 - **Jobs (Day 18)**: `domain/jobs/` — города (белый список, tz `Europe/Moscow`), `WeatherSource`
@@ -265,8 +305,11 @@ runtime = defaultAgentRuntime)` не собирает их сам. Сбой API 
 
 ## Персистентность
 
-- `server/store.server.ts` — singleton `node:sqlite`. `node:sqlite` импортируется только динамически
-  (`await import`) внутри `.server.ts`, чтобы не попасть в клиентский бандл.
+- `server/store/db.server.ts` — singleton `node:sqlite` (схема, сиды, миграции). `node:sqlite`
+  импортируется только динамически (`await import`) внутри `.server.ts`, чтобы не попасть в
+  клиентский бандл. Хранилище разбито по концептам: `sessions`, `branches`, `messages`, `facts`,
+  `memory`, `people`, `tasks`, `invariants`, `profiles`, `agent-records`; баррель `store.server.ts`
+  удалён — импортируйте нужный концептный модуль напрямую.
 - Путь БД — `~/.ai-advent-challenge/agent.sqlite` (override `AGENT_DB_PATH`); легаси
   `data/agent.sqlite` мигрирует на первом открытии, а существующая БД снимается в `<db>.backups/`
   (последние `BACKUP_LIMIT = 5`).

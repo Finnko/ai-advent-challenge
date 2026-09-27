@@ -1,5 +1,5 @@
 import { createServerFn } from '@tanstack/react-start'
-import { deleteProfile as deleteProfileInStore } from '../server/store.server'
+import { deleteProfile as deleteProfileInStore } from '../server/store/profiles.server'
 import { asObject, requireProfileId } from './validation'
 
 export const deleteProfile = createServerFn({ method: 'POST' })

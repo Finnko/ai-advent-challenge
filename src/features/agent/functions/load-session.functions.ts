@@ -1,5 +1,5 @@
 import { createServerFn } from '@tanstack/react-start'
-import { loadMessages as loadMessagesFromStore } from '../server/store.server'
+import { loadMessages as loadMessagesFromStore } from '../server/store/messages.server'
 import { asObject, requireSessionId } from './validation'
 
 export const loadSession = createServerFn({ method: 'POST' })

@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest'
-import { isMutatingTool } from '../domain/agent-tools'
 import type { ExchangeRate, MarketSource } from '../domain/market/types'
 import { createFrankfurterSource } from '../mcp/market/rates'
 import { createMarketToolkit } from '../mcp/market/tools'
@@ -125,10 +124,6 @@ describe('market frankfurter source', () => {
 })
 
 describe('market gating and registry', () => {
-  it('exchange_rate справочный', () => {
-    expect(isMutatingTool('mcp_exchange_rate')).toBe(false)
-  })
-
   it('регистрирует сервер market', () => {
     const market = mcpServerConfigs().find((server) => server.kind === 'market')
     expect(market?.name).toBe('agent-mcp-market')

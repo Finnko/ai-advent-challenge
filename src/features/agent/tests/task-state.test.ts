@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   applyAnalysis,
+  approveTask,
   cancelTask,
   canTransition,
   createTaskState,
@@ -329,6 +330,31 @@ describe('transitionTask — единая точка переходов', () => 
     expect(resumed.previousStage).toBeNull()
     const cancelled = cancelTask(state('validation'), AT)
     expect(cancelled.stage).toBe('cancelled')
+  })
+
+  it('approveTask открывает изменяющие действия на исполнении', () => {
+    const current = state('execution', { approved: false })
+    const approved = approveTask(current, AT)
+    expect(approved.stage).toBe('execution')
+    expect(approved.approved).toBe(true)
+  })
+
+  it('approveTask переводит planning → execution с согласием', () => {
+    const current = state('planning', { steps: ['Забронировать'] })
+    const approved = approveTask(current, AT)
+    expect(approved.stage).toBe('execution')
+    expect(approved.approved).toBe(true)
+    expect(approved.history.at(-1)).toMatchObject({
+      from: 'planning',
+      to: 'execution',
+    })
+  })
+
+  it('approveTask идемпотентен и не трогает прочие этапы', () => {
+    const already = state('execution', { approved: true })
+    expect(approveTask(already, AT)).toBe(already)
+    const validation = state('validation')
+    expect(approveTask(validation, AT)).toBe(validation)
   })
 
   it('не отменяет терминальную задачу и не ставит на паузу дважды', () => {

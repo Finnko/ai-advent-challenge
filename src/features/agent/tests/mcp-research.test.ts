@@ -2,15 +2,19 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { isMutatingTool } from '../domain/agent-tools'
 import { buildMcpAgentTools } from '../domain/mcp/agent-tools'
 import type { McpToolDescriptor } from '../domain/mcp/types'
 import {
   clampSummarizeSentences,
+  countWords,
   splitSentences,
   summarizeText,
 } from '../domain/research/summarize'
-import type { SearchResult, WebSource } from '../domain/research/types'
+import type {
+  SearchResult,
+  WebSearchOptions,
+  WebSource,
+} from '../domain/research/types'
 import { mcpServerConfigs } from '../server/mcp-registry.server'
 import {
   createFileReportsStore,
@@ -70,6 +74,54 @@ describe('research summarize', () => {
     expect(clampSummarizeSentences(0)).toBe(1)
     expect(clampSummarizeSentences(100)).toBe(15)
     expect(clampSummarizeSentences(3.4)).toBe(3)
+  })
+
+  it('сохраняет связные предложения и границы источников, не смешивая блоки', () => {
+    const text = [
+      'Результаты по запросу «евро»:',
+      '1. Евро — https://ru.wikipedia.org/wiki/Евро',
+      'Евро — валюта еврозоны из 20 государств. В обращении с 2002 года.',
+      '2. Доллар — https://ru.wikipedia.org/wiki/Доллар',
+      'Доллар — валюта США. Используется с 1792 года.',
+    ].join('\n')
+    const summary = summarizeText(text, 2)
+    const lines = summary.split('\n')
+    expect(lines).toHaveLength(2)
+    expect(lines[0]).toContain('https://ru.wikipedia.org/wiki/Евро')
+    expect(lines[0]).toContain('Евро — валюта еврозоны из 20 государств.')
+    expect(lines[1]).toContain('Доллар — валюта США.')
+  })
+
+  it('набирает объём по targetWords связными предложениями в исходном порядке', () => {
+    const sentences = Array.from(
+      { length: 8 },
+      (_, index) => `Предложение номер ${index + 1} про евро и валюту.`,
+    )
+    const text = sentences.join(' ')
+    const summary = summarizeText(text, { words: 24 })
+    expect(countWords(summary)).toBeGreaterThanOrEqual(24)
+    const out = splitSentences(summary)
+    expect(out.length).toBeGreaterThanOrEqual(2)
+    for (const [index, sentence] of out.entries()) {
+      expect(sentences).toContain(sentence)
+      if (index > 0) {
+        expect(sentences.indexOf(sentence)).toBeGreaterThan(
+          sentences.indexOf(out[index - 1]),
+        )
+      }
+    }
+  })
+
+  it('набирает targetWords за пределами прежнего потолка в 15 предложений', () => {
+    const sentences = Array.from(
+      { length: 60 },
+      (_, index) =>
+        `Предложение номер ${index + 1} про евро и валютный рынок сегодня.`,
+    )
+    const text = sentences.join(' ')
+    const summary = summarizeText(text, { words: 400 })
+    expect(countWords(summary)).toBeGreaterThanOrEqual(400)
+    expect(splitSentences(summary).length).toBeGreaterThan(15)
   })
 })
 
@@ -195,6 +247,105 @@ describe('research toolkit', () => {
     expect((await toolkit.summarize({ text: '' })).ok).toBe(false)
     expect((await toolkit.saveToFile({ name: 'x', content: ' ' })).ok).toBe(false)
   })
+
+  it('сохраняет факт-оговорку при сжатии (евро)', async () => {
+    const toolkit = createResearchToolkit({
+      web: fakeWeb([
+        {
+          title: 'Евро',
+          url: 'https://ru.wikipedia.org/wiki/Евро',
+          snippet:
+            'Евро — официальная валюта 20 государств еврозоны. ' +
+            'Используется также в Черногории и Косове, не входящих в еврозону. ' +
+            'Символ € введён в 1996 году.',
+        },
+      ]),
+      reports: createFileReportsStore(
+        mkdtempSync(join(tmpdir(), 'reports-euro-')),
+      ),
+    })
+    const search = await toolkit.search({ query: 'евро', limit: 1 })
+    expect(search.ok).toBe(true)
+    if (!search.ok) {
+      return
+    }
+    const summary = await toolkit.summarize({
+      text: search.text,
+      targetWords: 15,
+    })
+    expect(summary.ok).toBe(true)
+    if (!summary.ok) {
+      return
+    }
+    expect(summary.text).toContain('20 государств')
+    expect(summary.text).toContain('не входящих в еврозону')
+    expect(summary.text).toContain('https://ru.wikipedia.org/wiki/')
+  })
+
+  it('не падает при нехватке источника: возвращает best-effort и пометку объёма', async () => {
+    const toolkit = createResearchToolkit({
+      web: fakeWeb(SAMPLE_RESULTS),
+      reports: createFileReportsStore(
+        mkdtempSync(join(tmpdir(), 'reports-target-')),
+      ),
+    })
+    const result = await toolkit.summarize({
+      text: 'Евро — валюта еврозоны. Курс евро вырос третий день подряд.',
+      targetWords: 300,
+    })
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.text).toContain('Евро — валюта еврозоны.')
+      expect(result.text).toContain('[Объём:')
+      expect(countWords(result.text)).toBeLessThan(300)
+    }
+  })
+
+  it('передаёт full в источник для расширенного текста', async () => {
+    let seen: WebSearchOptions | undefined
+    const web: WebSource = {
+      async search(_query, _limit, options) {
+        seen = options
+        return SAMPLE_RESULTS
+      },
+    }
+    const toolkit = createResearchToolkit({
+      web,
+      reports: createFileReportsStore(
+        mkdtempSync(join(tmpdir(), 'reports-full-')),
+      ),
+    })
+    await toolkit.search({ query: 'евро', full: true })
+    expect(seen?.full).toBe(true)
+  })
+
+  it('не сохраняет служебную пометку объёма в файл', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'reports-note-'))
+    const toolkit = createResearchToolkit({
+      web: fakeWeb(SAMPLE_RESULTS),
+      reports: createFileReportsStore(dir),
+    })
+    const summary = await toolkit.summarize({
+      text: 'Евро — валюта еврозоны. Курс евро вырос.',
+      targetWords: 200,
+    })
+    expect(summary.ok).toBe(true)
+    if (!summary.ok) {
+      return
+    }
+    const saved = await toolkit.saveToFile({
+      name: 'note-test',
+      content: summary.text,
+    })
+    expect(saved.ok).toBe(true)
+    const read = await toolkit.readReport({ name: 'note-test' })
+    expect(read.ok).toBe(true)
+    if (read.ok) {
+      expect(read.text).not.toContain('[Объём:')
+      expect(read.text).toContain('Евро — валюта еврозоны.')
+    }
+    rmSync(dir, { recursive: true, force: true })
+  })
 })
 
 describe('research descriptor and gating', () => {
@@ -205,6 +356,7 @@ describe('research descriptor and gating', () => {
       description: 'Ищет.',
       inputSchema: { type: 'object', properties: {}, required: [] },
       server: 'agent-mcp-research',
+      mutating: false,
     }
     const [tool] = buildMcpAgentTools([descriptor], async () => ({
       ok: true,
@@ -212,13 +364,6 @@ describe('research descriptor and gating', () => {
     }))
     expect(tool.name).toBe('mcp_search')
     expect(tool.description).toBe('[research] Ищет.')
-  })
-
-  it('гейтит только save_to_file', () => {
-    expect(isMutatingTool('mcp_save_to_file')).toBe(true)
-    expect(isMutatingTool('mcp_search')).toBe(false)
-    expect(isMutatingTool('mcp_summarize')).toBe(false)
-    expect(isMutatingTool('mcp_list_reports')).toBe(false)
   })
 
   it('регистрирует сервер research без скрытых тулов', () => {
@@ -231,27 +376,38 @@ describe('research descriptor and gating', () => {
 })
 
 describe('research wikipedia source', () => {
-  it('парсит ответ и чистит HTML', async () => {
-    const fetchImpl = (async () =>
-      ({
+  it('возвращает лид статьи и ссылку в порядке поиска', async () => {
+    let requested = ''
+    const fetchImpl = (async (url: string) => {
+      requested = url
+      return {
         ok: true,
         async json() {
           return {
             query: {
-              search: [
-                { title: 'Евро', snippet: '<span class="x">Евро</span> — валюта' },
-              ],
+              pages: {
+                '2': { title: 'Доллар США', extract: 'Доллар — валюта США.', index: 2 },
+                '1': { title: 'Евро', extract: 'Евро — валюта еврозоны.   Лид.', index: 1 },
+              },
             },
           }
         },
-      }) as unknown as Response) as unknown as typeof fetch
+      } as unknown as Response
+    }) as unknown as typeof fetch
     const source = createWikipediaSource(fetchImpl)
     const results = await source.search('евро', 3)
+    expect(requested).toContain('generator=search')
+    expect(requested).toContain('prop=extracts')
     expect(results).toEqual([
       {
         title: 'Евро',
         url: 'https://ru.wikipedia.org/wiki/%D0%95%D0%B2%D1%80%D0%BE',
-        snippet: 'Евро — валюта',
+        snippet: 'Евро — валюта еврозоны. Лид.',
+      },
+      {
+        title: 'Доллар США',
+        url: 'https://ru.wikipedia.org/wiki/%D0%94%D0%BE%D0%BB%D0%BB%D0%B0%D1%80_%D0%A1%D0%A8%D0%90',
+        snippet: 'Доллар — валюта США.',
       },
     ])
   })

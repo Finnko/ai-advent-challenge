@@ -14,6 +14,7 @@ export type McpToolDescriptor = {
   description: string | null
   inputSchema: JsonValue
   server?: string
+  mutating: boolean
 }
 
 export type McpToolsResult =

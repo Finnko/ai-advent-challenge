@@ -2,7 +2,6 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { isMutatingTool } from '../domain/agent-tools'
 import {
   aggregateSamples,
   nearestObservation,
@@ -115,13 +114,6 @@ describe('jobs domain', () => {
     expect(
       nearestObservation(candidates, '2026-09-25T13:00:00.000Z'),
     ).toBeNull()
-  })
-
-  it('гейтит только MCP-мутации расписаний', () => {
-    expect(isMutatingTool('mcp_schedule_weather_report')).toBe(true)
-    expect(isMutatingTool('mcp_cancel_schedule')).toBe(true)
-    expect(isMutatingTool('mcp_list_schedules')).toBe(false)
-    expect(isMutatingTool('mcp_run_due_jobs')).toBe(false)
   })
 
   it('скрывает run_due_jobs от агента', () => {

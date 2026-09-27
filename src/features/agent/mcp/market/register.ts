@@ -1,21 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
-import type { MarketToolResult, MarketToolkit } from './tools.ts'
-
-type ToolResponse = {
-  content: Array<{ type: 'text'; text: string }>
-  isError?: boolean
-}
-
-function toResponse(result: MarketToolResult): ToolResponse {
-  if (result.ok) {
-    return { content: [{ type: 'text', text: result.text }] }
-  }
-  return {
-    content: [{ type: 'text', text: result.text }],
-    isError: true,
-  }
-}
+import { toResponse } from '../shared/response.ts'
+import type { MarketToolkit } from './tools.ts'
 
 export function registerMarketTools(
   server: McpServer,
@@ -43,6 +29,7 @@ export function registerMarketTools(
           .optional()
           .describe('Дата в формате YYYY-MM-DD (необязательно)'),
       },
+      annotations: { readOnlyHint: true },
     },
     async (args) => toResponse(await toolkit.exchangeRate(args)),
   )

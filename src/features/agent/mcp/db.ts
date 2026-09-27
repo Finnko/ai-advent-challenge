@@ -1,25 +1,11 @@
+import { resolveStorePath } from '../shared/store-path.server.ts'
+
 type SqliteDatabase = import('node:sqlite').DatabaseSync
 
 const DB_FILENAME = 'agent.sqlite'
-const DEFAULT_DB_DIR = '.ai-advent-challenge'
 
 async function resolveDbPath(): Promise<string> {
-  const nodePath = await import('node:path')
-  const override = process.env.AGENT_DB_PATH?.trim()
-  if (override) {
-    const resolved = nodePath.resolve(override)
-    const { stat } = await import('node:fs/promises')
-    try {
-      if ((await stat(resolved)).isDirectory()) {
-        return nodePath.join(resolved, DB_FILENAME)
-      }
-    } catch {
-      return resolved
-    }
-    return resolved
-  }
-  const os = await import('node:os')
-  return nodePath.join(os.homedir(), DEFAULT_DB_DIR, DB_FILENAME)
+  return resolveStorePath('AGENT_DB_PATH', DB_FILENAME)
 }
 
 async function withReadonlyDb<T>(fn: (db: SqliteDatabase) => T): Promise<T> {

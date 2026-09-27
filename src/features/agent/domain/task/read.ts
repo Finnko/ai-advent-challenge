@@ -75,8 +75,10 @@ function formatStepLine(state: TaskState): string {
 }
 
 function resolveStageBehavior(state: TaskState): string {
-  if (state.stage === 'execution' && !state.approved) {
-    return 'Этап исполнения без согласия: изменяющие действия недоступны. Справочные list* разрешены; для мутаций дождись явного подтверждения плана пользователем.'
+  if (state.stage === 'execution') {
+    return state.approved
+      ? 'Этап исполнения: план утверждён пользователем. Выполняй текущий шаг плана, вызывая нужные инструменты, и не переспрашивай согласие — оно уже получено.'
+      : 'Этап исполнения без согласия: изменяющие действия недоступны. Справочные list* разрешены; для мутаций дождись явного подтверждения плана пользователем.'
   }
   const known = STAGE_BEHAVIOR[state.stage]
   if (known) {

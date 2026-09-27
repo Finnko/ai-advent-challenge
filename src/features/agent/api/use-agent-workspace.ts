@@ -1,12 +1,5 @@
-import { useEffect, useReducer } from 'react'
-import type { AgentCapabilities } from '../domain/agent'
-import type { MemoryLayer } from '../domain/memory/types'
-import type { ProfileInput } from '../domain/profile/types'
-import type { InvariantInput, InvariantUpdateInput } from '../domain/invariants/types'
-import {
-  resolveActiveSessionConfig,
-  sessionConfigDraftToInput,
-} from '../domain/session/config'
+import { useCallback, useEffect, useReducer, useRef } from 'react'
+import { resolveActiveSessionConfig } from '../domain/session/config'
 import type { SessionConfigDraft } from '../domain/session/config'
 import {
   canApplyIntent,
@@ -14,373 +7,58 @@ import {
   workspaceReducer,
 } from '../domain/workspace'
 import type { WorkspaceIntent } from '../domain/workspace'
-import type {
-  BranchInfo,
-  FactItem,
-  MemoryView,
-  SessionSummary,
-} from '../types'
-import { useCapabilities } from './get-capabilities'
-import { useOrg } from './get-org'
-import { useSessions } from './get-sessions'
-import { useSessionMessages } from './get-session-messages'
-import { useSessionFacts } from './get-facts'
-import { useSessionBranches } from './get-branches'
-import { useMemory } from './get-memory'
-import { useProfiles } from './get-profiles'
-import { useCreateSession } from './create-session'
-import { useSendMessage } from './send-message'
-import { useDeleteSession } from './delete-session'
-import { useCreateBranch } from './create-branch'
-import { useSwitchBranch } from './switch-branch'
-import { useSaveMemory } from './save-memory'
-import { useDeleteMemory } from './delete-memory'
-import { useCreateProfile } from './create-profile'
-import { useUpdateProfile } from './update-profile'
-import { useDeleteProfile } from './delete-profile'
-import { useSetDefaultProfile } from './set-default-profile'
-import { useInvariants } from './get-invariants'
-import { useCreateInvariant } from './create-invariant'
-import { useUpdateInvariant } from './update-invariant'
-import { useDeleteInvariant } from './delete-invariant'
-import {
-  useCancelTask,
-  usePauseTask,
-  useResumeTask,
-  useTaskState,
-} from './task-state'
-
-const EMPTY_MEMORY: MemoryView = { working: [], longTerm: [] }
-
-function toError(err: unknown): string {
-  return err instanceof Error ? err.message : String(err)
-}
-
-type StatusSource = { isError: boolean; isPending: boolean; error: unknown }
-
-function firstError(sources: StatusSource[]): string | null {
-  const failed = sources.find((source) => source.isError)
-  return failed ? toError(failed.error) : null
-}
-
-function anyPending(sources: StatusSource[]): boolean {
-  return sources.some((source) => source.isPending)
-}
+import { useSessionWorkspace } from './use-session-workspace'
+import { useSettingsWorkspace } from './use-settings-workspace'
+import { useTaskWorkspace } from './use-task-workspace'
 
 export function useAgentWorkspace() {
   const [state, dispatch] = useReducer(workspaceReducer, INITIAL_WORKSPACE)
+  const busyRef = useRef(false)
 
-  const orgQuery = useOrg()
-  const people = orgQuery.data ?? []
-  const manager = people.find((person) => person.role === 'manager') ?? null
-  const employees = people.filter((person) => person.role === 'employee')
-  const activePerson =
-    people.find((person) => person.token === state.activeToken) ??
-    manager ??
-    null
-
-  const capabilitiesQuery = useCapabilities(state.activeToken)
-  const sessionsQuery = useSessions(state.activeToken)
-  const messagesQuery = useSessionMessages(state.sessionId)
-  const factsQuery = useSessionFacts(state.sessionId)
-  const branchesQuery = useSessionBranches(state.sessionId)
-  const memoryQuery = useMemory(state.sessionId, state.activeToken)
-  const taskStateQuery = useTaskState(state.sessionId)
-  const profilesQuery = useProfiles(state.activeToken)
-  const invariantsQuery = useInvariants(state.activeToken)
-  const profiles = profilesQuery.data ?? []
-
-  const createSessionMutation = useCreateSession()
-  const sendMutation = useSendMessage()
-  const deleteMutation = useDeleteSession()
-  const branchMutation = useCreateBranch()
-  const switchMutation = useSwitchBranch()
-  const saveMemoryMutation = useSaveMemory()
-  const deleteMemoryMutation = useDeleteMemory()
-  const createProfileMutation = useCreateProfile()
-  const updateProfileMutation = useUpdateProfile()
-  const deleteProfileMutation = useDeleteProfile()
-  const setDefaultMutation = useSetDefaultProfile()
-  const createInvariantMutation = useCreateInvariant()
-  const updateInvariantMutation = useUpdateInvariant()
-  const deleteInvariantMutation = useDeleteInvariant()
-  const pauseTaskMutation = usePauseTask()
-  const resumeTaskMutation = useResumeTask()
-  const cancelTaskMutation = useCancelTask()
-
-  const settingsMutations = [
-    saveMemoryMutation,
-    deleteMemoryMutation,
-    createProfileMutation,
-    updateProfileMutation,
-    deleteProfileMutation,
-    setDefaultMutation,
-    createInvariantMutation,
-    updateInvariantMutation,
-    deleteInvariantMutation,
-  ]
-  const taskMutations = [
-    pauseTaskMutation,
-    resumeTaskMutation,
-    cancelTaskMutation,
-  ]
-
-  const busy =
-    anyPending([
-      createSessionMutation,
-      sendMutation,
-      deleteMutation,
-      branchMutation,
-      switchMutation,
-      ...settingsMutations,
-    ]) || capabilitiesQuery.isLoading
-
-  const taskBusy = anyPending(taskMutations)
-
-  const dispatchIntent = (intent: WorkspaceIntent) => {
-    if (canApplyIntent(intent, busy)) {
+  const dispatchIntent = useCallback((intent: WorkspaceIntent) => {
+    if (canApplyIntent(intent, busyRef.current)) {
       dispatch(intent)
     }
-  }
+  }, [])
+  const isBusy = useCallback(() => busyRef.current, [])
 
+  const session = useSessionWorkspace({
+    state,
+    dispatch,
+    dispatchIntent,
+    isBusy,
+  })
+  const settings = useSettingsWorkspace({
+    state,
+    dispatch,
+    dispatchIntent,
+    isBusy,
+    scenario: session.sessionSummary?.scenario ?? null,
+  })
+  const task = useTaskWorkspace(state.sessionId)
+
+  const busy =
+    session.sessionBusy || settings.settingsBusy || session.capabilitiesLoading
   useEffect(() => {
-    if (!state.activeToken && manager) {
-      dispatch({ kind: 'activateToken', token: manager.token })
-    }
-  }, [state.activeToken, manager])
+    busyRef.current = busy
+  }, [busy])
 
-  useEffect(() => {
-    if (!state.autoPick || !sessionsQuery.isSuccess) {
-      return
-    }
-    const first = sessionsQuery.data[0]
-    dispatch({ kind: 'resolveAutoPick', sessionId: first ? first.id : null })
-  }, [state.autoPick, sessionsQuery.isSuccess, sessionsQuery.data])
-
-  const sessions: SessionSummary[] = sessionsQuery.data ?? []
-  const sessionSummary = sessions.find(
-    (session) => session.id === state.sessionId,
+  const active = resolveActiveSessionConfig(
+    session.sessionSummary ?? null,
+    state.config,
   )
-  const facts: FactItem[] = factsQuery.data ?? []
-  const branches: BranchInfo[] = branchesQuery.data ?? []
-  const memoryView = memoryQuery.data ?? EMPTY_MEMORY
-  const selectedProfile =
-    profiles.find((profile) => profile.id === state.config.profileId) ?? null
-  const defaultProfile = profiles.find((profile) => profile.isDefault) ?? null
-  const active = resolveActiveSessionConfig(sessionSummary ?? null, state.config)
 
   const actions = {
-    pickPerson(token: string) {
-      if (busy || token === state.activeToken) {
-        return
-      }
-      sendMutation.reset()
-      dispatchIntent({ kind: 'pickPerson', token })
-    },
-    openSession(id: number) {
-      if (busy || id === state.sessionId) {
-        return
-      }
-      sendMutation.reset()
-      dispatchIntent({ kind: 'openSession', sessionId: id })
-    },
-    newSession() {
-      if (busy || !state.activeToken) {
-        return
-      }
-      sendMutation.reset()
-      createSessionMutation.mutate(
-        {
-          token: state.activeToken,
-          config: sessionConfigDraftToInput(state.config),
-        },
-        {
-          onSuccess: (result) =>
-            dispatch({ kind: 'openSession', sessionId: result.sessionId }),
-        },
-      )
-    },
+    ...session.actions,
+    ...settings.actions,
+    ...task.actions,
     setDraft(draft: string) {
       dispatch({ kind: 'setDraft', draft })
     },
     patchConfig(patch: Partial<SessionConfigDraft>) {
       dispatchIntent({ kind: 'patchConfig', patch })
     },
-    send() {
-      const text = state.draft.trim()
-      if (
-        text.length === 0 ||
-        busy ||
-        !state.activeToken ||
-        state.sessionId === null
-      ) {
-        return
-      }
-      const sessionId = state.sessionId
-      dispatch({ kind: 'setDraft', draft: '' })
-      sendMutation.mutate(
-        {
-          token: state.activeToken,
-          sessionId,
-          user: text,
-        },
-        {
-          onSuccess: () => dispatch({ kind: 'sendSucceeded', sessionId }),
-        },
-      )
-    },
-    fork(messageId: number) {
-      if (busy || state.sessionId === null) {
-        return
-      }
-      branchMutation.mutate({ sessionId: state.sessionId, fromMessageId: messageId })
-    },
-    switchBranch(branchId: number) {
-      if (busy || state.sessionId === null) {
-        return
-      }
-      switchMutation.mutate({ sessionId: state.sessionId, branchId })
-    },
-    forkCheckpoint(parentBranchId: number, forkMessageId: number) {
-      if (busy || state.sessionId === null) {
-        return
-      }
-      branchMutation.mutate({
-        sessionId: state.sessionId,
-        fromMessageId: forkMessageId,
-        parentBranchId,
-      })
-    },
-    deleteSession(id: number) {
-      if (busy || !state.activeToken) {
-        return
-      }
-      deleteMutation.mutate(
-        { token: state.activeToken, sessionId: id },
-        {
-          onSuccess: () =>
-            dispatch({ kind: 'sessionDeleted', sessionId: id }),
-        },
-      )
-    },
-    saveMemory(input: { scope: MemoryLayer; key: string; value: string }) {
-      if (!state.activeToken || state.sessionId === null) {
-        return
-      }
-      saveMemoryMutation.mutate({
-        ...input,
-        token: state.activeToken,
-        sessionId: state.sessionId,
-        scenario: sessionSummary?.scenario ?? null,
-      })
-    },
-    forgetMemory(scope: MemoryLayer, key: string) {
-      if (!state.activeToken || state.sessionId === null) {
-        return
-      }
-      deleteMemoryMutation.mutate({
-        scope,
-        key,
-        token: state.activeToken,
-        sessionId: state.sessionId,
-      })
-    },
-    selectProfile(id: number) {
-      dispatchIntent({ kind: 'selectProfile', profileId: id })
-    },
-    startCreateProfile() {
-      dispatchIntent({ kind: 'startCreateProfile' })
-    },
-    startEditProfile(id: number) {
-      dispatchIntent({ kind: 'startEditProfile', profileId: id })
-    },
-    finishProfileEdit() {
-      dispatch({ kind: 'finishProfileEdit' })
-    },
-    saveProfile(input: ProfileInput) {
-      if (!state.activeToken) {
-        return
-      }
-      if (state.creatingProfile) {
-        createProfileMutation.mutate(
-          {
-            token: state.activeToken,
-            ...input,
-            isDefault: profiles.length === 0,
-          },
-          {
-            onSuccess: (profile) =>
-              dispatch({ kind: 'profileCreated', profileId: profile.id }),
-          },
-        )
-        return
-      }
-      if (state.editingProfileId === null) {
-        return
-      }
-      updateProfileMutation.mutate({
-        token: state.activeToken,
-        profileId: state.editingProfileId,
-        ...input,
-      })
-    },
-    deleteProfile(id: number) {
-      if (busy || !state.activeToken) {
-        return
-      }
-      deleteProfileMutation.mutate(
-        { token: state.activeToken, profileId: id },
-        {
-          onSuccess: () => dispatch({ kind: 'clearProfile', profileId: id }),
-        },
-      )
-    },
-    setDefaultProfile(id: number) {
-      if (!state.activeToken) {
-        return
-      }
-      setDefaultMutation.mutate({ token: state.activeToken, profileId: id })
-    },
-    createInvariant(input: InvariantInput) {
-      if (!state.activeToken) {
-        return
-      }
-      createInvariantMutation.mutate({ token: state.activeToken, ...input })
-    },
-    updateInvariant(id: number, input: InvariantUpdateInput) {
-      if (!state.activeToken) {
-        return
-      }
-      updateInvariantMutation.mutate({ token: state.activeToken, id, ...input })
-    },
-    deleteInvariant(id: number) {
-      if (!state.activeToken) {
-        return
-      }
-      deleteInvariantMutation.mutate({ token: state.activeToken, id })
-    },
-    pauseTask() {
-      if (state.sessionId === null) {
-        return
-      }
-      pauseTaskMutation.mutate(state.sessionId)
-    },
-    resumeTask() {
-      if (state.sessionId === null) {
-        return
-      }
-      resumeTaskMutation.mutate(state.sessionId)
-    },
-    cancelTask() {
-      if (state.sessionId === null) {
-        return
-      }
-      cancelTaskMutation.mutate(state.sessionId)
-    },
   }
-
-  const settingsError = firstError(settingsMutations)
-  const taskError = firstError(taskMutations)
 
   return {
     activeToken: state.activeToken,
@@ -390,38 +68,34 @@ export function useAgentWorkspace() {
     editingProfileId: state.editingProfileId,
     creatingProfile: state.creatingProfile,
     active,
-    people,
-    manager,
-    employees,
-    activePerson,
-    sessions,
-    sessionSummary,
-    facts,
-    branches,
-    memoryView,
-    taskState: taskStateQuery.data?.taskState ?? null,
-    profiles,
-    invariants: invariantsQuery.data ?? [],
-    selectedProfile,
-    defaultProfile,
-    messagesData: messagesQuery.data ?? [],
-    capabilities: capabilitiesQuery.data as AgentCapabilities | undefined,
-    capabilitiesLoading: capabilitiesQuery.isLoading,
-    capabilitiesError: capabilitiesQuery.isError
-      ? toError(capabilitiesQuery.error)
-      : null,
-    orgLoading: orgQuery.isLoading,
-    orgError: orgQuery.isError ? toError(orgQuery.error) : null,
-    sendError: sendMutation.isError ? toError(sendMutation.error) : null,
-    branchError: branchMutation.isError ? toError(branchMutation.error) : null,
-    sessionError: createSessionMutation.isError
-      ? toError(createSessionMutation.error)
-      : null,
-    settingsError,
-    taskError,
+    people: session.people,
+    manager: session.manager,
+    employees: session.employees,
+    activePerson: session.activePerson,
+    sessions: session.sessions,
+    sessionSummary: session.sessionSummary,
+    facts: session.facts,
+    branches: session.branches,
+    memoryView: settings.memoryView,
+    taskState: task.taskState,
+    profiles: settings.profiles,
+    invariants: settings.invariants,
+    selectedProfile: settings.selectedProfile,
+    defaultProfile: settings.defaultProfile,
+    messagesData: session.messagesData,
+    capabilities: session.capabilities,
+    capabilitiesLoading: session.capabilitiesLoading,
+    capabilitiesError: session.capabilitiesError,
+    orgLoading: session.orgLoading,
+    orgError: session.orgError,
+    sendError: session.sendError,
+    branchError: session.branchError,
+    sessionError: session.sessionError,
+    settingsError: settings.settingsError,
+    taskError: task.taskError,
     busy,
-    taskBusy,
-    sending: sendMutation.isPending,
+    taskBusy: task.taskBusy,
+    sending: session.sending,
     actions,
   }
 }

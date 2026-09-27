@@ -1,5 +1,5 @@
 import { createServerFn } from '@tanstack/react-start'
-import { createProfile as createProfileInStore } from '../server/store.server'
+import { createProfile as createProfileInStore } from '../server/store/profiles.server'
 import {
   asObject,
   requireProfileInput,

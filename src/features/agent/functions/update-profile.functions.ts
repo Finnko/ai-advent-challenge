@@ -1,5 +1,5 @@
 import { createServerFn } from '@tanstack/react-start'
-import { updateProfile as updateProfileInStore } from '../server/store.server'
+import { updateProfile as updateProfileInStore } from '../server/store/profiles.server'
 import {
   asObject,
   requireProfileId,

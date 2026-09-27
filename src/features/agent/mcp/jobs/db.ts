@@ -10,9 +10,9 @@ import type {
 import { WEATHER_KIND } from '../../domain/jobs/types.ts'
 import { retentionCutoff } from '../../domain/jobs/schedule.ts'
 import type { TimedObservation } from '../../domain/jobs/aggregate.ts'
+import { resolveStorePath } from '../../shared/store-path.server.ts'
 
 const DB_FILENAME = 'jobs.sqlite'
-const DEFAULT_DB_DIR = '.ai-advent-challenge'
 const MAX_RUNS_PER_SCHEDULE = 5000
 
 const SCHEMA_SQL = `
@@ -144,22 +144,7 @@ function toSummary(row: SummaryRow): Summary {
 }
 
 async function resolveDbPath(): Promise<string> {
-  const nodePath = await import('node:path')
-  const override = process.env.JOBS_DB_PATH?.trim()
-  if (override) {
-    const resolved = nodePath.resolve(override)
-    const { stat } = await import('node:fs/promises')
-    try {
-      if ((await stat(resolved)).isDirectory()) {
-        return nodePath.join(resolved, DB_FILENAME)
-      }
-    } catch {
-      return resolved
-    }
-    return resolved
-  }
-  const os = await import('node:os')
-  return nodePath.join(os.homedir(), DEFAULT_DB_DIR, DB_FILENAME)
+  return resolveStorePath('JOBS_DB_PATH', DB_FILENAME)
 }
 
 export type JobsStore = {

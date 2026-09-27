@@ -1,5 +1,5 @@
 import { createServerFn } from '@tanstack/react-start'
-import { updateInvariant as updateInvariantInStore } from '../server/store.server'
+import { updateInvariant as updateInvariantInStore } from '../server/store/invariants.server'
 import { asObject, requireInvariantId, requireInvariantUpdate, requireToken } from './validation'
 
 export const updateInvariant = createServerFn({ method: 'POST' })

@@ -2,7 +2,7 @@ import { createServerFn } from '@tanstack/react-start'
 import {
   createBranch as createBranchInStore,
   listBranchesDetailed,
-} from '../server/store.server'
+} from '../server/store/branches.server'
 import { asObject, requireBranchId, requireSessionId } from './validation'
 
 function requireOptionalId(value: unknown): number | null {

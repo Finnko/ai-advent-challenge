@@ -12,6 +12,7 @@ import {
   TASK_STEP_MAX,
   TASK_STEPS_MAX,
   TASK_TITLE_MAX,
+  currentStep,
   isTaskActor,
 } from './types'
 
@@ -257,6 +258,35 @@ export function resumeTask(
   const target = state.previousStage ?? 'planning'
   const outcome = transitionTask(state, target, { at, reason })
   return outcome.status === 'applied' ? outcome.state : state
+}
+
+export function approveTask(
+  state: TaskState,
+  at: string,
+  reason = 'Пользователь утвердил план.',
+): TaskState {
+  if (state.approved) {
+    return state
+  }
+  const expectedAction: TaskExpectedAction = {
+    actor: 'agent',
+    description: currentStep(state),
+  }
+  if (state.stage === 'planning') {
+    const outcome = transitionTask(state, 'execution', {
+      at,
+      reason,
+      expectedAction,
+    })
+    if (outcome.status !== 'applied') {
+      return state
+    }
+    return { ...outcome.state, approved: true, updatedAt: at }
+  }
+  if (state.stage === 'execution') {
+    return { ...state, approved: true, expectedAction, updatedAt: at }
+  }
+  return state
 }
 
 export function cancelTask(

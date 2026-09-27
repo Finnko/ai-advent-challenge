@@ -1,6 +1,6 @@
 import { createServerFn } from '@tanstack/react-start'
 import type { SessionSummary } from '../types'
-import { listSessions as listSessionsFromStore } from '../server/store.server'
+import { listSessions as listSessionsFromStore } from '../server/store/sessions.server'
 import { asObject, requireToken } from './validation'
 
 export const listSessions = createServerFn({ method: 'POST' })

@@ -1,6 +1,10 @@
 import { DatabaseSync } from 'node:sqlite'
 import { describe, expect, it } from 'vitest'
-import { migrateInvariants, migrateSessions, migrateTaskStates } from '../server/store.server'
+import {
+  migrateInvariants,
+  migrateSessions,
+  migrateTaskStates,
+} from '../server/store/db.server'
 
 function legacyDatabase(): DatabaseSync {
   const db = new DatabaseSync(':memory:')

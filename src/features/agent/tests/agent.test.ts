@@ -581,6 +581,7 @@ describe('этап planning и мульти-действия', () => {
       argsExample:
         '{ "city": "<строка>", "intervalMinutes": <целое>, "windowHours": <целое> }',
       roles: ['employee', 'manager'],
+      mutating: true,
       run: async () => ({ ok: true, text: 'ok', reference: null }),
     }
     const identity = createIdentity()

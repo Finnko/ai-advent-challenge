@@ -1,22 +1,30 @@
 import {
   clampSummarizeSentences,
+  countWords,
+  stripVolumeNote,
   summarizeText,
+  volumeNote,
 } from '../../domain/research/summarize.ts'
 import {
   REPORT_READ_MAX_CHARS,
   SEARCH_DEFAULT_LIMIT,
   SEARCH_MAX_LIMIT,
   SEARCH_MIN_LIMIT,
+  SEARCH_SNIPPET_MAX_CHARS,
   type ReportsStore,
   type SearchResult,
   type WebSource,
 } from '../../domain/research/types.ts'
+import {
+  errorMessage,
+  fail,
+  ok,
+  type ToolResult,
+} from '../shared/response.ts'
 
 type Args = Record<string, unknown>
 
-export type ResearchToolResult =
-  | { ok: true; text: string }
-  | { ok: false; text: string }
+export type ResearchToolResult = ToolResult
 
 export type ResearchToolkitDeps = {
   web: WebSource
@@ -31,22 +39,10 @@ export type ResearchToolkit = {
   readReport: (args: Args) => Promise<ResearchToolResult>
 }
 
-const SNIPPET_MAX_CHARS = 300
-
-function ok(text: string): ResearchToolResult {
-  return { ok: true, text }
-}
-
-function fail(text: string): ResearchToolResult {
-  return { ok: false, text }
-}
+const SNIPPET_MAX_CHARS = SEARCH_SNIPPET_MAX_CHARS
 
 function asString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
 }
 
 function clampSearchLimit(value: unknown): number {
@@ -96,9 +92,10 @@ export function createResearchToolkit(
         return fail('query не должен быть пустым.')
       }
       const limit = clampSearchLimit(args.limit)
+      const full = args.full === true
       let results: SearchResult[]
       try {
-        results = await deps.web.search(query, limit)
+        results = await deps.web.search(query, limit, { full })
       } catch (error) {
         return fail(`Поиск не удался: ${errorMessage(error)}`)
       }
@@ -113,11 +110,29 @@ export function createResearchToolkit(
       if (!text) {
         return fail('text не должен быть пустым.')
       }
-      const summary = summarizeText(text, clampSummarizeSentences(args.maxSentences))
+      const targetWords =
+        typeof args.targetWords === 'number' && Number.isFinite(args.targetWords)
+          ? Math.max(1, Math.round(args.targetWords))
+          : undefined
+      const summary = summarizeText(
+        text,
+        targetWords !== undefined
+          ? { words: targetWords }
+          : clampSummarizeSentences(args.maxSentences),
+      )
       if (!summary) {
         return fail('В тексте нет предложений для пересказа.')
       }
-      return ok(summary)
+      if (targetWords === undefined) {
+        return ok(summary)
+      }
+      const actualWords = countWords(summary)
+      if (actualWords >= targetWords) {
+        return ok(summary)
+      }
+      return ok(
+        `${summary}\n\n${volumeNote(actualWords, targetWords, countWords(text))}`,
+      )
     },
 
     async saveToFile(args) {
@@ -127,7 +142,7 @@ export function createResearchToolkit(
       }
       const name = typeof args.name === 'string' ? args.name : ''
       try {
-        const saved = await deps.reports.save(name, content)
+        const saved = await deps.reports.save(name, stripVolumeNote(content))
         return ok(`Сохранено: ${saved.path}`)
       } catch (error) {
         return fail(`Не удалось сохранить отчёт: ${errorMessage(error)}`)

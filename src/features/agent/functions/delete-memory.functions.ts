@@ -1,5 +1,5 @@
 import { createServerFn } from '@tanstack/react-start'
-import { deleteMemoryEntry } from '../server/store.server'
+import { deleteMemoryEntry } from '../server/store/memory.server'
 import {
   asObject,
   requireMemoryLayer,

@@ -1,29 +1,23 @@
-import type { SearchResult, WebSource } from '../../domain/research/types.ts'
+import type {
+  SearchResult,
+  WebSearchOptions,
+  WebSource,
+} from '../../domain/research/types.ts'
 
 const API_URL = 'https://ru.wikipedia.org/w/api.php'
 const REQUEST_TIMEOUT_MS = 8000
+const FULL_EXTRACT_MAX_CHARS = 4000
+
+type SearchPage = {
+  title?: string
+  extract?: string
+  index?: number
+}
 
 type SearchResponse = {
   query?: {
-    search?: Array<{ title?: string; snippet?: string }>
+    pages?: Record<string, SearchPage>
   }
-}
-
-const ENTITIES: Array<[RegExp, string]> = [
-  [/&quot;/g, '"'],
-  [/&#39;/g, "'"],
-  [/&nbsp;/g, ' '],
-  [/&lt;/g, '<'],
-  [/&gt;/g, '>'],
-  [/&amp;/g, '&'],
-]
-
-function stripHtml(html: string): string {
-  let text = html.replace(/<[^>]*>/g, '')
-  for (const [pattern, value] of ENTITIES) {
-    text = text.replace(pattern, value)
-  }
-  return text.replace(/\s+/g, ' ').trim()
 }
 
 function articleUrl(title: string): string {
@@ -36,16 +30,24 @@ export function createWikipediaSource(
   fetchImpl: typeof fetch = fetch,
 ): WebSource {
   return {
-    async search(query, limit) {
+    async search(query, limit, options?: WebSearchOptions) {
       const params = new URLSearchParams({
         action: 'query',
-        list: 'search',
-        srsearch: query,
-        srlimit: String(limit),
+        generator: 'search',
+        gsrsearch: query,
+        gsrlimit: String(limit),
+        prop: 'extracts',
+        explaintext: '1',
+        exlimit: 'max',
         format: 'json',
         utf8: '1',
         origin: '*',
       })
+      if (options?.full) {
+        params.set('exchars', String(FULL_EXTRACT_MAX_CHARS))
+      } else {
+        params.set('exintro', '1')
+      }
       const response = await fetchImpl(`${API_URL}?${params.toString()}`, {
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
         headers: { accept: 'application/json' },
@@ -54,16 +56,18 @@ export function createWikipediaSource(
         throw new Error(`Wikipedia ${response.status}`)
       }
       const data = (await response.json()) as SearchResponse
-      const results = data.query?.search ?? []
-      return results
-        .filter((item): item is { title: string; snippet?: string } =>
-          typeof item.title === 'string' && item.title.length > 0,
+      const pages = Object.values(data.query?.pages ?? {})
+      return pages
+        .filter(
+          (page): page is SearchPage & { title: string } =>
+            typeof page.title === 'string' && page.title.length > 0,
         )
+        .sort((left, right) => (left.index ?? 0) - (right.index ?? 0))
         .map(
-          (item): SearchResult => ({
-            title: item.title,
-            url: articleUrl(item.title),
-            snippet: stripHtml(item.snippet ?? ''),
+          (page): SearchResult => ({
+            title: page.title,
+            url: articleUrl(page.title),
+            snippet: (page.extract ?? '').replace(/\s+/g, ' ').trim(),
           }),
         )
     },

@@ -1,7 +1,7 @@
 import { createServerFn } from '@tanstack/react-start'
 import type { AgentRole } from '../domain/agent'
 import type { OrgPerson } from '../types'
-import { listPeople } from '../server/store.server'
+import { listPeople } from '../server/store/people.server'
 
 export const listOrg = createServerFn({ method: 'GET' }).handler(async () => {
   const rows = await listPeople()

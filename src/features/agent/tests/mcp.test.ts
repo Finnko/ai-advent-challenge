@@ -101,6 +101,24 @@ describe('MCP connection', () => {
     expect(schedule?.inputSchema).toMatchObject({ type: 'object' })
   }, 20_000)
 
+  it('выводит изменяемость инструментов из аннотаций серверов', async () => {
+    const result = await listMcpTools()
+    expect(result.ok).toBe(true)
+    if (!result.ok) {
+      return
+    }
+    const mutating = result.tools
+      .filter((tool) => tool.mutating)
+      .map((tool) => tool.name)
+      .sort()
+    expect(mutating).toEqual([
+      'cancel_schedule',
+      'run_due_jobs',
+      'save_to_file',
+      'schedule_weather_report',
+    ])
+  }, 20_000)
+
   it('calls a tool without arguments', async () => {
     const result = await callTool('now', {})
 

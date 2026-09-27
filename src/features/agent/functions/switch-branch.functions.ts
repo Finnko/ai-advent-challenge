@@ -1,5 +1,8 @@
 import { createServerFn } from '@tanstack/react-start'
-import { listBranchesDetailed, setActiveBranch } from '../server/store.server'
+import {
+  listBranchesDetailed,
+  setActiveBranch,
+} from '../server/store/branches.server'
 import { asObject, requireBranchId, requireSessionId } from './validation'
 
 export const switchBranch = createServerFn({ method: 'POST' })

@@ -1,5 +1,5 @@
 import { createServerFn } from '@tanstack/react-start'
-import { deleteSession as deleteSessionFromStore } from '../server/store.server'
+import { deleteSession as deleteSessionFromStore } from '../server/store/sessions.server'
 import { asObject, requireSessionId } from './validation'
 
 export const deleteSession = createServerFn({ method: 'POST' })
