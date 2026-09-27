@@ -610,13 +610,20 @@ function buildBaseSystem(caps: AgentCapabilities, today: string): string {
   ].join('\n')
 }
 
+function resolveToolCatalog(
+  tools: AgentTool[],
+  toolNames: string[],
+): AgentTool[] {
+  return toolNames
+    .map((name) => tools.find((t) => t.name === name))
+    .filter((t): t is AgentTool => Boolean(t))
+}
+
 function buildGatedCatalog(
   tools: AgentTool[],
   gatedToolNames: string[],
 ): string | null {
-  const gated = gatedToolNames
-    .map((name) => tools.find((t) => t.name === name))
-    .filter((t): t is AgentTool => Boolean(t))
+  const gated = resolveToolCatalog(tools, gatedToolNames)
   if (gated.length === 0) {
     return null
   }
@@ -626,6 +633,22 @@ function buildGatedCatalog(
       (t) => `- ${t.name}: ${t.description}. Аргументы: ${t.argsExample}`,
     ),
     ...gated.flatMap((t) => DECIDE_TOOL_HINTS[t.name] ?? []),
+  ].join('\n')
+}
+
+function buildAvailableCatalog(
+  tools: AgentTool[],
+  availableToolNames: string[],
+): string | null {
+  const available = resolveToolCatalog(tools, availableToolNames)
+  if (available.length === 0) {
+    return null
+  }
+  return [
+    'Доступные сейчас (на текущем этапе) инструменты — их можно вызывать:',
+    ...available.map(
+      (t) => `- ${t.name}: ${t.description}. Аргументы: ${t.argsExample}`,
+    ),
   ].join('\n')
 }
 
@@ -692,6 +715,7 @@ function buildFinalizeUser(
   hasProfileBlocks: boolean,
   taskLine: string | null,
   hasInvariantBlocks: boolean,
+  availableCatalog: string | null,
   capabilityCatalog: string | null,
 ): string {
   return [
@@ -701,6 +725,7 @@ function buildFinalizeUser(
     '',
     ...(precedenceLine ? [precedenceLine, ''] : []),
     ...(taskLine ? [taskLine, ''] : []),
+    ...(availableCatalog ? [availableCatalog, ''] : []),
     ...(capabilityCatalog ? [capabilityCatalog, ''] : []),
     ...(hasInvariantBlocks
       ? ['Если решение нарушает инвариант — откажись, укажи INV-<id> и предложи совместимый вариант.', '']
@@ -1065,6 +1090,7 @@ export class Agent {
         (name) => !allowedToolNames.includes(name),
       ),
     )
+    const availableCatalog = buildAvailableCatalog(tools, allowedToolNames)
     const maxActions = Math.max(
       1,
       this.config.maxActionsPerTurn ?? DEFAULT_MAX_ACTIONS_PER_TURN,
@@ -1320,6 +1346,7 @@ export class Agent {
         hasProfileBlocks,
         taskLine,
         hasInvariantBlocks,
+        availableCatalog,
         capabilityCatalog,
       )
       const finalizeReply = await callLLM({
