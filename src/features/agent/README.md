@@ -125,7 +125,7 @@ runtime = defaultAgentRuntime)` не собирает их сам. Сбой API 
 
 - Реестр — `domain/agent-tools.ts`. `TOOLS_BY_ROLE` выводится из поля `roles` каждого инструмента,
   поэтому способности, decide-промпт и `isPermitted` не расходятся.
-- **Действия за Ход**: `decide → act` повторяется в пределах `maxActionsPerTurn` (default 5), пока
+- **Действия за Ход**: `decide → act` повторяется в пределах `maxActionsPerTurn` (default 10), пока
   модель выбирает следующий инструмент, затем один `finalize` по всем отчётам. Цикл останавливается
   на `tool: null`, ошибке инструмента, повторе `tool+args` или лимите; судья `no-fabricated-actions`
   блокирует ответ, приписывающий невыполненное действие.
@@ -197,28 +197,55 @@ runtime = defaultAgentRuntime)` не собирает их сам. Сбой API 
 - Новые инструменты: `cancelVacation`, `rejectVacation`, `rescheduleBooking`, `getRoomSchedule`,
   `updateBooking`, `declineInvite`.
 
-## MCP (Day 16–18)
+## MCP (Day 16–20)
 
-- **Два stdio-сервера** (спавн-процессы, приложение их не импортирует):
+- **Четыре stdio-сервера** (спавн-процессы, приложение их не импортирует):
   `mcp/server.ts` + `mcp/tools.ts` + `mcp/db.ts` — `agent-mcp-demo`, read-only `agent.sqlite`
   (`db_overview`, `bookings_by_room`, `employee_schedule`, `now`, `echo`);
   `mcp/jobs/server.ts` + `mcp/jobs/{register,db,weather,tools}.ts` — `agent-mcp-jobs`, пишет свой
   `jobs.sqlite` (`schedule_weather_report`, `cancel_schedule`, `list_schedules`, `get_weather_report`,
-  `get_weather_at`, `run_due_jobs`).
-- **Сборка**: `npm run build:mcp` (`scripts/build-mcp.mjs`, esbuild) бандлит оба входа в
-  `dist/server/mcp/{mcp-demo,mcp-jobs}.mjs` (`--platform=node --format=esm --packages=external`).
+  `get_weather_at`, `run_due_jobs`);
+  `mcp/research/server.ts` + `mcp/research/{register,web,reports,tools}.ts` — `agent-mcp-research`,
+  пишет файлы-отчёты (`search`, `summarize`, `save_to_file`, `list_reports`, `read_report`);
+  `mcp/market/server.ts` + `mcp/market/{register,rates,tools}.ts` — `agent-mcp-market`, курс валют
+  (`exchange_rate`, Frankfurter/ECB без ключа).
+- **Сборка**: `npm run build:mcp` (`scripts/build-mcp.mjs`, esbuild) бандлит все входы в
+  `dist/server/mcp/{mcp-demo,mcp-jobs,mcp-research,mcp-market}.mjs`
+  (`--platform=node --format=esm --packages=external`).
   `npm run build` = `vite build && build:mcp`. В dev/test вход отдаётся исходным `.ts` (Node ≥22 type
-  stripping), поэтому относительные импорты в `domain/jobs/**` и `mcp/jobs/**` — с явным `.ts`.
-- **Registry**: `server/mcp-registry.server.ts` — список серверов (entry, `childEnv`, `hiddenTools`) и
-  `resolveMcpEntry(kind)`: `AGENT_MCP_DEMO_ENTRY`/`AGENT_MCP_JOBS_ENTRY` → `dist/server/mcp/*.mjs`
-  (через `process.cwd()`, т.к. в билде серверные чанки лежат в `dist/server/assets`) → dev-исходник.
+  stripping), поэтому относительные импорты в `domain/{jobs,research,market}/**` и
+  `mcp/{jobs,research,market}/**` — с явным `.ts`.
+- **Registry**: `server/mcp-registry.server.ts` — `SPECS: Record<McpServerKind, …>` (name, entry,
+  `childEnv`, `hiddenTools`, env-key); `McpServerKind = 'demo' | 'jobs' | 'research' | 'market'`;
+  `resolveMcpEntry(kind)`: env-override (`AGENT_MCP_DEMO_ENTRY`/`AGENT_MCP_JOBS_ENTRY`/
+  `AGENT_MCP_RESEARCH_ENTRY`/`AGENT_MCP_MARKET_ENTRY`) → `dist/server/mcp/*.mjs` (через `process.cwd()`,
+  т.к. в билде серверные чанки лежат в `dist/server/assets`) → dev-исходник. В дочерний процесс
+  форвардятся только `AGENT_DB_PATH`/`JOBS_DB_PATH`/`REPORTS_DIR`.
 - **Клиент**: `server/mcp.server.ts` — `withClient(entry, env)`, `listToolsFor(config)` и
   `callToolOn(config, name, args)`; `listMcpTools()` сливает инструменты серверов, сбой одного
   деградирует построчно; `callTool(name)` маршрутизирует по имени, `callToolOnServer(kind, …)` — явно.
+  Вызовы инструментов маршрутизируются по своему серверу через замыкание в `mcp-tools.server.ts`
+  (`loadMcpTools()` собирает `buildMcpAgentTools(visible, (name, args) => callToolOn(config, name, args))`).
 - **Интеграция с агентом**: `server/mcp-tools.server.ts` собирает `loadMcpTools()` per-server и
   исключает `hiddenTools` (`run_due_jobs` агенту не предлагается). `domain/mcp/agent-tools.ts`
-  добавляет префикс `mcp_`; `isMutatingTool` знает `mcp_schedule_weather_report`/`mcp_cancel_schedule`,
-  поэтому они под тем же гейтом Этапа, что и внутренние мутации. Справочные `mcp_*` доступны везде.
+  добавляет префикс `mcp_`, провенанс сервера в describe (`[research] …` — из `descriptor.server`) и
+  обрезает текст отчёта до 4000 символов; `isMutatingTool` знает
+  `mcp_schedule_weather_report`/`mcp_cancel_schedule`/`mcp_save_to_file`, поэтому они под тем же гейтом
+  Этапа, что и внутренние мутации. Справочные `mcp_*` доступны везде.
+- **Pipeline (Day 19)**: `search → summarize → save_to_file` ведёт обычный цикл `decide→act` (модель
+  передаёт вывод предыдущего инструмента в аргументы следующего, до `maxActionsPerTurn`); отдельного
+  движка пайплайна нет. `summarize` — детерминированное экстрактивное сжатие (`domain/research/
+  summarize.ts`, без LLM), `search` — Wikipedia ru через инъектируемый `WebSource`
+  (`mcp/research/web.ts`), `save_to_file` пишет `.md` в `REPORTS_DIR` (injectable `ReportsStore`,
+  санитайз имени). Так как `save_to_file` мутирующий, цепочка целиком идёт на стадии `execution`
+  +`approved`, а `list_reports`/`read_report` подтверждают результат на `validation`.
+- **Orchestration (Day 20)**: `agent-mcp-market` (`exchange_rate { base?, quote?, date? }`, дефолт
+  EUR/USD) — отдельный сервер, который агент комбинирует с остальными. Длинный флоу на одном ходу
+  (например `db_overview`/`search`/`get_weather_report`/`exchange_rate` → `summarize` → `save_to_file`
+  → `list_reports`) ведёт тот же цикл `decide→act`; выбор сервера и порядок вызовов задают
+  описания инструментов, а данные между ними ходят через отчёты в промпте.
+
+
 - **Jobs (Day 18)**: `domain/jobs/` — города (белый список, tz `Europe/Moscow`), `WeatherSource`
   (инъекция), агрегаты (min/сред/макс), расписание (интервал 15–1440 мин, окно 1–720 ч, ≤5 расписаний),
   покрытие. Open-Meteo (`mcp/jobs/weather.ts`) без ключа: `current` для live и `hourly&past_days=7` для
@@ -229,9 +256,12 @@ runtime = defaultAgentRuntime)` не собирает их сам. Сбой API 
   (`routes/jobs.tick.ts` → `server/jobs.server.ts` → MCP `run_due_jobs`). Долгоживущего планировщика
   нет; тот же путь у кнопки «Выполнить сейчас» (`functions/run-jobs.functions.ts`).
 - UI: `components/McpPanel.tsx` (вкладка «MCP») + секция «Расписания» (`SchedulesPanel`, `ScheduleCard`,
-  `JobRunRow`, `api/use-jobs.ts`). Тесты: `tests/mcp.test.ts` (оба сервера), `tests/mcp-jobs.test.ts`
-  (инъекция `WeatherSource` + временная БД), `tests/mcp-agent.test.ts` (адаптер + `executeAgent`).
-  Сетевые тесты Open-Meteo — только под `RUN_NETWORK_TESTS=1`.
+  `JobRunRow`, `api/use-jobs.ts`). Тесты: `tests/mcp.test.ts` (все серверы), `tests/mcp-jobs.test.ts`
+  (инъекция `WeatherSource` + временная БД), `tests/mcp-research.test.ts` (инъекция `WebSource` +
+  temp `REPORTS_DIR`), `tests/mcp-market.test.ts` (инъекция `MarketSource`), `tests/mcp-chain.test.ts`
+  (цепочка search→summarize→save), `tests/mcp-orchestration.test.ts` (кросс-серверный флоу),
+  `tests/mcp-agent.test.ts` (адаптер + `executeAgent`). Сетевые тесты Open-Meteo/Wikipedia/Frankfurter —
+  только под `RUN_NETWORK_TESTS=1`.
 
 ## Персистентность
 
@@ -263,8 +293,9 @@ npm-зависимости: `@tanstack/react-query`, `@tanstack/react-router`, `
 
 Env: `DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL`, `HUGGING_FACE_TOKEN`; путь БД —
 `AGENT_DB_PATH` (по умолчанию `~/.ai-advent-challenge/agent.sqlite`); для jobs — `JOBS_DB_PATH`
-(по умолчанию `~/.ai-advent-challenge/jobs.sqlite`) и опциональные
-`AGENT_MCP_DEMO_ENTRY`/`AGENT_MCP_JOBS_ENTRY`.
+(по умолчанию `~/.ai-advent-challenge/jobs.sqlite`); для research — `REPORTS_DIR`
+(по умолчанию `~/.ai-advent-challenge/reports`) и опциональные
+`AGENT_MCP_DEMO_ENTRY`/`AGENT_MCP_JOBS_ENTRY`/`AGENT_MCP_RESEARCH_ENTRY`/`AGENT_MCP_MARKET_ENTRY`.
 
 ## Как портировать
 
@@ -273,8 +304,9 @@ Env: `DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL`, `HUGGING_FACE_TOKEN`; путь БД �
 3. Завести роут `/agent`, рендерящий `pages/AgentPage` (и, при желании, редиректы со старых путей).
 4. Прописать env и поднять `QueryClientProvider`.
 5. Для MCP: Node ≥22; собрать бандлы (`npm run build:mcp`) и/или задать
-   `AGENT_MCP_DEMO_ENTRY`/`AGENT_MCP_JOBS_ENTRY`; форвардить `AGENT_DB_PATH`/`JOBS_DB_PATH` в дочерние
-   процессы; поднять `GET /jobs/tick` по таймеру. Деплой — `deploy/` (systemd + timer, Tailscale-only).
+   `AGENT_MCP_DEMO_ENTRY`/`AGENT_MCP_JOBS_ENTRY`/`AGENT_MCP_RESEARCH_ENTRY`/`AGENT_MCP_MARKET_ENTRY`;
+   форвардить `AGENT_DB_PATH`/`JOBS_DB_PATH`/`REPORTS_DIR` в дочерние процессы; поднять `GET /jobs/tick`
+   по таймеру. Деплой — `deploy/` (systemd + timer, Tailscale-only).
 6. Прогнать `npm run test` — тесты фичи офлайн (мокают LLM через `tests/agent-testkit.ts`).
 
 Правила, за которые лучше не выходить: серверные ключи никогда не уходят в браузер; `node:sqlite`

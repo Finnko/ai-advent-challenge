@@ -58,7 +58,9 @@ cd "$REMOTE_DIR"
 sudo -u aiadvent -H bash -lc 'npm ci --no-audit --no-fund && npm run build'
 sudo -u aiadvent -H mkdir -p "$REMOTE_DIR/node_modules/.vite-temp"
 test -f dist/server/mcp/mcp-jobs.mjs
-echo "build ok: dist/server/mcp/mcp-jobs.mjs"
+test -f dist/server/mcp/mcp-research.mjs
+test -f dist/server/mcp/mcp-market.mjs
+echo "build ok: dist/server/mcp/mcp-{jobs,research,market}.mjs"
 REMOTE
 
 echo "== 4/6 · systemd units =="

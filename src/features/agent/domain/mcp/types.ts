@@ -6,6 +6,8 @@ export type JsonValue =
   | JsonValue[]
   | { [key: string]: JsonValue }
 
+export const MCP_TOOL_REPORT_MAX_CHARS = 4000
+
 export type McpToolDescriptor = {
   name: string
   title: string | null

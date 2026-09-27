@@ -2,7 +2,7 @@ import { accessSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-export type McpServerKind = 'demo' | 'jobs'
+export type McpServerKind = 'demo' | 'jobs' | 'research' | 'market'
 
 export type McpServerConfig = {
   kind: McpServerKind
@@ -11,6 +11,52 @@ export type McpServerConfig = {
   childEnv: () => Record<string, string> | undefined
   hiddenTools: string[]
 }
+
+type McpServerSpec = {
+  name: string
+  envKey: string
+  compiledFile: string
+  sourcePath: string
+  hiddenTools: string[]
+  childEnvKey: string | null
+}
+
+const SPECS: Record<McpServerKind, McpServerSpec> = {
+  demo: {
+    name: 'agent-mcp-demo',
+    envKey: 'AGENT_MCP_DEMO_ENTRY',
+    compiledFile: 'mcp-demo.mjs',
+    sourcePath: '../mcp/server.ts',
+    hiddenTools: [],
+    childEnvKey: 'AGENT_DB_PATH',
+  },
+  jobs: {
+    name: 'agent-mcp-jobs',
+    envKey: 'AGENT_MCP_JOBS_ENTRY',
+    compiledFile: 'mcp-jobs.mjs',
+    sourcePath: '../mcp/jobs/server.ts',
+    hiddenTools: ['run_due_jobs'],
+    childEnvKey: 'JOBS_DB_PATH',
+  },
+  research: {
+    name: 'agent-mcp-research',
+    envKey: 'AGENT_MCP_RESEARCH_ENTRY',
+    compiledFile: 'mcp-research.mjs',
+    sourcePath: '../mcp/research/server.ts',
+    hiddenTools: [],
+    childEnvKey: 'REPORTS_DIR',
+  },
+  market: {
+    name: 'agent-mcp-market',
+    envKey: 'AGENT_MCP_MARKET_ENTRY',
+    compiledFile: 'mcp-market.mjs',
+    sourcePath: '../mcp/market/server.ts',
+    hiddenTools: [],
+    childEnvKey: null,
+  },
+}
+
+const KINDS = Object.keys(SPECS) as McpServerKind[]
 
 function fileExists(path: string): boolean {
   try {
@@ -21,58 +67,46 @@ function fileExists(path: string): boolean {
   }
 }
 
-function compiledEntry(kind: McpServerKind): string {
-  const filename = kind === 'demo' ? 'mcp-demo.mjs' : 'mcp-jobs.mjs'
-  return join(process.cwd(), 'dist', 'server', 'mcp', filename)
+function compiledEntry(spec: McpServerSpec): string {
+  return join(process.cwd(), 'dist', 'server', 'mcp', spec.compiledFile)
 }
 
-function sourceEntry(kind: McpServerKind): string {
-  const url =
-    kind === 'demo'
-      ? new URL('../mcp/server.ts', import.meta.url)
-      : new URL('../mcp/jobs/server.ts', import.meta.url)
-  return fileURLToPath(url)
+function sourceEntry(spec: McpServerSpec): string {
+  return fileURLToPath(new URL(spec.sourcePath, import.meta.url))
 }
 
 export function resolveMcpEntry(kind: McpServerKind): string {
-  const envKey =
-    kind === 'demo' ? 'AGENT_MCP_DEMO_ENTRY' : 'AGENT_MCP_JOBS_ENTRY'
-  const override = process.env[envKey]?.trim()
+  const spec = SPECS[kind]
+  const override = process.env[spec.envKey]?.trim()
   if (override) {
     return override
   }
-  const compiled = compiledEntry(kind)
+  const compiled = compiledEntry(spec)
   if (fileExists(compiled)) {
     return compiled
   }
-  return sourceEntry(kind)
+  return sourceEntry(spec)
 }
 
-function demoChildEnv(): Record<string, string> | undefined {
-  const dbPath = process.env.AGENT_DB_PATH
-  return dbPath ? { AGENT_DB_PATH: dbPath } : undefined
-}
-
-function jobsChildEnv(): Record<string, string> | undefined {
-  const dbPath = process.env.JOBS_DB_PATH
-  return dbPath ? { JOBS_DB_PATH: dbPath } : undefined
+function childEnvFor(spec: McpServerSpec): () => Record<string, string> | undefined {
+  return () => {
+    if (!spec.childEnvKey) {
+      return undefined
+    }
+    const value = process.env[spec.childEnvKey]
+    return value ? { [spec.childEnvKey]: value } : undefined
+  }
 }
 
 export function mcpServerConfigs(): McpServerConfig[] {
-  return [
-    {
-      kind: 'demo',
-      name: 'agent-mcp-demo',
-      entry: resolveMcpEntry('demo'),
-      childEnv: demoChildEnv,
-      hiddenTools: [],
-    },
-    {
-      kind: 'jobs',
-      name: 'agent-mcp-jobs',
-      entry: resolveMcpEntry('jobs'),
-      childEnv: jobsChildEnv,
-      hiddenTools: ['run_due_jobs'],
-    },
-  ]
+  return KINDS.map((kind) => {
+    const spec = SPECS[kind]
+    return {
+      kind,
+      name: spec.name,
+      entry: resolveMcpEntry(kind),
+      childEnv: childEnvFor(spec),
+      hiddenTools: spec.hiddenTools,
+    }
+  })
 }
