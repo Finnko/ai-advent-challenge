@@ -1,5 +1,5 @@
 import { createServerFn } from '@tanstack/react-start'
-import { deleteInvariant as deleteInvariantInStore } from '../server/store.server'
+import { deleteInvariant as deleteInvariantInStore } from '../server/store/invariants.server'
 import { asObject, requireInvariantId, requireToken } from './validation'
 
 export const deleteInvariant = createServerFn({ method: 'POST' })

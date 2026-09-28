@@ -17,6 +17,7 @@ const OVERVIEW: McpToolDescriptor = {
   title: 'Обзор базы агента',
   description: 'Счётчики записей по таблицам.',
   inputSchema: { type: 'object', properties: {}, required: [] },
+  mutating: false,
 }
 
 function scriptedLLM(

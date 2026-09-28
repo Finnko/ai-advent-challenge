@@ -20,7 +20,7 @@ fi
 
 TAILNET_HOST="${TAILNET_HOST:-}"
 KEY="${SSH_KEY:-$HOME/.ssh/ai_advent_ed25519}"
-BRANCH="${DEPLOY_BRANCH:-feature/day18}"
+BRANCH="${DEPLOY_BRANCH:-feature/day19-20}"
 REMOTE_DIR="${REMOTE_DIR:-/opt/ai-advent-challenge}"
 
 [[ -n "$TAILNET_HOST" ]] || { echo "Задай TAILNET_HOST в $ENV_FILE"; exit 1; }
@@ -58,7 +58,9 @@ cd "$REMOTE_DIR"
 sudo -u aiadvent -H bash -lc 'npm ci --no-audit --no-fund && npm run build'
 sudo -u aiadvent -H mkdir -p "$REMOTE_DIR/node_modules/.vite-temp"
 test -f dist/server/mcp/mcp-jobs.mjs
-echo "build ok: dist/server/mcp/mcp-jobs.mjs"
+test -f dist/server/mcp/mcp-research.mjs
+test -f dist/server/mcp/mcp-market.mjs
+echo "build ok: dist/server/mcp/mcp-{jobs,research,market}.mjs"
 REMOTE
 
 echo "== 4/6 · systemd units =="

@@ -16,6 +16,7 @@ type TaskStateBarProps = {
   onPause: () => void
   onResume: () => void
   onCancel: () => void
+  onApprove: () => void
 }
 
 function resolveStageVariant(
@@ -39,6 +40,7 @@ export default function TaskStateBar({
   onPause,
   onResume,
   onCancel,
+  onApprove,
 }: TaskStateBarProps) {
   if (!enabled || !hasSession) {
     return null
@@ -55,6 +57,9 @@ export default function TaskStateBar({
   const active = ACTIVE_TASK_STAGES.includes(state.stage)
   const terminal = isTerminalTaskStage(state.stage)
   const stageVariant = resolveStageVariant(paused, terminal)
+  const needsApproval =
+    !state.approved &&
+    (state.stage === 'planning' || state.stage === 'execution')
 
   const planTitle = state.steps
     .map((item, index) => `${index + 1}. ${item}`)
@@ -73,6 +78,11 @@ export default function TaskStateBar({
           </Badge>
         )}
         <div className="ml-auto flex items-center gap-2">
+          {needsApproval && (
+            <Button size="sm" onClick={onApprove} disabled={busy}>
+              Утвердить план
+            </Button>
+          )}
           {active && (
             <Button
               variant="secondary"

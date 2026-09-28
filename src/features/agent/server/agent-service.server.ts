@@ -45,12 +45,12 @@ import {
 } from '@lib/llm.server'
 import { TIER_ENDPOINTS } from '@lib/llm'
 import { estimateMessagesTokens, estimateTokens } from '../domain/tokens'
+import { createAgentStore } from './store/agent-records.server'
 import {
-  createAgentStore,
   getPersonByToken,
   listPeople,
   listSubordinates,
-} from './store.server'
+} from './store/people.server'
 import { loadMcpTools } from './mcp-tools.server'
 
 export async function resolveCapabilitiesByToken(

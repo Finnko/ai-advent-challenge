@@ -9,7 +9,7 @@ import {
   getWorkingMemory,
   saveLongTermMemory,
   saveWorkingMemory,
-} from '../server/store.server'
+} from '../server/store/memory.server'
 import {
   asObject,
   requireMemoryLayer,

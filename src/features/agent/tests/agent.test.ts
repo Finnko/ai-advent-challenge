@@ -581,6 +581,7 @@ describe('этап planning и мульти-действия', () => {
       argsExample:
         '{ "city": "<строка>", "intervalMinutes": <целое>, "windowHours": <целое> }',
       roles: ['employee', 'manager'],
+      mutating: true,
       run: async () => ({ ok: true, text: 'ok', reference: null }),
     }
     const identity = createIdentity()
@@ -599,6 +600,55 @@ describe('этап planning и мульти-действия', () => {
     expect(finalizeUser).toContain('станут доступны после подтверждения плана')
     expect(finalizeUser).toContain('intervalMinutes')
     expect(finalizeUser).toContain('каждые 60 минут')
+  })
+
+  it('в planning перечисляет доступные справочные инструменты в finalize', async () => {
+    const { callLLM, calls } = scriptedLLM({
+      decide: '{"tool": null, "args": {}}',
+      finalize: 'План: получить курс и погоду, затем сохранить отчёт.',
+    })
+    const exchangeTool: AgentTool = {
+      name: 'mcp_exchange_rate',
+      description: 'Курс валют EUR→USD',
+      argsExample: '{ "base": "EUR", "quote": "USD" }',
+      roles: ['employee', 'manager'],
+      mutating: false,
+      run: async () => ({ ok: true, text: '1.08', reference: null }),
+    }
+    const saveTool: AgentTool = {
+      name: 'mcp_save_to_file',
+      description: 'Сохраняет отчёт в файл',
+      argsExample: '{ "name": "<строка>", "content": "<строка>" }',
+      roles: ['employee', 'manager'],
+      mutating: true,
+      run: async () => ({ ok: true, text: 'ok', reference: null }),
+    }
+    const identity = createIdentity()
+    await new Agent({
+      capabilities: createCapabilities(identity, [
+        'mcp_exchange_rate',
+        'mcp_save_to_file',
+      ]),
+      tools: [exchangeTool, saveTool],
+      judges: AGENT_JUDGES,
+      callLLM,
+      model: 'test-model',
+      today: '2026-09-10',
+      taskState: buildTaskState({ stage: 'planning' }),
+    }).run('собери отчёт: курс EUR→USD')
+
+    const finalizeUser =
+      calls.find((call) => !call.isDecide)?.messages.at(-1)?.content ?? ''
+    const availableIndex = finalizeUser.indexOf('Доступные сейчас')
+    const gatedIndex = finalizeUser.indexOf(
+      'станут доступны после подтверждения плана',
+    )
+    const exchangeIndex = finalizeUser.indexOf('mcp_exchange_rate')
+    const saveIndex = finalizeUser.indexOf('mcp_save_to_file')
+    expect(availableIndex).toBeGreaterThan(-1)
+    expect(exchangeIndex).toBeGreaterThan(availableIndex)
+    expect(exchangeIndex).toBeLessThan(gatedIndex)
+    expect(saveIndex).toBeGreaterThan(gatedIndex)
   })
 
   it('в planning не выполняет изменяющий инструмент, даже если он выбран', async () => {

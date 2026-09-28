@@ -1,6 +1,6 @@
 import { createServerFn } from '@tanstack/react-start'
 import type { CreateSessionResult } from '../types'
-import { createSession as createSessionInStore } from '../server/store.server'
+import { createSession as createSessionInStore } from '../server/store/sessions.server'
 import { asObject, parseSessionConfigInput, requireToken } from './validation'
 
 export const createSession = createServerFn({ method: 'POST' })

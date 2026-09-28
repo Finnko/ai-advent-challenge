@@ -25,7 +25,7 @@ Days 13–17 extend the unified `/agent` workspace with task state, invariants a
 - `src/features/agent/` — the agent feature, self-contained for porting:
   `pages/` (public surface), `api/` (react-query hooks), `functions/` (`createServerFn`),
   `server/` (deep `.server.ts` modules: `agent-turn`, `agent-service`, `task-state`, `mcp`, `mcp-tools`,
-  `mcp-registry`, `jobs`; plus `store.server.ts` and the `store/` folder), `domain/` (isomorphic logic:
+  `mcp-registry`, `jobs`; plus the `store/` concept modules), `domain/` (isomorphic logic:
   `agent`, `agent-tools`, `context/`, `memory/`, `profile/`, `session/`, `task/`, `invariants/`, `mcp/`,
   `jobs/`, `tokens`),
   `mcp/` (standalone stdio MCP server processes — spawned, never imported/bundled): `server|tools|db`
@@ -47,16 +47,20 @@ Days 13–17 extend the unified `/agent` workspace with task state, invariants a
   prompt/text data lives in `dayN.ts` / feature `data/`.
 - **The client sends ids, not content** — tier / strategy / session. Invariant CRUD is the explicit
   exception: the rule itself is user-managed data and is sent to its CRUD function.
-- **Persistence**: `features/agent/server/store.server.ts` is a `node:sqlite` singleton. Import
-  `node:sqlite` dynamically (`await import`) inside a `.server.ts`.
+- **Persistence**: `features/agent/server/store/db.server.ts` is the `node:sqlite` singleton; the
+  `store/` folder splits storage by concept (`sessions`, `branches`, `messages`, `facts`, `memory`,
+  `people`, `tasks`, `invariants`, `profiles`, `agent-records`) and imports them directly — there is no
+  `store.server.ts` barrel. Import `node:sqlite` dynamically (`await import`) inside a `.server.ts`.
 - **Session config is immutable**: strategy, memory, profile, window size and task state are fixed by
   `createSession` and read by `runAgentTurn`; a different config means a new session.
 - **Invariants are global per token** and enforced deterministically before mutating tools and after
   finalize; the opt-in `invariantGuard` is a fallback, never a replacement. Pinned `slug`/`check` are
   immutable.
-- **MCP tools**: `agent-mcp-demo` is read-only; `agent-mcp-jobs` writes its own `jobs.sqlite`. Mutating
-  MCP tools (`mcp_schedule_weather_report`, `mcp_cancel_schedule`) obey the same task-stage gate as
-  internal mutations; reference MCP tools stay available in every stage. Discovery/listing degrades per
+- **MCP tools**: `agent-mcp-demo` is read-only; `agent-mcp-jobs` writes its own `jobs.sqlite`. Tool
+  metadata travels over the protocol: each spawned server sets `annotations: { readOnlyHint }`, the host
+  derives `descriptor.mutating` (`readOnlyHint !== true` → mutating, fail-closed) and mutating MCP tools
+  obey the same task-stage gate as internal mutations; reference MCP tools stay available in every stage.
+  Never reintroduce a host-side hardcoded list of MCP tool names. Discovery/listing degrades per
   server (a dead server removes only its tools). The MCP SDK reaches neither the LLM transport nor the
   browser. MCP servers ship as compiled `.mjs` (`npm run build:mcp`), resolved by
   `server/mcp-registry.server.ts` via `AGENT_MCP_DEMO_ENTRY`/`AGENT_MCP_JOBS_ENTRY` → `dist` → dev source.

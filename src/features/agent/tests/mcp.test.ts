@@ -10,12 +10,18 @@ const TOOL_NAMES = [
   'db_overview',
   'echo',
   'employee_schedule',
+  'exchange_rate',
   'get_weather_at',
   'get_weather_report',
+  'list_reports',
   'list_schedules',
   'now',
+  'read_report',
   'run_due_jobs',
+  'save_to_file',
   'schedule_weather_report',
+  'search',
+  'summarize',
 ]
 
 let dir: string
@@ -93,6 +99,24 @@ describe('MCP connection', () => {
     )
     expect(schedule?.description).toBeTruthy()
     expect(schedule?.inputSchema).toMatchObject({ type: 'object' })
+  }, 20_000)
+
+  it('выводит изменяемость инструментов из аннотаций серверов', async () => {
+    const result = await listMcpTools()
+    expect(result.ok).toBe(true)
+    if (!result.ok) {
+      return
+    }
+    const mutating = result.tools
+      .filter((tool) => tool.mutating)
+      .map((tool) => tool.name)
+      .sort()
+    expect(mutating).toEqual([
+      'cancel_schedule',
+      'run_due_jobs',
+      'save_to_file',
+      'schedule_weather_report',
+    ])
   }, 20_000)
 
   it('calls a tool without arguments', async () => {

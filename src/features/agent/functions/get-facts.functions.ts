@@ -1,5 +1,5 @@
 import { createServerFn } from '@tanstack/react-start'
-import { getSessionFacts } from '../server/store.server'
+import { getSessionFacts } from '../server/store/facts.server'
 import { asObject, requireSessionId } from './validation'
 
 export const getFacts = createServerFn({ method: 'POST' })

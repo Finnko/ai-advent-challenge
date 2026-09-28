@@ -1,18 +1,16 @@
 import {
+  approveTask,
   cancelTask,
   pauseTask,
   resumeTask,
   transitionEvent,
 } from '../domain/task/state'
 import type { TaskState } from '../domain/task/types'
-import {
-  appendMessage,
-  getSession,
-  getTaskState,
-  saveTaskState,
-} from './store.server'
+import { appendMessage } from './store/messages.server'
+import { getSession } from './store/sessions.server'
+import { getTaskState, saveTaskState } from './store/tasks.server'
 
-export type TaskAction = 'pause' | 'resume' | 'cancel'
+export type TaskAction = 'pause' | 'resume' | 'cancel' | 'approve'
 
 const TRANSITIONS: Record<
   TaskAction,
@@ -21,6 +19,7 @@ const TRANSITIONS: Record<
   pause: pauseTask,
   resume: resumeTask,
   cancel: cancelTask,
+  approve: approveTask,
 }
 
 async function taskStateFor(sessionId: number): Promise<

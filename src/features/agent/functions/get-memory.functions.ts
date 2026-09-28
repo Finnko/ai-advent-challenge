@@ -2,9 +2,9 @@ import { createServerFn } from '@tanstack/react-start'
 import type { MemoryView } from '../types'
 import {
   getLongTermMemory,
-  getSession,
   getWorkingMemory,
-} from '../server/store.server'
+} from '../server/store/memory.server'
+import { getSession } from '../server/store/sessions.server'
 import { asObject, requireSessionId, requireToken } from './validation'
 
 export const getMemory = createServerFn({ method: 'POST' })

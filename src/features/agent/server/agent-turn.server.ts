@@ -1,58 +1,52 @@
-import type { AgentCapabilities, AgentRunResult } from '../domain/agent'
-import type { CompressionMessage, SummaryUsage } from '../domain/compression'
+import type { AgentCapabilities } from '../domain/agent'
+import type { CompressionMessage } from '../domain/compression'
 import { resolveStrategy } from '../domain/context/registry'
 import type { ContextStrategyId } from '../domain/context/types'
 import type { Fact } from '../domain/facts'
 import type { MemoryEntry } from '../domain/memory/types'
 import type { ProfileRecord } from '../domain/profile/types'
 import type { InvariantRecord } from '../domain/invariants/types'
-import {
-  resolveSessionConfig,
-} from '../domain/session/config'
-import {
-  advanceAfterRun,
-  advanceToExecution,
-  looksLikeApproval,
-  looksLikeCancel,
-  looksLikeCorrection,
-  looksLikeResume,
-} from '../domain/task/advance'
-import {
-  applyAnalysis,
-  cancelTask,
-  createTaskState,
-  resumeTask,
-  transitionEvent,
-} from '../domain/task/state'
-import type { AnalyzeTaskState } from '../domain/task/analyze'
-import type { TaskAnalysis, TaskRejection } from '../domain/task/state'
+import { resolveSessionConfig } from '../domain/session/config'
 import type { TaskEvent, TaskState } from '../domain/task/types'
-import { TIER_ENDPOINTS } from '@lib/llm'
 import type { AgentExecution, AgentRuntime } from './agent-service.server'
 import {
   defaultAgentRuntime,
   executeAgent,
   resolveCapabilitiesByToken,
 } from './agent-service.server'
+import { getActiveBranch } from './store/branches.server'
 import {
-  appendMessage as appendMessageToStore,
-  getActiveBranch,
-  getLongTermMemory,
-  getProfile,
-  getSession,
   getSessionFacts,
   getSessionSummary,
-  getTaskState,
-  getWorkingMemory,
-  listInvariants,
-  loadMessages as loadMessagesFromStore,
-  saveLongTermMemory,
   saveSessionFacts,
-  saveTaskState,
-  saveWorkingMemory,
-  updateSessionTitleIfDefault,
   upsertSessionSummary,
-} from './store.server'
+} from './store/facts.server'
+import { listInvariants } from './store/invariants.server'
+import {
+  getLongTermMemory,
+  getWorkingMemory,
+  saveLongTermMemory,
+  saveWorkingMemory,
+} from './store/memory.server'
+import {
+  appendMessage as appendMessageToStore,
+  loadMessages as loadMessagesFromStore,
+} from './store/messages.server'
+import { getProfile } from './store/profiles.server'
+import {
+  getSession,
+  updateSessionTitleIfDefault,
+} from './store/sessions.server'
+import { getTaskState, saveTaskState } from './store/tasks.server'
+import {
+  beginTaskTurn,
+  completeTaskTurn,
+  mergeUsage,
+  rejectionNote,
+  resolveCorrection,
+  resolveTaskState,
+  silentRun,
+} from './task-turn.server'
 
 export type TurnSession = {
   token: string
@@ -154,183 +148,6 @@ function toCompressionMessage(row: {
   return { id: row.id, role: row.role, content: row.content }
 }
 
-function mergeUsage(
-  left: SummaryUsage | null,
-  right: SummaryUsage | null,
-): SummaryUsage | null {
-  if (!left) {
-    return right
-  }
-  if (!right) {
-    return left
-  }
-  return {
-    prompt_tokens: left.prompt_tokens + right.prompt_tokens,
-    completion_tokens: left.completion_tokens + right.completion_tokens,
-  }
-}
-
-type TaskOutcome = {
-  taskState: TaskState | null
-  taskEvent: TaskEvent | null
-  changed: boolean
-  usage: SummaryUsage | null
-  rejection: TaskRejection | null
-}
-
-const ZERO_TOKENS: AgentRunResult['tokens'] = {
-  requestTokens: 0,
-  historyTokens: 0,
-  historyTokensSent: 0,
-  contextTokens: 0,
-  contextMessages: 0,
-  responseTokens: 0,
-  promptTokensActual: 0,
-  cacheHitTokens: 0,
-  cacheMissTokens: 0,
-  costUsd: 0,
-}
-
-function silentRun(taskState: TaskState | null): AgentRunResult {
-  return {
-    ok: true,
-    blocked: false,
-    reason: null,
-    answer: '',
-    trace: [],
-    verdicts: [],
-    usage: null,
-    latencyMs: 0,
-    model: TIER_ENDPOINTS.medium.model,
-    tokens: { ...ZERO_TOKENS },
-    contextNote: null,
-    invariantHits: [],
-    taskState,
-  }
-}
-
-function eventFromHistory(
-  next: TaskState,
-  prev: TaskState,
-): TaskEvent | null {
-  const transition =
-    next.history.length > prev.history.length
-      ? next.history.at(-1)
-      : undefined
-  return transition ? transitionEvent(transition) : null
-}
-
-function rejectionNote(
-  rejection: TaskRejection | null,
-  state: TaskState | null,
-): string | null {
-  if (!rejection) {
-    return null
-  }
-  const stay = state?.stage ?? rejection.from
-  return `Попытка перейти ${rejection.from} → ${rejection.to} отклонена: ${rejection.reason} Оставайся на этапе ${stay} и продолжай по плану.`
-}
-
-async function resolveTaskState(
-  input: {
-    enabled: boolean
-    sessionId: number
-    rows: Array<{ role: 'user' | 'assistant'; content: string }>
-    user: string
-    at: string
-  },
-  store: TurnStore,
-  analyze: AnalyzeTaskState,
-): Promise<TaskOutcome> {
-  if (!input.enabled) {
-    return {
-      taskState: null,
-      taskEvent: null,
-      changed: false,
-      usage: null,
-      rejection: null,
-    }
-  }
-  const current = await store.getTaskState(input.sessionId)
-  let analysis: TaskAnalysis | null = null
-  let usage: SummaryUsage | null = null
-  try {
-    const result = await analyze({
-      current,
-      history: input.rows,
-      userMessage: input.user,
-    })
-    analysis = result.analysis
-    usage = result.usage
-  } catch {
-    usage = null
-  }
-
-  if (analysis?.stage === 'cancelled') {
-    analysis = { ...analysis, stage: current?.stage ?? 'planning' }
-  }
-
-  if (!analysis) {
-    return {
-      taskState: current,
-      taskEvent: null,
-      changed: false,
-      usage,
-      rejection: null,
-    }
-  }
-
-  if (!current) {
-    const created = createTaskState(analysis, input.at)
-    return {
-      taskState: created,
-      taskEvent: {
-        kind: 'created',
-        title: created.title,
-        stage: created.stage,
-        at: input.at,
-      },
-      changed: true,
-      usage,
-      rejection: null,
-    }
-  }
-
-  let rejection: TaskRejection | null = null
-  const planIncomplete = analysis.expectedAction.actor === 'user'
-  if (
-    current.stage === 'planning' &&
-    analysis.stage === 'execution' &&
-    planIncomplete
-  ) {
-    rejection = {
-      from: 'planning',
-      to: 'execution',
-      reason: 'В плане остались незакрытые пункты — сначала утвердите все пункты.',
-    }
-    analysis = { ...analysis, stage: 'planning' }
-  }
-
-  const consent =
-    current.stage === 'planning' &&
-    analysis.stage === 'execution' &&
-    !planIncomplete &&
-    looksLikeApproval(input.user)
-
-  const applied = applyAnalysis(current, analysis, input.at)
-  let next = applied.state
-  if (consent && !next.approved) {
-    next = { ...next, approved: true, updatedAt: input.at }
-  }
-  return {
-    taskState: next,
-    taskEvent: next === current ? null : eventFromHistory(next, current),
-    changed: next !== current,
-    usage,
-    rejection: rejection ?? applied.rejection,
-  }
-}
-
 export async function runAgentTurn(
   input: AgentTurnInput,
   deps: TurnDeps = defaultTurnDeps,
@@ -382,49 +199,20 @@ export async function runAgentTurn(
 
   const now = deps.now()
   const at = now.toISOString()
-  const started = config.taskStateEnabled
-    ? await deps.store.getTaskState(sessionId)
-    : null
-  const preEvents: TaskEvent[] = []
 
-  if (config.taskStateEnabled && looksLikeCancel(input.user)) {
-    if (started && started.stage !== 'cancelled') {
-      const cancelled = cancelTask(started, at)
-      if (cancelled !== started) {
-        await deps.store.saveTaskState(sessionId, cancelled)
-        await deps.store.appendMessage(sessionId, 'user', input.user)
-        const event = eventFromHistory(cancelled, started)
-        if (event) {
-          await deps.store.appendMessage(sessionId, 'task', '', event)
-        }
-        return {
-          run: silentRun(cancelled),
-          auxUsage: null,
-          taskState: cancelled,
-        }
-      }
-    }
+  const begin = await beginTaskTurn(
+    {
+      enabled: config.taskStateEnabled,
+      sessionId,
+      user: input.user,
+      at,
+    },
+    deps.store,
+  )
+  if ('halt' in begin) {
+    return begin.halt
   }
-
-  if (started?.stage === 'paused') {
-    if (looksLikeResume(input.user)) {
-      const resumed = resumeTask(started, at)
-      if (resumed !== started) {
-        await deps.store.saveTaskState(sessionId, resumed)
-        const event = eventFromHistory(resumed, started)
-        if (event) {
-          preEvents.push(event)
-        }
-      }
-    } else {
-      await deps.store.appendMessage(sessionId, 'user', input.user)
-      return {
-        run: silentRun(started),
-        auxUsage: null,
-        taskState: started,
-      }
-    }
-  }
+  const preEvents = begin.preEvents
 
   const taskOutcome = await resolveTaskState(
     {
@@ -439,19 +227,12 @@ export async function runAgentTurn(
   )
 
   let activeTaskState = taskOutcome.taskState
-  let changed = taskOutcome.changed
-  const rejection = taskOutcome.rejection
-  const taskNote = rejectionNote(rejection, activeTaskState)
+  const taskNote = rejectionNote(taskOutcome.rejection, activeTaskState)
   let correctionEvent: TaskEvent | null = null
-  if (
-    activeTaskState &&
-    activeTaskState.stage === 'validation' &&
-    looksLikeCorrection(input.user)
-  ) {
-    const correction = advanceToExecution(activeTaskState, now.toISOString())
+  if (activeTaskState) {
+    const correction = resolveCorrection(activeTaskState, input.user, at)
     if (correction) {
       activeTaskState = correction.state
-      changed = true
       correctionEvent = correction.event
     }
   }
@@ -493,66 +274,38 @@ export async function runAgentTurn(
     deps.runtime,
   )
 
-  const persisted = await deps.store.getTaskState(sessionId)
-  const concurrentPause =
-    persisted?.stage === 'paused' && activeTaskState?.stage !== 'paused'
-  const events: TaskEvent[] = [...preEvents]
-  if (rejection) {
-    events.push({
-      kind: 'rejected',
-      from: rejection.from,
-      to: rejection.to,
-      reason: rejection.reason,
+  const completion = await completeTaskTurn(
+    {
+      sessionId,
+      activeState: activeTaskState,
+      run: execution.run,
+      user: input.user,
+      now,
       at,
-    })
-  }
-  let finalTaskState: TaskState | null = activeTaskState
-  if (concurrentPause) {
-    finalTaskState = persisted
-  } else {
-    const advance = advanceAfterRun(
-      activeTaskState,
-      execution.run,
-      now.toISOString(),
-      input.user,
-    )
-    if (advance) {
-      finalTaskState = advance.state
-      changed = true
-    }
-    if (taskOutcome.taskEvent) {
-      events.push(taskOutcome.taskEvent)
-    }
-    if (correctionEvent) {
-      events.push(correctionEvent)
-    }
-    if (advance) {
-      events.push(advance.event)
-    }
-    if (changed && finalTaskState) {
-      await deps.store.saveTaskState(sessionId, finalTaskState)
-    }
-  }
+      stateChanged: taskOutcome.changed || correctionEvent !== null,
+      preEvents,
+      taskEvent: taskOutcome.taskEvent,
+      rejection: taskOutcome.rejection,
+      correctionEvent,
+    },
+    deps.store,
+  )
 
+  const finalTaskState = completion.state
   const run = { ...execution.run, taskState: finalTaskState }
 
   await deps.store.appendMessage(sessionId, 'user', input.user)
-  for (const event of events) {
+  for (const event of completion.events) {
     await deps.store.appendMessage(sessionId, 'task', '', event)
   }
-  if (concurrentPause) {
+  if (completion.concurrentPause) {
     return {
       run: silentRun(finalTaskState),
       auxUsage: mergeUsage(execution.auxUsage, taskOutcome.usage),
       taskState: finalTaskState,
     }
   }
-  await deps.store.appendMessage(
-    sessionId,
-    'assistant',
-    run.answer,
-    run,
-  )
+  await deps.store.appendMessage(sessionId, 'assistant', run.answer, run)
 
   return {
     run,

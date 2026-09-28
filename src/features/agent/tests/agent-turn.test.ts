@@ -1,13 +1,19 @@
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type {
   AgentCapabilities,
   CallLLM,
   LlmMessage,
+  ToolArgs,
 } from '../domain/agent'
 import type { MemoryEntry } from '../domain/memory/types'
 import type { InvariantRecord } from '../domain/invariants/types'
 import type { TaskState } from '../domain/task/types'
 import { createAgentTools } from '../domain/agent-tools'
+import { buildMcpAgentTools } from '../domain/mcp/agent-tools'
+import type { McpCallResult, McpToolDescriptor } from '../domain/mcp/types'
 import type { AgentRuntime } from '../server/agent-service.server'
 import { runAgentTurn } from '../server/agent-turn.server'
 import type { TurnDeps, TurnSession, TurnStore } from '../server/agent-turn.server'
@@ -512,7 +518,7 @@ describe('runAgentTurn', () => {
     })
   })
 
-  it('после действия двигает шаг, не меняя этап', async () => {
+  it('после мутации переводит execution → validation', async () => {
     const booking = createBooking()
     const { store, getTask, appended } = createTurnStore(
       turnSession({ taskStateEnabled: true }),
@@ -551,16 +557,145 @@ describe('runAgentTurn', () => {
       deps(store, runtime, caps),
     )
 
-    expect(result.taskState?.stage).toBe('execution')
-    expect(result.taskState?.stepIndex).toBe(1)
-    expect(result.taskState?.step).toBe('Пригласить')
-    expect(getTask()?.stepIndex).toBe(1)
+    expect(result.taskState?.stage).toBe('validation')
+    expect(getTask()?.stage).toBe('validation')
     expect(
       appended.find((message) => message.role === 'task')?.run,
-    ).toMatchObject({ kind: 'step', index: 1, to: 'Пригласить' })
+    ).toMatchObject({ kind: 'transition', from: 'execution', to: 'validation' })
   })
 
-  it('двигает читающий шаг плана execution, не зацикливаясь', async () => {
+  it('выполняет research-пайплайн по ссылкам и доводит до validation', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'turn-research-'))
+    const descriptors: McpToolDescriptor[] = [
+      {
+        name: 'search',
+        title: 'Поиск',
+        description: 'Ищет',
+        inputSchema: {
+          type: 'object',
+          properties: { query: { type: 'string' } },
+          required: ['query'],
+        },
+        server: 'agent-mcp-research',
+        mutating: false,
+      },
+      {
+        name: 'summarize',
+        title: 'Сжатие',
+        description: 'Сжимает',
+        inputSchema: {
+          type: 'object',
+          properties: { text: { type: 'string' } },
+          required: ['text'],
+        },
+        server: 'agent-mcp-research',
+        mutating: false,
+      },
+      {
+        name: 'save_to_file',
+        title: 'Сохранить',
+        description: 'Пишет файл',
+        inputSchema: {
+          type: 'object',
+          properties: { name: { type: 'string' }, content: { type: 'string' } },
+          required: ['name', 'content'],
+        },
+        server: 'agent-mcp-research',
+        mutating: true,
+      },
+    ]
+    const call = async (
+      name: string,
+      args: ToolArgs,
+    ): Promise<McpCallResult> => {
+      if (name === 'search') {
+        return { ok: true, text: 'КАЛИНИНГРАД — город.' }
+      }
+      if (name === 'summarize') {
+        return { ok: true, text: `СЖАТО: ${String(args.text)}` }
+      }
+      writeFileSync(
+        join(dir, `${String(args.name)}.md`),
+        String(args.content),
+      )
+      return { ok: true, text: `Сохранено: ${String(args.name)}.md` }
+    }
+    const tools = buildMcpAgentTools(descriptors, call)
+    const { store, getTask } = createTurnStore(
+      turnSession({ taskStateEnabled: true }),
+      taskState({
+        stage: 'execution',
+        approved: true,
+        steps: ['Найти', 'Сжать', 'Сохранить'],
+        stepIndex: 0,
+        step: 'Найти',
+      }),
+    )
+    const decideSteps = [
+      () => ({ tool: 'mcp_search', args: { query: 'Калининград' } }),
+      () => ({ tool: 'mcp_summarize', args: { text: { $ref: '1' } } }),
+      () => ({
+        tool: 'mcp_save_to_file',
+        args: { name: 'kaliningrad', content: { $ref: 'last' } },
+      }),
+      () => ({ tool: null, args: {} }),
+    ]
+    let index = 0
+    const { runtime } = makeRuntime({
+      loadMcpTools: async () => tools,
+      analyzeTaskState: async () => ({
+        analysis: {
+          stage: 'execution',
+          step: 'Найти',
+          steps: ['Найти', 'Сжать', 'Сохранить'],
+          expectedAction: { actor: 'agent', description: 'Найти' },
+          reason: null,
+        },
+        usage: null,
+      }),
+      callLLM: async ({ response_format }) => ({
+        content: response_format
+          ? JSON.stringify(
+              decideSteps[Math.min(index++, decideSteps.length - 1)](),
+            )
+          : 'Отчёт сохранён.',
+        usage: { prompt_tokens: 3, completion_tokens: 2 },
+        latencyMs: 0,
+      }),
+    })
+    const caps: AgentCapabilities = {
+      identity: {
+        name: 'Пётр',
+        role: 'employee',
+        title: 'Линейный сотрудник',
+        subordinates: [],
+        colleagues: [],
+      },
+      allowedTools: [],
+    }
+
+    const result = await runAgentTurn(
+      {
+        token: 'tok-test',
+        sessionId: 7,
+        user: 'собери отчёт по Калининграду и сохрани',
+      },
+      deps(store, runtime, caps),
+    )
+
+    expect(result.taskState?.stage).toBe('validation')
+    expect(getTask()?.stage).toBe('validation')
+    const acts = result.run.trace.flatMap((step) =>
+      step.stage === 'act' ? [step.tool] : [],
+    )
+    expect(acts).toEqual(['mcp_search', 'mcp_summarize', 'mcp_save_to_file'])
+    expect(readFileSync(join(dir, 'kaliningrad.md'), 'utf8')).toBe(
+      'СЖАТО: КАЛИНИНГРАД — город.',
+    )
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('не двигает план на читающем действии execution', async () => {
     const booking = createBooking()
     const { store, getTask } = createTurnStore(
       turnSession({ taskStateEnabled: true }),
@@ -599,9 +734,9 @@ describe('runAgentTurn', () => {
     )
 
     expect(result.taskState?.stage).toBe('execution')
-    expect(result.taskState?.stepIndex).toBe(1)
-    expect(result.taskState?.step).toBe('Пригласить Анну')
-    expect(getTask()?.stepIndex).toBe(1)
+    expect(result.taskState?.stepIndex).toBe(0)
+    expect(result.taskState?.step).toBe('Проверить участников')
+    expect(getTask()?.stepIndex).toBe(0)
   })
 
   it('после успешной проверки переводит validation в done', async () => {
@@ -1125,8 +1260,48 @@ describe('runAgentTurn', () => {
     expect(act && act.stage === 'act' ? act.outcome.ok : false).toBe(true)
   })
 
-  it('не пускает execution, пока в плане есть незакрытые пункты', async () => {
+  it('не пускает execution, пока в плане есть незакрытые пункты и нет согласия', async () => {
     const { store, getTask, appended } = createTurnStore(
+      turnSession({ taskStateEnabled: true }),
+      taskState({ stage: 'planning' }),
+    )
+    const { runtime } = makeRuntime({
+      analyzeTaskState: async () => ({
+        analysis: {
+          stage: 'execution',
+          step: 'Забронировать',
+          expectedAction: {
+            actor: 'user',
+            description: 'Уточнить способ приглашения Ивана',
+          },
+          reason: 'Пользователь назвал параметры',
+        },
+        usage: null,
+      }),
+    })
+
+    const result = await runAgentTurn(
+      { token: 'tok-test', sessionId: 7, user: 'Ладога, завтра в 15:00' },
+      deps(store, runtime),
+    )
+
+    expect(result.taskState?.stage).toBe('planning')
+    expect(getTask()?.stage).toBe('planning')
+    const rejected = appended.find(
+      (message) =>
+        message.role === 'task' &&
+        (message.run as { kind?: string } | undefined)?.kind === 'rejected',
+    )
+    expect(rejected?.run).toMatchObject({
+      kind: 'rejected',
+      from: 'planning',
+      to: 'execution',
+      reason: 'В плане остались незакрытые пункты — сначала утвердите все пункты.',
+    })
+  })
+
+  it('явное согласие не теряется при незакрытых пунктах плана', async () => {
+    const { store, getTask } = createTurnStore(
       turnSession({ taskStateEnabled: true }),
       taskState({ stage: 'planning' }),
     )
@@ -1150,19 +1325,74 @@ describe('runAgentTurn', () => {
       deps(store, runtime),
     )
 
-    expect(result.taskState?.stage).toBe('planning')
-    expect(getTask()?.stage).toBe('planning')
-    const rejected = appended.find(
-      (message) =>
-        message.role === 'task' &&
-        (message.run as { kind?: string } | undefined)?.kind === 'rejected',
+    expect(result.taskState?.stage).toBe('execution')
+    expect(result.taskState?.approved).toBe(true)
+    expect(result.taskState?.expectedAction.actor).toBe('agent')
+    expect(getTask()?.approved).toBe(true)
+  })
+
+  it('на утверждённом execution не переспрашивает согласие', async () => {
+    const booking = createBooking()
+    const { store } = createTurnStore(
+      turnSession({ taskStateEnabled: true }),
+      taskState({
+        stage: 'execution',
+        approved: true,
+        steps: ['Сохранить отчёт'],
+        stepIndex: 0,
+        step: 'Сохранить отчёт',
+      }),
     )
-    expect(rejected?.run).toMatchObject({
-      kind: 'rejected',
-      from: 'planning',
-      to: 'execution',
-      reason: 'В плане остались незакрытые пункты — сначала утвердите все пункты.',
+    const { runtime, captured } = makeRuntime({
+      store: createFakeStore({ bookings: [booking] }),
+      createTools: (s) => createAgentTools(s, TEST_NOW),
+      analyzeTaskState: async () => ({
+        analysis: {
+          stage: 'execution',
+          step: 'Сохранить отчёт',
+          steps: ['Сохранить отчёт'],
+          expectedAction: { actor: 'user', description: 'Подтвердить сохранение' },
+        },
+        usage: null,
+      }),
+      callLLM: async ({ messages, response_format }) => {
+        captured.push(messages)
+        return {
+          content: response_format
+            ? JSON.stringify({ tool: 'cancelBooking', args: {} })
+            : `Встреча отменена. Код подтверждения: ${booking.reference}.`,
+          usage: { prompt_tokens: 3, completion_tokens: 2 },
+          latencyMs: 0,
+        }
+      },
     })
+    const caps: AgentCapabilities = {
+      identity: {
+        name: 'Пётр',
+        role: 'employee',
+        title: 'Линейный сотрудник',
+        subordinates: [],
+        colleagues: [],
+      },
+      allowedTools: ['cancelBooking'],
+    }
+
+    const result = await runAgentTurn(
+      { token: 'tok-test', sessionId: 7, user: 'продолжай' },
+      deps(store, runtime, caps),
+    )
+
+    expect(result.taskState?.approved).toBe(true)
+    expect(result.taskState?.expectedAction.actor).toBe('agent')
+    const act = result.run.trace.find((step) => step.stage === 'act')
+    expect(act && act.stage === 'act' ? act.tool : null).toBe('cancelBooking')
+    const userText = captured
+      .flat()
+      .filter((message) => message.role === 'user')
+      .map((message) => message.content)
+      .join('\n')
+    expect(userText).not.toContain('Ожидается ход пользователя')
+    expect(userText).toContain('план утверждён пользователем')
   })
 
   it('отклоняет неадъяцентный прыжок планирование → готово', async () => {
@@ -1199,5 +1429,123 @@ describe('runAgentTurn', () => {
       from: 'planning',
       to: 'done',
     })
+  })
+
+  it('восстанавливает согласие в застрявшем execution без approve', async () => {
+    const { store, getTask } = createTurnStore(
+      turnSession({ taskStateEnabled: true }),
+      taskState({
+        stage: 'execution',
+        approved: false,
+        steps: ['Забронировать'],
+      }),
+    )
+    const agentStore = createFakeStore()
+    const { runtime } = makeRuntime({
+      store: agentStore,
+      createTools: (s) => createAgentTools(s, TEST_NOW),
+      analyzeTaskState: async () => ({
+        analysis: {
+          stage: 'execution',
+          step: 'Забронировать',
+          expectedAction: { actor: 'agent', description: 'bookMeetingRoom' },
+          reason: 'Пользователь подтвердил',
+        },
+        usage: null,
+      }),
+      callLLM: async ({ response_format }) => ({
+        content: response_format
+          ? JSON.stringify({
+              tool: 'bookMeetingRoom',
+              args: { room: 'Иртыш', date: '2026-09-11', time: '16:00' },
+            })
+          : 'Готово.',
+        usage: { prompt_tokens: 3, completion_tokens: 2 },
+        latencyMs: 0,
+      }),
+    })
+    const caps: AgentCapabilities = {
+      identity: {
+        name: 'Пётр',
+        role: 'employee',
+        title: 'Линейный сотрудник',
+        subordinates: [],
+        colleagues: [],
+      },
+      allowedTools: ['bookMeetingRoom'],
+    }
+
+    const result = await runAgentTurn(
+      { token: 'tok-test', sessionId: 7, user: 'подтверждаю, сохраняй' },
+      deps(store, runtime, caps),
+    )
+
+    expect(result.taskState?.approved).toBe(true)
+    expect(getTask()?.approved).toBe(true)
+    expect(agentStore.bookings).toHaveLength(1)
+  })
+
+  it('не теряет согласие при откате анализатора execution → planning', async () => {
+    const { store, getTask } = createTurnStore(
+      turnSession({ taskStateEnabled: true }),
+      taskState({
+        stage: 'execution',
+        approved: true,
+        steps: ['Сохранить отчёт'],
+      }),
+    )
+    const { runtime } = makeRuntime({
+      analyzeTaskState: async () => ({
+        analysis: {
+          stage: 'planning',
+          step: 'Согласовать план',
+          steps: ['Сохранить отчёт'],
+          expectedAction: { actor: 'user', description: 'Подтвердить план' },
+          reason: 'План нужно подтвердить',
+        },
+        usage: null,
+      }),
+    })
+
+    const result = await runAgentTurn(
+      { token: 'tok-test', sessionId: 7, user: 'ок' },
+      deps(store, runtime),
+    )
+
+    expect(result.taskState?.stage).toBe('execution')
+    expect(result.taskState?.approved).toBe(true)
+    expect(getTask()?.approved).toBe(true)
+  })
+
+  it('позволяет откат execution → planning по явной правке', async () => {
+    const { store, getTask } = createTurnStore(
+      turnSession({ taskStateEnabled: true }),
+      taskState({
+        stage: 'execution',
+        approved: true,
+        steps: ['Сохранить отчёт'],
+      }),
+    )
+    const { runtime } = makeRuntime({
+      analyzeTaskState: async () => ({
+        analysis: {
+          stage: 'planning',
+          step: 'Согласовать новый план',
+          steps: ['Собрать данные', 'Сохранить отчёт'],
+          expectedAction: { actor: 'user', description: 'Подтвердить план' },
+          reason: 'Пользователь просит переделать',
+        },
+        usage: null,
+      }),
+    })
+
+    const result = await runAgentTurn(
+      { token: 'tok-test', sessionId: 7, user: 'нет, переделай план заново' },
+      deps(store, runtime),
+    )
+
+    expect(result.taskState?.stage).toBe('planning')
+    expect(result.taskState?.approved).toBe(false)
+    expect(getTask()?.stage).toBe('planning')
   })
 })

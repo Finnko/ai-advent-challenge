@@ -16,7 +16,7 @@ export default function McpPanel() {
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="island-kicker m-0 text-[10px]">
-              MCP-серверы · demo + jobs
+              MCP-серверы · demo + jobs + research + market
             </p>
             <p className="demo-muted m-0 mt-1 text-xs">
               Клиент поднимает stdio-процессы, получает список инструментов и

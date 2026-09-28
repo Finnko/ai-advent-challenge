@@ -4,12 +4,7 @@ import {
   estimateMessagesTokens,
   estimateTokens,
 } from './tokens'
-import {
-  isMutatingTool,
-  normalizeName,
-  pickString,
-  roomsForRole,
-} from './agent-tools'
+import { normalizeName, pickString, roomsForRole } from './agent-tools'
 import { buildTaskStateLine } from './task/read'
 import type { TaskState } from './task/types'
 import {
@@ -40,10 +35,13 @@ export type AgentCapabilities = {
   allowedTools: string[]
 }
 
-export type ToolArgs = Record<
-  string,
-  string | number | boolean | null | string[]
->
+export type ToolArgValue = string | number | boolean | null | string[]
+
+export type ToolArgs = Record<string, ToolArgValue>
+
+export type ToolArgRef = { $ref: string | string[] }
+
+export type DecidedToolArgs = Record<string, ToolArgValue | ToolArgRef>
 
 export type LlmMessage = {
   role: 'system' | 'user' | 'assistant'
@@ -112,6 +110,7 @@ export type ToolOutcome = {
   ok: boolean
   text: string
   reference: string | null
+  refText?: string
 }
 
 export type VacationRecord = {
@@ -217,6 +216,7 @@ export type AgentTool = {
   description: string
   argsExample: string
   roles: AgentRole[]
+  mutating?: boolean
   run: (
     args: ToolArgs,
     identity: AgentIdentity,
@@ -259,15 +259,16 @@ export type AgentTraceStep =
       stage: 'decide'
       raw: string
       tool: string | null
-      args: ToolArgs
+      args: DecidedToolArgs
       usage: LlmUsage | null
       latencyMs: number
     }
   | {
       stage: 'act'
       tool: string
-      args: ToolArgs
+      args: DecidedToolArgs
       outcome: ToolOutcome
+      mutating: boolean
       invariantHits?: InvariantCode[]
     }
   | {
@@ -324,9 +325,9 @@ export type AgentConfig = {
 const DECIDE_TEMPERATURE = 0.2
 const FINALIZE_TEMPERATURE = 0.7
 const MAX_INPUT_CHARS = 30_000
-const DECIDE_MAX_TOKENS = 300
+const DECIDE_MAX_TOKENS = 800
 const FINALIZE_MAX_TOKENS = 700
-const DEFAULT_MAX_ACTIONS_PER_TURN = 5
+const DEFAULT_MAX_ACTIONS_PER_TURN = 10
 
 const ACTION_HINTS = [
   'забронир',
@@ -564,6 +565,19 @@ const DECIDE_TOOL_HINTS: Record<string, string[]> = {
     'Создание расписания для города, у которого расписания ещё нет, — обычный путь добавления нового города. Город бери из списка в описании инструмента.',
     'Параметры расписания: city (город из списка), intervalMinutes (15–1440), windowHours (1–720). Если пользователь их не задал — предложи дефолты «каждые 60 минут, окно 1 час, старт сейчас» и попроси подтвердить весь план целиком. Формат, получатель и период отчёта параметрами инструмента не являются — не уточняй их.',
   ],
+  mcp_search: [
+    'Вывод mcp_search передавай в mcp_summarize ссылкой на него, полем text: {"$ref": "<номер>"} (номер указан в отчёте инструмента), а не копированием текста — summarize выбирает факты из источника, а пересказ их искажает.',
+    'Бери достаточно результатов (limit), чтобы факты были полными: если в источнике есть уточнение (статус, оговорка), оно должно попасть в сжатие, а не потеряться.',
+    'Если для нужного объёма отчёта источника не хватает (summarize сообщил о недостаче) — вызови mcp_search ещё раз с full: true и/или большим limit, затем передай в mcp_summarize объединение ссылок: {"$ref": ["1", "2"]}. Не спрашивай пользователя про объём.',
+  ],
+  mcp_summarize: [
+    'На вход mcp_summarize подавай сырой вывод mcp_search ссылкой в поле text, без правок. Вывод mcp_summarize — это и есть текст отчёта; передавай его в mcp_save_to_file ссылкой {"$ref": "last"}.',
+    'Если в плане или запросе задан объём отчёта — передай его в targetWords; если объём не задан, не выдумывай его, оставь targetWords пустым.',
+    'Если mcp_summarize сообщил, что объём меньше запрошенного, — сначала добери источников через mcp_search, затем повтори сжатие. Объём — цель, а не гарантия: не выдумывай и не переписывай факты, чтобы добить слова.',
+  ],
+  mcp_save_to_file: [
+    'Сохраняй отчёт, который вернул mcp_summarize, ссылкой в поле content: {"$ref": "last"}; не копируй и не редактируй текст вручную.',
+  ],
 }
 
 function buildPrecedenceLine(
@@ -597,13 +611,20 @@ function buildBaseSystem(caps: AgentCapabilities, today: string): string {
   ].join('\n')
 }
 
+function resolveToolCatalog(
+  tools: AgentTool[],
+  toolNames: string[],
+): AgentTool[] {
+  return toolNames
+    .map((name) => tools.find((t) => t.name === name))
+    .filter((t): t is AgentTool => Boolean(t))
+}
+
 function buildGatedCatalog(
   tools: AgentTool[],
   gatedToolNames: string[],
 ): string | null {
-  const gated = gatedToolNames
-    .map((name) => tools.find((t) => t.name === name))
-    .filter((t): t is AgentTool => Boolean(t))
+  const gated = resolveToolCatalog(tools, gatedToolNames)
   if (gated.length === 0) {
     return null
   }
@@ -613,6 +634,22 @@ function buildGatedCatalog(
       (t) => `- ${t.name}: ${t.description}. Аргументы: ${t.argsExample}`,
     ),
     ...gated.flatMap((t) => DECIDE_TOOL_HINTS[t.name] ?? []),
+  ].join('\n')
+}
+
+function buildAvailableCatalog(
+  tools: AgentTool[],
+  availableToolNames: string[],
+): string | null {
+  const available = resolveToolCatalog(tools, availableToolNames)
+  if (available.length === 0) {
+    return null
+  }
+  return [
+    'Доступные сейчас (на текущем этапе) инструменты — их можно вызывать:',
+    ...available.map(
+      (t) => `- ${t.name}: ${t.description}. Аргументы: ${t.argsExample}`,
+    ),
   ].join('\n')
 }
 
@@ -653,7 +690,7 @@ function buildDecideUser(
       ? ['', 'Учитывай инварианты при выборе действия и не выбирай инструмент с нарушающими их аргументами.']
       : []),
     '',
-    'Ответь ровно одним json-объектом вида {"tool": "имя_инструмента" | null, "args": { ... }}. Без текста до "{" и после "}", без markdown.',
+    'Ответь ровно одним json-объектом вида {"tool": "имя_инструмента" | null, "args": { ... }}. Значение аргумента может быть ссылкой на вывод ранее вызванного инструмента: {"$ref": "<номер>"} или {"$ref": "last"}. Большие тексты передавай ссылкой, а не копированием. Без текста до "{" и после "}", без markdown.',
   ]
   return lines.join('\n')
 }
@@ -679,6 +716,7 @@ function buildFinalizeUser(
   hasProfileBlocks: boolean,
   taskLine: string | null,
   hasInvariantBlocks: boolean,
+  availableCatalog: string | null,
   capabilityCatalog: string | null,
 ): string {
   return [
@@ -688,6 +726,7 @@ function buildFinalizeUser(
     '',
     ...(precedenceLine ? [precedenceLine, ''] : []),
     ...(taskLine ? [taskLine, ''] : []),
+    ...(availableCatalog ? [availableCatalog, ''] : []),
     ...(capabilityCatalog ? [capabilityCatalog, ''] : []),
     ...(hasInvariantBlocks
       ? ['Если решение нарушает инвариант — откажись, укажи INV-<id> и предложи совместимый вариант.', '']
@@ -808,6 +847,14 @@ function formatToolReport(actions: AgentAction[]): string {
   return actions.map(formatActionReport).join('\n\n')
 }
 
+function traceOutcome(outcome: ToolOutcome): ToolOutcome {
+  return {
+    ok: outcome.ok,
+    text: outcome.text,
+    reference: outcome.reference,
+  }
+}
+
 function resolveGuardMessage(verdict: InvariantGuardVerdict): string {
   if (verdict.reason) {
     return verdict.reason
@@ -817,9 +864,60 @@ function resolveGuardMessage(verdict: InvariantGuardVerdict): string {
     : 'Ответ нарушает пользовательский инвариант.'
 }
 
+export type ToolOutput = {
+  id: number
+  tool: string
+  text: string
+  refText?: string
+}
+
+function isToolArgRef(value: unknown): value is ToolArgRef {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return false
+  }
+  const ref = (value as Record<string, unknown>).$ref
+  return typeof ref === 'string' || Array.isArray(ref)
+}
+
+function refValue(ref: string, outputs: ToolOutput[]): string | null {
+  if (ref === 'last') {
+    const output = outputs.at(-1)
+    return output ? output.refText ?? output.text : null
+  }
+  const output = outputs.find((entry) => String(entry.id) === ref)
+  return output ? output.refText ?? output.text : null
+}
+
+export function resolveArgRefs(
+  rawArgs: DecidedToolArgs,
+  outputs: ToolOutput[],
+): { ok: true; args: ToolArgs } | { ok: false; error: string } {
+  const args: ToolArgs = {}
+  for (const [key, value] of Object.entries(rawArgs)) {
+    if (!isToolArgRef(value)) {
+      args[key] = value
+      continue
+    }
+    const refs = Array.isArray(value.$ref) ? value.$ref : [value.$ref]
+    const parts: string[] = []
+    for (const ref of refs) {
+      const resolved = refValue(ref, outputs)
+      if (resolved === null) {
+        return {
+          ok: false,
+          error: `Ссылка $ref "${ref}" не найдена: вывода инструмента с таким номером нет. Передай {"$ref":"<номер>"} или {"$ref":"last"} из отчёта предыдущего инструмента.`,
+        }
+      }
+      parts.push(resolved)
+    }
+    args[key] = parts.join('\n\n')
+  }
+  return { ok: true, args }
+}
+
 function parseDecideJson(content: string): {
   tool: string | null
-  args: ToolArgs
+  args: DecidedToolArgs
 } {
   const stripped = content
     .replace(/^```(?:json)?\s*/i, '')
@@ -846,7 +944,7 @@ function parseDecideJson(content: string): {
       parsed.args &&
       typeof parsed.args === 'object' &&
       !Array.isArray(parsed.args)
-        ? (parsed.args as ToolArgs)
+        ? (parsed.args as DecidedToolArgs)
         : {}
     return { tool, args }
   } catch {
@@ -993,10 +1091,13 @@ export class Agent {
       (taskState !== null &&
         (taskState.stage !== 'execution' || !taskState.approved)) ||
       (this.config.taskStateEnabled === true && taskState === null)
+    const mutatingNames = new Set(
+      tools.filter((tool) => tool.mutating).map((tool) => tool.name),
+    )
     const allowedToolNames = taskPaused
       ? []
       : capabilities.allowedTools.filter(
-          (name) => !(stageMutatingBlocked && isMutatingTool(name)),
+          (name) => !(stageMutatingBlocked && mutatingNames.has(name)),
         )
     const capabilityCatalog = buildGatedCatalog(
       tools,
@@ -1004,6 +1105,7 @@ export class Agent {
         (name) => !allowedToolNames.includes(name),
       ),
     )
+    const availableCatalog = buildAvailableCatalog(tools, allowedToolNames)
     const maxActions = Math.max(
       1,
       this.config.maxActionsPerTurn ?? DEFAULT_MAX_ACTIONS_PER_TURN,
@@ -1056,6 +1158,8 @@ export class Agent {
     const actions: AgentAction[] = []
     const actionInvariantHits: InvariantCode[] = []
     const loopMessages: LlmMessage[] = []
+    const outputs: ToolOutput[] = []
+    const attempted: Array<{ tool: string; args: DecidedToolArgs }> = []
     let actRefusal: string | undefined
     let nudgeUsed = false
     let stoppedByPause = false
@@ -1064,7 +1168,7 @@ export class Agent {
       if (taskPaused) {
         return 'Задача на паузе: инструменты не вызываются. Коротко подтверди паузу и жди пользователя.'
       }
-      if (stageMutatingBlocked && isMutatingTool(tool)) {
+      if (stageMutatingBlocked && mutatingNames.has(tool)) {
         if (!taskState) {
           return 'Состояние задачи недоступно: изменяющие действия запрещены до подтверждения плана.'
         }
@@ -1076,10 +1180,13 @@ export class Agent {
       return `Инструмент ${tool} недоступен для роли ${capabilities.identity.role}.`
     }
 
-    const runAction = async (tool: string, args: ToolArgs): Promise<ToolOutcome> => {
+    const runAction = async (
+      tool: string,
+      rawArgs: DecidedToolArgs,
+    ): Promise<ToolOutcome> => {
       const requestedTool = tools.find((t) => t.name === tool) ?? null
       const blockedByStage =
-        taskPaused || (stageMutatingBlocked && isMutatingTool(tool))
+        taskPaused || (stageMutatingBlocked && mutatingNames.has(tool))
       if (
         !requestedTool ||
         !isPermitted(capabilities, requestedTool) ||
@@ -1090,17 +1197,44 @@ export class Agent {
           text: denialText(tool),
           reference: null,
         }
-        actions.push({ tool, args, outcome: denied })
+        actions.push({ tool, args: {}, outcome: denied })
         actRefusal = denied.text
-        trace.push({ stage: 'act', tool, args, outcome: denied })
+        trace.push({
+          stage: 'act',
+          tool,
+          args: rawArgs,
+          outcome: denied,
+          mutating: requestedTool?.mutating ?? true,
+        })
         return denied
       }
-      let screenedArgs = args
+      const resolved = resolveArgRefs(rawArgs, outputs)
+      if (!resolved.ok) {
+        const denied: ToolOutcome = {
+          ok: false,
+          text: resolved.error,
+          reference: null,
+        }
+        actions.push({ tool, args: {}, outcome: denied })
+        actRefusal = denied.text
+        trace.push({
+          stage: 'act',
+          tool,
+          args: rawArgs,
+          outcome: denied,
+          mutating: requestedTool.mutating ?? true,
+        })
+        return denied
+      }
+      let screenedArgs = resolved.args
       if (requestedTool.screenArgs) {
         try {
-          screenedArgs = await requestedTool.screenArgs(args, capabilities.identity)
+          screenedArgs = await requestedTool.screenArgs(
+            resolved.args,
+            capabilities.identity,
+          )
         } catch {
-          screenedArgs = args
+          screenedArgs = resolved.args
         }
       }
       const invariantCheck = runActionChecks(
@@ -1116,20 +1250,27 @@ export class Agent {
           text: `Действие отклонено: ${invariantCheck.reason}\nПредлагаю совместимый вариант без нарушения инварианта.`,
           reference: null,
         }
-        actions.push({ tool, args, outcome: denied })
+        actions.push({ tool, args: resolved.args, outcome: denied })
         actRefusal = denied.text
         trace.push({
           stage: 'act',
           tool,
-          args,
+          args: rawArgs,
           outcome: denied,
+          mutating: requestedTool.mutating ?? true,
           invariantHits: invariantCheck.hits,
         })
         return denied
       }
-      const outcome = await requestedTool.run(args, capabilities.identity)
-      actions.push({ tool, args, outcome })
-      trace.push({ stage: 'act', tool, args, outcome })
+      const outcome = await requestedTool.run(resolved.args, capabilities.identity)
+      actions.push({ tool, args: resolved.args, outcome })
+      trace.push({
+        stage: 'act',
+        tool,
+        args: rawArgs,
+        outcome: traceOutcome(outcome),
+        mutating: requestedTool.mutating ?? true,
+      })
       if (!outcome.ok) {
         actRefusal = outcome.text
       }
@@ -1156,14 +1297,15 @@ export class Agent {
       if (!decided.tool) {
         break
       }
-      const repeated = actions.some(
-        (action) =>
-          action.tool === decided.tool &&
-          JSON.stringify(action.args) === JSON.stringify(decided.args),
+      const repeated = attempted.some(
+        (entry) =>
+          entry.tool === decided.tool &&
+          JSON.stringify(entry.args) === JSON.stringify(decided.args),
       )
       if (repeated) {
         break
       }
+      attempted.push({ tool: decided.tool, args: decided.args })
       if (this.config.isPaused && (await this.config.isPaused())) {
         stoppedByPause = true
         break
@@ -1172,6 +1314,13 @@ export class Agent {
       if (!outcome.ok) {
         break
       }
+      const output: ToolOutput = {
+        id: outputs.length + 1,
+        tool: decided.tool,
+        text: outcome.text,
+        refText: outcome.refText,
+      }
+      outputs.push(output)
       loopMessages.push({
         role: 'assistant',
         content: JSON.stringify({ tool: decided.tool, args: decided.args }),
@@ -1179,12 +1328,13 @@ export class Agent {
       loopMessages.push({
         role: 'user',
         content: [
-          `ОТЧЁТ ИНСТРУМЕНТА (${decided.tool}):`,
+          `ОТЧЁТ ИНСТРУМЕНТА (${decided.tool}) [output_id=${output.id}]:`,
           outcome.text,
           ...(outcome.reference
             ? [`Код подтверждения: ${outcome.reference}`]
             : []),
           '',
+          `Чтобы передать этот вывод в следующий инструмент, укажи {"$ref": "${output.id}"} или {"$ref": "last"} в нужном аргументе вместо копирования текста.`,
           'Если текущий шаг ещё не завершён — верни следующий инструмент в его рамках. Если шаг выполнен — верни {"tool": null, "args": {}}.',
         ].join('\n'),
       })
@@ -1212,6 +1362,7 @@ export class Agent {
         hasProfileBlocks,
         taskLine,
         hasInvariantBlocks,
+        availableCatalog,
         capabilityCatalog,
       )
       const finalizeReply = await callLLM({

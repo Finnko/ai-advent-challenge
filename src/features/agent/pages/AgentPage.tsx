@@ -320,6 +320,7 @@ export default function AgentPage() {
                     onPause={actions.pauseTask}
                     onResume={actions.resumeTask}
                     onCancel={actions.cancelTask}
+                    onApprove={actions.approveTask}
                   />
                   {taskError && <Alert variant="destructive">{taskError}</Alert>}
 

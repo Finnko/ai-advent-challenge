@@ -1,5 +1,5 @@
 import { createServerFn } from '@tanstack/react-start'
-import { listBranchesDetailed } from '../server/store.server'
+import { listBranchesDetailed } from '../server/store/branches.server'
 import { asObject, requireSessionId } from './validation'
 
 export const listBranches = createServerFn({ method: 'POST' })

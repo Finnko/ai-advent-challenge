@@ -31,6 +31,7 @@ function taskState(overrides: Partial<TaskState> = {}): TaskState {
 
 function act(
   tool: string,
+  mutating = false,
   ok = true,
 ): Extract<AgentTraceStep, { stage: 'act' }> {
   return {
@@ -38,6 +39,7 @@ function act(
     tool,
     args: {},
     outcome: { ok, text: `${tool} выполнен`, reference: ok ? 'BOOK-X' : null },
+    mutating,
   }
 }
 
@@ -50,8 +52,8 @@ function run(
 
 describe('классификация хода', () => {
   it('находит успешное изменяющее действие', () => {
-    expect(hasSuccessfulMutation(run([act('bookMeetingRoom')]))).toBe(true)
-    expect(hasSuccessfulMutation(run([act('bookMeetingRoom', false)]))).toBe(
+    expect(hasSuccessfulMutation(run([act('bookMeetingRoom', true)]))).toBe(true)
+    expect(hasSuccessfulMutation(run([act('bookMeetingRoom', true, false)]))).toBe(
       false,
     )
     expect(hasSuccessfulMutation(run([act('listBookings')]))).toBe(false)
@@ -60,7 +62,7 @@ describe('классификация хода', () => {
   it('находит успешную справочную проверку', () => {
     expect(hasReadonlyVerification(run([act('listBookings')]))).toBe(true)
     expect(hasReadonlyVerification(run([]))).toBe(false)
-    expect(hasReadonlyVerification(run([act('bookMeetingRoom')]))).toBe(false)
+    expect(hasReadonlyVerification(run([act('bookMeetingRoom', true)]))).toBe(false)
   })
 
   it('распознаёт правку по тексту', () => {
@@ -150,7 +152,7 @@ describe('advanceAfterRun', () => {
   it('переводит execution → validation после успешного действия', () => {
     const result = advanceAfterRun(
       taskState({ stage: 'execution' }),
-      run([act('bookMeetingRoom')]),
+      run([act('bookMeetingRoom', true)]),
       TEST_NOW.toISOString(),
     )
     expect(result?.state.stage).toBe('validation')
@@ -172,37 +174,34 @@ describe('advanceAfterRun', () => {
     ).toBeNull()
   })
 
-  it('двигает план на читающем шаге execution', () => {
-    const result = advanceAfterRun(
-      taskState({
-        stage: 'execution',
-        steps: ['Проверить участников', 'Пригласить'],
-        stepIndex: 0,
-        step: 'Проверить участников',
-      }),
-      run([act('listBookings')]),
-      TEST_NOW.toISOString(),
-    )
-    expect(result?.state.stage).toBe('execution')
-    expect(result?.state.stepIndex).toBe(1)
-    expect(result?.event).toMatchObject({
-      kind: 'step',
-      to: 'Пригласить',
-    })
+  it('не двигает план на читающем шаге execution', () => {
+    expect(
+      advanceAfterRun(
+        taskState({
+          stage: 'execution',
+          steps: ['Проверить участников', 'Пригласить'],
+          stepIndex: 0,
+          step: 'Проверить участников',
+        }),
+        run([act('listBookings')]),
+        TEST_NOW.toISOString(),
+      ),
+    ).toBeNull()
   })
 
-  it('переводит execution → validation, когда читающий шаг последний', () => {
-    const result = advanceAfterRun(
-      taskState({
-        stage: 'execution',
-        steps: ['Проверить участников'],
-        stepIndex: 0,
-        step: 'Проверить участников',
-      }),
-      run([act('listBookings')]),
-      TEST_NOW.toISOString(),
-    )
-    expect(result?.state.stage).toBe('validation')
+  it('не завершает execution по читающему шагу без мутации', () => {
+    expect(
+      advanceAfterRun(
+        taskState({
+          stage: 'execution',
+          steps: ['Проверить участников'],
+          stepIndex: 0,
+          step: 'Проверить участников',
+        }),
+        run([act('listBookings')]),
+        TEST_NOW.toISOString(),
+      ),
+    ).toBeNull()
   })
 
   it('переводит validation → done после успешной проверки', () => {
@@ -239,7 +238,7 @@ describe('advanceAfterRun', () => {
     expect(
       advanceAfterRun(
         taskState({ stage: 'validation' }),
-        run([act('bookMeetingRoom')]),
+        run([act('bookMeetingRoom', true)]),
         TEST_NOW.toISOString(),
       ),
     ).toBeNull()
@@ -249,14 +248,14 @@ describe('advanceAfterRun', () => {
     expect(
       advanceAfterRun(
         taskState({ stage: 'paused' }),
-        run([act('bookMeetingRoom')]),
+        run([act('bookMeetingRoom', true)]),
         TEST_NOW.toISOString(),
       ),
     ).toBeNull()
     expect(
       advanceAfterRun(
         taskState({ stage: 'execution' }),
-        run([act('bookMeetingRoom')], true),
+        run([act('bookMeetingRoom', true)], true),
         TEST_NOW.toISOString(),
       ),
     ).toBeNull()
@@ -295,21 +294,24 @@ describe('advanceStep', () => {
 })
 
 describe('advanceAfterRun с планом', () => {
-  it('после действия двигает шаг', () => {
+  it('после мутации переводит execution → validation, не двигая шаг', () => {
     const result = advanceAfterRun(
       taskState({ steps: ['a', 'b'], stepIndex: 0, step: 'a' }),
-      run([act('bookMeetingRoom')]),
+      run([act('bookMeetingRoom', true)]),
       TEST_NOW.toISOString(),
     )
-    expect(result?.state.stage).toBe('execution')
-    expect(result?.state.stepIndex).toBe(1)
-    expect(result?.event).toMatchObject({ kind: 'step', to: 'b' })
+    expect(result?.state.stage).toBe('validation')
+    expect(result?.event).toMatchObject({
+      kind: 'transition',
+      from: 'execution',
+      to: 'validation',
+    })
   })
 
   it('на последнем шаге переводит execution → validation', () => {
     const result = advanceAfterRun(
       taskState({ steps: ['a'], stepIndex: 0, step: 'a' }),
-      run([act('bookMeetingRoom')]),
+      run([act('bookMeetingRoom', true)]),
       TEST_NOW.toISOString(),
     )
     expect(result?.state.stage).toBe('validation')

@@ -1,12 +1,9 @@
+import { round1 } from './round.ts'
 import type {
   RangeStats,
   SummaryValue,
   WeatherObservation,
 } from './types.ts'
-
-function round1(value: number): number {
-  return Math.round(value * 10) / 10
-}
 
 function stats(values: number[]): RangeStats | null {
   if (values.length === 0) {

@@ -1,4 +1,5 @@
 import { queryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { approveTask } from '../functions/approve-task.functions'
 import { cancelTask } from '../functions/cancel-task.functions'
 import { getTaskState } from '../functions/get-task-state.functions'
 import { pauseTask } from '../functions/pause-task.functions'
@@ -46,5 +47,13 @@ export function useCancelTask() {
   return useMutation({
     onSuccess: (_result, sessionId) => invalidateTask(queryClient, sessionId),
     mutationFn: (sessionId: number) => cancelTask({ data: { sessionId } }),
+  })
+}
+
+export function useApproveTask() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    onSuccess: (_result, sessionId) => invalidateTask(queryClient, sessionId),
+    mutationFn: (sessionId: number) => approveTask({ data: { sessionId } }),
   })
 }

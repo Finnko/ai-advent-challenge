@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
-type Store = typeof import('../server/store.server')
+type Store = typeof import('../server/store/sessions.server') &
+  typeof import('../server/store/profiles.server')
 
 let tempDir: string
 let store: Store
@@ -14,7 +15,10 @@ beforeAll(async () => {
   await writeFile(dbPath, '')
   process.env.AGENT_DB_PATH = dbPath
   vi.resetModules()
-  store = await import('../server/store.server')
+  store = {
+    ...(await import('../server/store/sessions.server')),
+    ...(await import('../server/store/profiles.server')),
+  }
 })
 
 afterAll(async () => {
