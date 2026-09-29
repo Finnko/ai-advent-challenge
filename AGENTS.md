@@ -1,13 +1,16 @@
 # Project: AI Advent Challenge
 
-Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 17 (`feature/day17`).
-Days 13–17 extend the unified `/agent` workspace with task state, invariants and MCP.
+Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 21 (`feature/day21`).
+Days 13–20 extend the unified `/agent` workspace with task state, invariants and MCP; Day 21 adds the
+`/rag` document-index feature.
 
 ## Where to read more
 
 - `src/features/agent/README.md` — mechanics of the agent feature: turn execution, tools, task state
   machine, invariants, context strategies, memory, profile, persistence and MCP, plus porting notes.
   Read it before editing any of those.
+- `src/features/rag/README.md` — document indexing: corpus source, chunking strategies, embeddings,
+  SQLite index, retrieval and the strategy comparison. Read it before editing any of those.
 - `CONTEXT.md` — domain vocabulary (Ход, Задача, Этап, Инвариант, …).
 - `README.md` — day-by-day log of the challenge.
 
@@ -17,8 +20,9 @@ Days 13–17 extend the unified `/agent` workspace with task state, invariants a
 - **Tailwind v4** via `@tailwindcss/vite`. Tokens/theme (`data-theme`, light/dark) in `src/styles.css`.
 - Styling: bare Tailwind + semantic tokens (`.demo-*`/`.island-*` kit). Slate palette + indigo accents;
   `--positive`/`--danger` reserved for meaning. Add a component library only when asked.
-- **MCP SDK** (`@modelcontextprotocol/sdk` + `zod`) is the one allowed non-LLM SDK; it lives only in the
-  MCP server/client modules. The LLM transport stays raw `fetch`.
+- **SDKs**: keep the LLM transport on raw `fetch`; `@modelcontextprotocol/sdk` + `zod` live only in the
+  MCP server/client modules; `@huggingface/transformers` (local ONNX embeddings) lives only in the RAG
+  feature's `server/embedder.server.ts`. No other non-LLM SDKs without a deliberate decision.
 
 ## Layout
 
@@ -33,9 +37,15 @@ Days 13–17 extend the unified `/agent` workspace with task state, invariants a
   `data/` (client-safe data), `components/`, `tests/`.
 - `src/lib/` — shared: `llm.ts`/`llm.server.ts` (transport), `functions/*.functions.ts` (Days 1–5 server
   fns + shared `validation.ts`), `day2.ts`…`day5.ts`, `days.ts` (sidebar), `utils.ts` (`cn`).
+- `src/features/rag/` — the document-index feature, self-contained for porting:
+  `pages/` (public surface), `api/` (react-query hooks), `functions/` (`createServerFn`),
+  `server/` (`corpus`, `embedder`, `index-store`, `indexing`, `retrieval`, `comparison`, `rag`),
+  `domain/` (isomorphic: `chunking/`, `wikipedia`, `embedder`, `corpus`, `metrics`, `types`),
+  `data/` (cities, eval queries, labels), `components/`, `tests/`.
 - `src/components/` — app shell (`Header`, `Sidebar`, `Chat`) and shared `ui/Tabs.tsx`.
 - `src/routes/` — thin route wrappers. The unified `/agent` renders `pages/AgentPage`; the old
-  `/agent-strategies|memory|profile` routes are `beforeLoad` redirect stubs to `/agent`.
+  `/agent-strategies|memory|profile` routes are `beforeLoad` redirect stubs to `/agent`; `/rag` renders
+  `pages/RagPage`.
 
 ## Hard rules
 
@@ -66,12 +76,13 @@ Days 13–17 extend the unified `/agent` workspace with task state, invariants a
   `server/mcp-registry.server.ts` via `AGENT_MCP_DEMO_ENTRY`/`AGENT_MCP_JOBS_ENTRY` → `dist` → dev source.
 - **Conventions**: write no comments unless asked. Extract a decision into a small named function with
   early returns instead of nested ternaries or long `if/else if` ladders. Respond one chunk at a time
-  (no streaming yet; the UI shows a 3-dots animation). Offline tests live in `src/**/*.test.ts`
-  (Vitest, node env; the agent testkit is an in-memory `AgentStore`); they stay offline by default
-  through injection (e.g. `WeatherSource`, temp sqlite), and real-network tests run only under
-  `RUN_NETWORK_TESTS=1`. `npm run test` must stay green. Out of scope: streaming, a real auth/backend
-  for `people` (a seeded mock today). Work on `feature/dayN` branches; commit only when asked.
-  Deployment lives in `deploy/` (systemd + timer, Tailscale-only).
+  (no streaming yet; the UI shows a 3-dots animation). Tests live in `src/**/*.test.ts` (Vitest, node
+  env; the agent testkit is an in-memory `AgentStore`, the RAG testkit is an in-memory corpus + a
+  deterministic hash embedder). Prefer offline tests through injection (e.g. `WeatherSource`,
+  `CorpusSource`, temp sqlite); real-network tests run under `RUN_NETWORK_TESTS=1` and real local-model
+  tests under `RUN_MODEL_TESTS=1`. Out of scope: streaming, a real auth/backend for `people` (a seeded
+  mock today). Work on `feature/dayN` branches; commit only when asked. Deployment lives in `deploy/`
+  (systemd + timer, Tailscale-only).
 
 ## Commands
 
@@ -79,7 +90,7 @@ Days 13–17 extend the unified `/agent` workspace with task state, invariants a
 npm run dev             # dev server, http://localhost:3000
 npm run build           # production build (vite build) + MCP bundles (build:mcp)
 npm run build:mcp       # esbuild MCP servers → dist/server/mcp/*.mjs
-npm run test            # vitest run (offline; network tests behind RUN_NETWORK_TESTS=1)
+npm run test            # vitest run (offline; network/model tests behind RUN_NETWORK_TESTS/RUN_MODEL_TESTS)
 npm run lint            # oxlint
 npx tsc --noEmit        # typecheck
 npm run generate-routes # regenerate route tree after adding routes

@@ -20,6 +20,7 @@ import { Route as LayoutDay2RouteImport } from './routes/_layout/day2'
 import { Route as LayoutDay3RouteImport } from './routes/_layout/day3'
 import { Route as LayoutDay4RouteImport } from './routes/_layout/day4'
 import { Route as LayoutDay5RouteImport } from './routes/_layout/day5'
+import { Route as LayoutRagRouteImport } from './routes/_layout/rag'
 import { Route as JobsTickRouteImport } from './routes/jobs.tick'
 
 const LayoutRouteRoute = LayoutRouteRouteImport.update({
@@ -76,6 +77,11 @@ const LayoutDay5Route = LayoutDay5RouteImport.update({
   path: '/day5',
   getParentRoute: () => LayoutRouteRoute,
 } as any)
+const LayoutRagRoute = LayoutRagRouteImport.update({
+  id: '/rag',
+  path: '/rag',
+  getParentRoute: () => LayoutRouteRoute,
+} as any)
 const JobsTickRoute = JobsTickRouteImport.update({
   id: '/jobs/tick',
   path: '/jobs/tick',
@@ -93,6 +99,7 @@ export interface FileRoutesByFullPath {
   '/day3': typeof LayoutDay3Route
   '/day4': typeof LayoutDay4Route
   '/day5': typeof LayoutDay5Route
+  '/rag': typeof LayoutRagRoute
   '/jobs/tick': typeof JobsTickRoute
 }
 export interface FileRoutesByTo {
@@ -105,6 +112,7 @@ export interface FileRoutesByTo {
   '/day3': typeof LayoutDay3Route
   '/day4': typeof LayoutDay4Route
   '/day5': typeof LayoutDay5Route
+  '/rag': typeof LayoutRagRoute
   '/jobs/tick': typeof JobsTickRoute
   '/': typeof LayoutIndexRoute
 }
@@ -120,6 +128,7 @@ export interface FileRoutesById {
   '/_layout/day3': typeof LayoutDay3Route
   '/_layout/day4': typeof LayoutDay4Route
   '/_layout/day5': typeof LayoutDay5Route
+  '/_layout/rag': typeof LayoutRagRoute
   '/jobs/tick': typeof JobsTickRoute
   '/_layout/': typeof LayoutIndexRoute
 }
@@ -136,6 +145,7 @@ export interface FileRouteTypes {
     | '/day3'
     | '/day4'
     | '/day5'
+    | '/rag'
     | '/jobs/tick'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -148,6 +158,7 @@ export interface FileRouteTypes {
     | '/day3'
     | '/day4'
     | '/day5'
+    | '/rag'
     | '/jobs/tick'
     | '/'
   id:
@@ -162,6 +173,7 @@ export interface FileRouteTypes {
     | '/_layout/day3'
     | '/_layout/day4'
     | '/_layout/day5'
+    | '/_layout/rag'
     | '/jobs/tick'
     | '/_layout/'
   fileRoutesById: FileRoutesById
@@ -250,6 +262,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutDay5RouteImport
       parentRoute: typeof LayoutRouteRoute
     }
+    '/_layout/rag': {
+      id: '/_layout/rag'
+      path: '/rag'
+      fullPath: '/rag'
+      preLoaderRoute: typeof LayoutRagRouteImport
+      parentRoute: typeof LayoutRouteRoute
+    }
     '/jobs/tick': {
       id: '/jobs/tick'
       path: '/jobs/tick'
@@ -270,6 +289,7 @@ interface LayoutRouteRouteChildren {
   LayoutDay3Route: typeof LayoutDay3Route
   LayoutDay4Route: typeof LayoutDay4Route
   LayoutDay5Route: typeof LayoutDay5Route
+  LayoutRagRoute: typeof LayoutRagRoute
   LayoutIndexRoute: typeof LayoutIndexRoute
 }
 
@@ -283,6 +303,7 @@ const LayoutRouteRouteChildren: LayoutRouteRouteChildren = {
   LayoutDay3Route: LayoutDay3Route,
   LayoutDay4Route: LayoutDay4Route,
   LayoutDay5Route: LayoutDay5Route,
+  LayoutRagRoute: LayoutRagRoute,
   LayoutIndexRoute: LayoutIndexRoute,
 }
 
