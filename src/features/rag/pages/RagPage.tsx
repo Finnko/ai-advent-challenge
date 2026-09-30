@@ -1,6 +1,8 @@
 import ComparisonPanel from '../components/ComparisonPanel'
 import IndexPanel from '../components/IndexPanel'
 import SearchPanel from '../components/SearchPanel'
+import AnswerPanel from '../components/AnswerPanel'
+import ControlPanel from '../components/ControlPanel'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/Tabs'
 
 export default function RagPage() {
@@ -12,7 +14,7 @@ export default function RagPage() {
         <p className="demo-muted m-0 max-w-4xl text-sm">
           15 статей Википедии о городах России разбиваются на чанки двумя
           стратегиями, считаются эмбеддинги, всё складывается в локальный SQLite.
-          Сравни структуру чанков и качество поиска между стратегиями.
+          Сравни структуру чанков, качество поиска и ответы модели с RAG и без.
         </p>
       </header>
 
@@ -20,6 +22,8 @@ export default function RagPage() {
         <TabsList>
           <TabsTrigger value="index">Индекс</TabsTrigger>
           <TabsTrigger value="search">Поиск</TabsTrigger>
+          <TabsTrigger value="answer">Ответ</TabsTrigger>
+          <TabsTrigger value="control">Контроль</TabsTrigger>
           <TabsTrigger value="compare">Сравнение</TabsTrigger>
         </TabsList>
         <TabsContent value="index">
@@ -27,6 +31,12 @@ export default function RagPage() {
         </TabsContent>
         <TabsContent value="search">
           <SearchPanel />
+        </TabsContent>
+        <TabsContent value="answer">
+          <AnswerPanel />
+        </TabsContent>
+        <TabsContent value="control">
+          <ControlPanel />
         </TabsContent>
         <TabsContent value="compare">
           <ComparisonPanel />

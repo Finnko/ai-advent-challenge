@@ -1,12 +1,29 @@
 import { asObject, requireText } from '@lib/functions/validation'
 import { isChunkingStrategyId } from '../domain/chunking/registry'
-import type { ChunkingStrategyId } from '../domain/types'
+import type { AnswerMode, ChunkingStrategyId } from '../domain/types'
 
 export function requireChunkingStrategy(value: unknown): ChunkingStrategyId {
   if (!isChunkingStrategyId(value)) {
     throw new Error('Неизвестная стратегия чанкинга')
   }
   return value
+}
+
+export function requireAnswerMode(value: unknown): AnswerMode {
+  if (value !== 'rag' && value !== 'baseline') {
+    throw new Error('Неизвестный режим ответа')
+  }
+  return value
+}
+
+export function optionalStringArray(value: unknown): string[] | undefined {
+  if (value === undefined || value === null) {
+    return undefined
+  }
+  if (!Array.isArray(value)) {
+    throw new Error('Ожидался список строк')
+  }
+  return value.map((item) => requireText(item, 'Некорректное значение в списке'))
 }
 
 export function requireQuery(value: unknown): string {

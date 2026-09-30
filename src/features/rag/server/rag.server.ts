@@ -8,6 +8,13 @@ import { createEmbedder, resolveEmbedModelId } from './embedder.server'
 import { buildIndex, type BuildIndexResult } from './indexing.server'
 import { getRagStore, type RagIndexStore } from './index-store.server'
 import { searchChunks } from './retrieval.server'
+import {
+  answerQuestion,
+  defaultAnswerDeps,
+  type AnswerDeps,
+  type AnswerInput,
+  type AnswerResponse,
+} from './answer.server'
 
 export type RagDeps = {
   corpus: CorpusSource
@@ -102,6 +109,16 @@ export async function search(
 
 export async function getCorpus(): Promise<CorpusDocStatus[]> {
   return listCorpusStatus()
+}
+
+export type { AnswerDeps, AnswerInput, AnswerResponse }
+
+export async function answer(
+  input: AnswerInput,
+  deps?: AnswerDeps,
+): Promise<AnswerResponse> {
+  const resolved = deps ?? (await defaultAnswerDeps())
+  return answerQuestion(input, resolved)
 }
 
 export async function listChunksFor(
