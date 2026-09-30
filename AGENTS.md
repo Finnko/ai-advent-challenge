@@ -1,8 +1,9 @@
 # Project: AI Advent Challenge
 
-Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 22 (`feature/day22`).
+Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 23 (`feature/day23`).
 Days 13–20 extend the unified `/agent` workspace with task state, invariants and MCP; Day 21 adds the
-`/rag` document-index feature; Day 22 adds RAG answers with/without retrieval and a control set.
+`/rag` document-index feature; Day 22 adds RAG answers with/without retrieval and a control set; Day 23
+adds a second retrieval stage (cross-encoder reranking + relevance threshold) and query rewrite.
 
 ## Where to read more
 
@@ -10,7 +11,8 @@ Days 13–20 extend the unified `/agent` workspace with task state, invariants a
   machine, invariants, context strategies, memory, profile, persistence and MCP, plus porting notes.
   Read it before editing any of those.
 - `src/features/rag/README.md` — document indexing: corpus source, chunking strategies, embeddings,
-  SQLite index, retrieval and the strategy comparison. Read it before editing any of those.
+  SQLite index, retrieval, reranking/threshold + query rewrite, and the mode comparison. Read it
+  before editing any of those.
 - `CONTEXT.md` — domain vocabulary (Ход, Задача, Этап, Инвариант, …).
 - `README.md` — day-by-day log of the challenge.
 
@@ -21,8 +23,9 @@ Days 13–20 extend the unified `/agent` workspace with task state, invariants a
 - Styling: bare Tailwind + semantic tokens (`.demo-*`/`.island-*` kit). Slate palette + indigo accents;
   `--positive`/`--danger` reserved for meaning. Add a component library only when asked.
 - **SDKs**: keep the LLM transport on raw `fetch`; `@modelcontextprotocol/sdk` + `zod` live only in the
-  MCP server/client modules; `@huggingface/transformers` (local ONNX embeddings) lives only in the RAG
-  feature's `server/embedder.server.ts`. No other non-LLM SDKs without a deliberate decision.
+  MCP server/client modules; `@huggingface/transformers` (local ONNX) lives only in the RAG feature's
+  `server/embedder.server.ts` (bi-encoder embeddings) and `server/reranker.server.ts` (cross-encoder
+  reranker, deliberate Day-23 decision). No other non-LLM SDKs without a deliberate decision.
 
 ## Layout
 
@@ -39,9 +42,10 @@ Days 13–20 extend the unified `/agent` workspace with task state, invariants a
   fns + shared `validation.ts`), `day2.ts`…`day5.ts`, `days.ts` (sidebar), `utils.ts` (`cn`).
 - `src/features/rag/` — the document-index and RAG-answer feature, self-contained for porting:
   `pages/` (public surface), `api/` (react-query hooks), `functions/` (`createServerFn`),
-  `server/` (`corpus`, `embedder`, `index-store`, `indexing`, `retrieval`, `comparison`, `answer`, `rag`),
-  `domain/` (isomorphic: `chunking/`, `wikipedia`, `embedder`, `corpus`, `metrics`, `answer-prompt`,
-  `answer-eval`, `types`),
+  `server/` (`corpus`, `embedder`, `index-store`, `indexing`, `retrieval`, `reranker`, `rewrite`,
+  `answer-llm`, `comparison`, `answer`, `rag`),
+  `domain/` (isomorphic: `chunking/`, `wikipedia`, `embedder`, `reranker`, `pipelines`, `rewrite-prompt`,
+  `corpus`, `metrics`, `answer-prompt`, `answer-eval`, `types`),
   `data/` (cities, eval queries, control questions, labels), `components/`, `tests/`.
 - `src/components/` — app shell (`Header`, `Sidebar`, `Chat`) and shared `ui/Tabs.tsx`.
 - `src/routes/` — thin route wrappers. The unified `/agent` renders `pages/AgentPage`; the old
@@ -87,14 +91,12 @@ Days 13–20 extend the unified `/agent` workspace with task state, invariants a
 
 ## Commands
 
+All scripts live in `package.json`. The non-obvious ones:
+
 ```bash
-npm run dev             # dev server, http://localhost:3000
-npm run build           # production build (vite build) + MCP bundles (build:mcp)
-npm run build:mcp       # esbuild MCP servers → dist/server/mcp/*.mjs
-npm run test            # vitest run (offline; network/model tests behind RUN_NETWORK_TESTS/RUN_MODEL_TESTS)
-npm run lint            # oxlint
-npx tsc --noEmit        # typecheck
-npm run generate-routes # regenerate route tree after adding routes
+npm run typecheck       # tsc --noEmit
+npm run generate-routes # regenerate src/routeTree.gen.ts after adding/renaming routes
+RUN_NETWORK_TESTS=1 RUN_MODEL_TESTS=1 npm run test  # unlock gated network/model tests
 ```
 
 <!-- intent-skills:start -->

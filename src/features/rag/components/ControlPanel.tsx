@@ -1,7 +1,13 @@
-import { useControlRun } from '../api/use-control-run'
-import { STRATEGY_IDS, STRATEGY_LABELS, VERDICT_LABELS } from '../data/rag-ui'
-import type { AnswerVerdict, ChunkingStrategyId } from '../types'
 import { useState } from 'react'
+import { useControlRun } from '../api/use-control-run'
+import {
+  PIPELINE_IDS,
+  PIPELINE_LABELS,
+  STRATEGY_IDS,
+  STRATEGY_LABELS,
+  VERDICT_LABELS,
+} from '../data/rag-ui'
+import type { AnswerVerdict, ChunkingStrategyId, RagPipelineId } from '../types'
 import AnswerCard from './AnswerCard'
 import { Alert } from '@/components/ui/Alert'
 import { Badge } from '@/components/ui/Badge'
@@ -12,20 +18,28 @@ const K_OPTIONS = [3, 5, 10]
 
 const VERDICTS: AnswerVerdict[] = ['correct', 'partial', 'wrong', 'ungrounded']
 
+const DEFAULT_PIPELINES: RagPipelineId[] = ['rag', 'rag+rerank']
+
 function countCorrect(
-  rows: { rag: { verdict: AnswerVerdict | null }; baseline: { verdict: AnswerVerdict | null } }[],
-  key: 'rag' | 'baseline',
+  rows: { results: Record<string, { verdict: AnswerVerdict | null }> }[],
+  key: string,
 ): number {
-  return rows.filter((row) => row[key].verdict === 'correct').length
+  return rows.filter((row) => row.results[key]?.verdict === 'correct').length
 }
 
 export default function ControlPanel() {
   const [strategy, setStrategy] = useState<ChunkingStrategyId>('fixed')
   const [k, setK] = useState(5)
+  const [pipelines, setPipelines] = useState<RagPipelineId[]>(DEFAULT_PIPELINES)
   const run = useControlRun()
 
-  const ragCorrect = countCorrect(run.rows, 'rag')
-  const baselineCorrect = countCorrect(run.rows, 'baseline')
+  const togglePipeline = (id: RagPipelineId) => {
+    setPipelines((current) =>
+      current.includes(id)
+        ? current.filter((value) => value !== id)
+        : [...current, id],
+    )
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -35,9 +49,9 @@ export default function ControlPanel() {
         </CardHeader>
         <CardContent className="mt-3 flex flex-col gap-3">
           <p className="demo-muted m-0 text-xs">
-            Каждый вопрос прогоняется дважды — с RAG и без. Ответ считается
-            верным, если найдены все ожидаемые факты (для RAG — ещё и со
-            ссылкой на ожидаемый источник).
+            Каждый вопрос прогоняется по выбранным режимам и без RAG. Ответ
+            верен, если найдены все ожидаемые факты (для RAG — ещё и со ссылкой
+            на ожидаемый источник).
           </p>
           <div className="flex flex-wrap items-center gap-2">
             {STRATEGY_IDS.map((id) => (
@@ -65,9 +79,22 @@ export default function ControlPanel() {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <span className="demo-muted text-xs">режимы</span>
+            {PIPELINE_IDS.map((id) => (
+              <Button
+                key={id}
+                size="xs"
+                variant={pipelines.includes(id) ? 'default' : 'secondary'}
+                onClick={() => togglePipeline(id)}
+              >
+                {PIPELINE_LABELS[id]}
+              </Button>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
             <Button
-              onClick={() => void run.run({ strategy, k })}
-              disabled={run.running}
+              onClick={() => void run.run({ strategy, k, pipelines })}
+              disabled={run.running || pipelines.length === 0}
             >
               {run.running ? 'Прогоняю…' : 'Прогнать все'}
             </Button>
@@ -92,8 +119,16 @@ export default function ControlPanel() {
           {run.error && <Alert variant="destructive">{run.error}</Alert>}
           {run.rows.length > 0 && (
             <Alert>
-              Верно: RAG {ragCorrect} / {run.rows.length} · без RAG{' '}
-              {baselineCorrect} / {run.rows.length}
+              {pipelines.map((id) => (
+                <span key={id} className="mr-3">
+                  {PIPELINE_LABELS[id]}: {countCorrect(run.rows, id)} /{' '}
+                  {run.rows.length}
+                </span>
+              ))}
+              <span>
+                без RAG: {countCorrect(run.rows, 'baseline')} /{' '}
+                {run.rows.length}
+              </span>
             </Alert>
           )}
         </CardContent>
@@ -116,8 +151,13 @@ export default function ControlPanel() {
             </span>
           </div>
           <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-            <AnswerCard result={row.rag} />
-            <AnswerCard result={row.baseline} />
+            {pipelines.map((id) => {
+              const result = row.results[id]
+              return result ? <AnswerCard key={id} result={result} /> : null
+            })}
+            {row.results.baseline && (
+              <AnswerCard result={row.results.baseline} />
+            )}
           </div>
         </div>
       ))}

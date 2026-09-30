@@ -8,6 +8,10 @@ export function useRagSearch() {
       strategy: 'fixed' | 'structural'
       query: string
       k?: number
+      candidateK?: number
+      rerank?: boolean
+      rewrite?: boolean
+      threshold?: number | null
     }) => searchIndex({ data: input }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['rag', 'index'] })

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { buildAnswerMessages } from '../domain/answer-prompt'
 import { parseCitations } from '../domain/answer-eval'
-import { MODE_LABELS, VERDICT_LABELS } from '../data/rag-ui'
+import { MODE_LABELS, PIPELINE_LABELS, VERDICT_LABELS } from '../data/rag-ui'
 import type { AnswerResult } from '../types'
 import { Badge, type BadgeVariant } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
@@ -37,11 +37,15 @@ export default function AnswerCard({
         chunks: result.sources.map((source) => source.chunk),
       })
     : []
+  const heading =
+    result.pipeline !== null
+      ? PIPELINE_LABELS[result.pipeline]
+      : MODE_LABELS[result.mode]
 
   return (
     <Card className="flex flex-col">
       <CardHeader className="flex flex-row items-center justify-between gap-2">
-        <CardTitle>{title ?? MODE_LABELS[result.mode]}</CardTitle>
+        <CardTitle>{title ?? heading}</CardTitle>
         <div className="flex flex-wrap items-center gap-2">
           {result.verdict && (
             <Badge variant={VERDICT_VARIANT[result.verdict] ?? 'default'}>
@@ -69,7 +73,18 @@ export default function AnswerCard({
               ссылки: {citations.map((n) => `[${n}]`).join(' ')}
             </span>
           )}
+          {result.pipeline !== null && (
+            <Badge variant={result.reranked ? 'success' : 'outline'}>
+              {result.reranked ? 'реранк' : 'без реранка'}
+            </Badge>
+          )}
         </div>
+
+        {result.rewrittenQuery && (
+          <p className="demo-muted m-0 text-xs">
+            Поисковый запрос: {result.rewrittenQuery}
+          </p>
+        )}
 
         {result.sources.length > 0 && (
           <div className="flex flex-col gap-1">
@@ -81,12 +96,18 @@ export default function AnswerCard({
                   className="flex flex-wrap items-center gap-2 rounded-lg border border-[var(--line)] px-3 py-2 text-xs"
                 >
                   <Badge variant="accent">[{index + 1}]</Badge>
-                  <Badge>score {source.score.toFixed(3)}</Badge>
+                  {source.relevance !== undefined ? (
+                    <Badge>rel {source.relevance.toFixed(3)}</Badge>
+                  ) : (
+                    <Badge>score {source.score.toFixed(3)}</Badge>
+                  )}
                   <span className="font-semibold text-[var(--ink)]">
                     {source.chunk.title}
                   </span>
                   {source.chunk.section && (
-                    <span className="demo-muted">раздел: {source.chunk.section}</span>
+                    <span className="demo-muted">
+                      раздел: {source.chunk.section}
+                    </span>
                   )}
                 </div>
               ))}

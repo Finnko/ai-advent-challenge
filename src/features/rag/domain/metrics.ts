@@ -17,6 +17,8 @@ export type RetrievalStats = {
   recallAt3: number
   recallAt5: number
   mrr: number
+  precisionAt5: number
+  ndcgAt5: number
 }
 
 export function dedupeKeys(keys: string[]): string[] {
@@ -96,6 +98,46 @@ export function recallAtK(
   return hits / relevant.length
 }
 
+export function precisionAtK(
+  ranked: string[],
+  relevant: string[],
+  k: number,
+): number {
+  if (k <= 0) {
+    return 0
+  }
+  const top = dedupeKeys(ranked).slice(0, k)
+  const relevantSet = new Set(relevant)
+  let hits = 0
+  for (const key of top) {
+    if (relevantSet.has(key)) {
+      hits += 1
+    }
+  }
+  return hits / k
+}
+
+export function ndcgAtK(
+  ranked: string[],
+  relevant: string[],
+  k: number,
+): number {
+  const relevantSet = new Set(relevant)
+  const top = dedupeKeys(ranked).slice(0, k)
+  let dcg = 0
+  top.forEach((key, index) => {
+    if (relevantSet.has(key)) {
+      dcg += 1 / Math.log2(index + 2)
+    }
+  })
+  const idealHits = Math.min(relevantSet.size, k)
+  let idcg = 0
+  for (let index = 0; index < idealHits; index += 1) {
+    idcg += 1 / Math.log2(index + 2)
+  }
+  return idcg === 0 ? 0 : dcg / idcg
+}
+
 export function reciprocalRank(ranked: string[], relevant: string[]): number {
   const relevantSet = new Set(relevant)
   const unique = dedupeKeys(ranked)
@@ -114,16 +156,22 @@ export function retrievalStats(
   const recall3: number[] = []
   const recall5: number[] = []
   const reciprocal: number[] = []
+  const precision5: number[] = []
+  const ndcg5: number[] = []
   for (const query of queries) {
     const ranked = rankedByQuery.get(query.id) ?? []
     recall3.push(recallAtK(ranked, query.relevant, 3))
     recall5.push(recallAtK(ranked, query.relevant, 5))
     reciprocal.push(reciprocalRank(ranked, query.relevant))
+    precision5.push(precisionAtK(ranked, query.relevant, 5))
+    ndcg5.push(ndcgAtK(ranked, query.relevant, 5))
   }
   return {
     queryCount: queries.length,
     recallAt3: mean(recall3),
     recallAt5: mean(recall5),
     mrr: mean(reciprocal),
+    precisionAt5: mean(precision5),
+    ndcgAt5: mean(ndcg5),
   }
 }

@@ -3,10 +3,17 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createHashEmbedder } from '../domain/embedder'
+import { createLexicalReranker } from '../domain/reranker'
 import { CHUNKING_STRATEGY_IDS } from '../domain/chunking/registry'
 import type { CorpusSource } from '../domain/corpus'
-import { compareStrategies, evaluateStrategy } from '../server/comparison.server'
-import { createRagStore, type RagIndexStore } from '../server/index-store.server'
+import {
+  compareStrategies,
+  evaluateStrategy,
+} from '../server/comparison.server'
+import {
+  createRagStore,
+  type RagIndexStore,
+} from '../server/index-store.server'
 import { buildIndex } from '../server/indexing.server'
 import { searchChunks } from '../server/retrieval.server'
 import { createFixtureCorpus, makeDoc, SAMPLE_WIKI } from './rag-testkit'
@@ -60,8 +67,18 @@ describe('indexing pipeline', () => {
     const store = await makeStore()
     const corpus = createFixtureCorpus(DOCS)
     const embedder = createHashEmbedder(128)
-    const first = await buildIndex({ strategy: 'fixed', corpus, embedder, store })
-    const second = await buildIndex({ strategy: 'fixed', corpus, embedder, store })
+    const first = await buildIndex({
+      strategy: 'fixed',
+      corpus,
+      embedder,
+      store,
+    })
+    const second = await buildIndex({
+      strategy: 'fixed',
+      corpus,
+      embedder,
+      store,
+    })
     expect(store.countChunks('fixed')).toBe(second.chunks)
     expect(first.chunks).toBe(second.chunks)
     store.close()
@@ -77,7 +94,11 @@ describe('indexing pipeline', () => {
     let maxInFlight = 0
     const corpus: CorpusSource = {
       async list() {
-        return docs.map((doc) => ({ id: doc.id, title: doc.title, source: doc.source }))
+        return docs.map((doc) => ({
+          id: doc.id,
+          title: doc.title,
+          source: doc.source,
+        }))
       },
       async load(ref) {
         inFlight += 1
@@ -141,6 +162,37 @@ describe('comparison', () => {
     for (const entry of comparison.strategies) {
       expect(entry.structural.chunkCount).toBeGreaterThan(0)
       expect(entry.retrieval.queryCount).toBeGreaterThan(0)
+      expect(entry.pipelines.map((item) => item.pipeline)).toEqual([
+        'rag',
+        'rag+rerank',
+      ])
+    }
+    store.close()
+  })
+
+  it('compares rewrite pipelines when requested', async () => {
+    const store = await makeStore()
+    const corpus = createFixtureCorpus(DOCS)
+    const embedder = createHashEmbedder(256)
+    for (const strategy of CHUNKING_STRATEGY_IDS) {
+      await buildIndex({ strategy, corpus, embedder, store })
+    }
+
+    const comparison = await compareStrategies({
+      embedder,
+      store,
+      includeRewrite: true,
+      rewriter: async (question) => question,
+      reranker: createLexicalReranker(),
+    })
+    expect(comparison.includeRewrite).toBe(true)
+    for (const entry of comparison.strategies) {
+      expect(entry.pipelines.map((item) => item.pipeline)).toEqual([
+        'rag',
+        'rag+rerank',
+        'rag+rewrite',
+        'rag+rewrite+rerank',
+      ])
     }
     store.close()
   })

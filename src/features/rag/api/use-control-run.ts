@@ -2,12 +2,11 @@ import { useState } from 'react'
 import { CONTROL_QUESTIONS } from '../data/control-questions'
 import type { ControlQuestion } from '../data/control-questions'
 import { answerQuestionFn } from '../functions/answer.functions'
-import type { AnswerResult, ChunkingStrategyId } from '../types'
+import type { AnswerResult, ChunkingStrategyId, RagPipelineId } from '../types'
 
 export type ControlRunRow = {
   question: ControlQuestion
-  rag: AnswerResult
-  baseline: AnswerResult
+  results: Record<string, AnswerResult>
 }
 
 export type ControlRunState = {
@@ -29,7 +28,11 @@ const INITIAL: ControlRunState = {
 export function useControlRun() {
   const [state, setState] = useState<ControlRunState>(INITIAL)
 
-  const run = async (input: { strategy: ChunkingStrategyId; k: number }) => {
+  const run = async (input: {
+    strategy: ChunkingStrategyId
+    k: number
+    pipelines: RagPipelineId[]
+  }) => {
     setState({ ...INITIAL, running: true })
     const rows: ControlRunRow[] = []
     for (let index = 0; index < CONTROL_QUESTIONS.length; index += 1) {
@@ -42,11 +45,16 @@ export function useControlRun() {
           expected: question.expected,
           expectedSources: question.sources,
         }
-        const rag = await answerQuestionFn({ data: { ...shared, mode: 'rag' } })
-        const baseline = await answerQuestionFn({
+        const results: Record<string, AnswerResult> = {}
+        results.baseline = await answerQuestionFn({
           data: { ...shared, mode: 'baseline' },
         })
-        rows.push({ question, rag, baseline })
+        for (const pipeline of input.pipelines) {
+          results[pipeline] = await answerQuestionFn({
+            data: { ...shared, mode: 'rag', pipeline },
+          })
+        }
+        rows.push({ question, results })
         setState({
           running: true,
           completed: index + 1,

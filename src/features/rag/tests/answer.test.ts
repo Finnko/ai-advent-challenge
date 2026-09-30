@@ -4,9 +4,14 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createHashEmbedder } from '../domain/embedder'
 import type { PromptMessage } from '../domain/answer-prompt'
+import { createLexicalReranker } from '../domain/reranker'
+import type { Rewriter } from '../domain/rewrite-prompt'
 import { answerQuestion, type AnswerLlm } from '../server/answer.server'
 import { buildIndex } from '../server/indexing.server'
-import { createRagStore, type RagIndexStore } from '../server/index-store.server'
+import {
+  createRagStore,
+  type RagIndexStore,
+} from '../server/index-store.server'
 import { createFixtureCorpus, makeDoc, SAMPLE_WIKI } from './rag-testkit'
 
 let cleanup: (() => Promise<void>) | null = null
@@ -104,6 +109,71 @@ describe('answerQuestion', () => {
     expect(result.verdict).toBe('correct')
     expect(calls[0][1].content).toContain('Фрагменты документов')
     expect(calls[0][1].content).toContain('[1] Казань')
+    store.close()
+  })
+
+  it('applies the rerank pipeline and reports it', async () => {
+    const store = await makeStore()
+    const { llm } = createFakeLlm('Казань — столица Татарстана [1].')
+    const embedder = createHashEmbedder(256)
+    await buildIndex({
+      strategy: 'fixed',
+      corpus: createFixtureCorpus(DOCS),
+      embedder,
+      store,
+    })
+
+    const result = await answerQuestion(
+      {
+        mode: 'rag',
+        strategy: 'fixed',
+        query: 'столица Татарстана кремль Кул-Шариф',
+        k: 3,
+        pipeline: 'rag+rerank',
+      },
+      {
+        embedder,
+        store,
+        llm,
+        reranker: createLexicalReranker(),
+        threshold: 0.5,
+      },
+    )
+
+    expect(result.pipeline).toBe('rag+rerank')
+    expect(result.reranked).toBe(true)
+    expect(result.sources.length).toBeGreaterThan(0)
+    expect(result.sources[0].relevance).toBeDefined()
+    store.close()
+  })
+
+  it('uses the rewriter for the rag+rewrite pipeline', async () => {
+    const store = await makeStore()
+    const { llm } = createFakeLlm('Ответ [1].')
+    const embedder = createHashEmbedder(256)
+    await buildIndex({
+      strategy: 'fixed',
+      corpus: createFixtureCorpus(DOCS),
+      embedder,
+      store,
+    })
+    const rewriter: Rewriter = async () => 'столица Татарстана кремль'
+
+    const result = await answerQuestion(
+      {
+        mode: 'rag',
+        strategy: 'fixed',
+        query: 'где кремль и Кул-Шариф',
+        k: 3,
+        pipeline: 'rag+rewrite',
+      },
+      { embedder, store, llm, rewriter },
+    )
+
+    expect(result.pipeline).toBe('rag+rewrite')
+    expect(result.rewrittenQuery).toBe('столица Татарстана кремль')
+    expect(result.embeddingQuery).toBe('столица Татарстана кремль')
+    expect(result.reranked).toBe(false)
     store.close()
   })
 
