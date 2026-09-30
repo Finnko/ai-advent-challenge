@@ -15,7 +15,9 @@
     "test:watch": "vitest",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
-    "format": "prettier --write ."
+    "typecheck": "tsc --noEmit",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "dependencies": {
     "@huggingface/transformers": "^4.3.0",
