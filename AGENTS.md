@@ -1,8 +1,8 @@
 # Project: AI Advent Challenge
 
-Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 21 (`feature/day21`).
+Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 22 (`feature/day22`).
 Days 13–20 extend the unified `/agent` workspace with task state, invariants and MCP; Day 21 adds the
-`/rag` document-index feature.
+`/rag` document-index feature; Day 22 adds RAG answers with/without retrieval and a control set.
 
 ## Where to read more
 
@@ -37,11 +37,12 @@ Days 13–20 extend the unified `/agent` workspace with task state, invariants a
   `data/` (client-safe data), `components/`, `tests/`.
 - `src/lib/` — shared: `llm.ts`/`llm.server.ts` (transport), `functions/*.functions.ts` (Days 1–5 server
   fns + shared `validation.ts`), `day2.ts`…`day5.ts`, `days.ts` (sidebar), `utils.ts` (`cn`).
-- `src/features/rag/` — the document-index feature, self-contained for porting:
+- `src/features/rag/` — the document-index and RAG-answer feature, self-contained for porting:
   `pages/` (public surface), `api/` (react-query hooks), `functions/` (`createServerFn`),
-  `server/` (`corpus`, `embedder`, `index-store`, `indexing`, `retrieval`, `comparison`, `rag`),
-  `domain/` (isomorphic: `chunking/`, `wikipedia`, `embedder`, `corpus`, `metrics`, `types`),
-  `data/` (cities, eval queries, labels), `components/`, `tests/`.
+  `server/` (`corpus`, `embedder`, `index-store`, `indexing`, `retrieval`, `comparison`, `answer`, `rag`),
+  `domain/` (isomorphic: `chunking/`, `wikipedia`, `embedder`, `corpus`, `metrics`, `answer-prompt`,
+  `answer-eval`, `types`),
+  `data/` (cities, eval queries, control questions, labels), `components/`, `tests/`.
 - `src/components/` — app shell (`Header`, `Sidebar`, `Chat`) and shared `ui/Tabs.tsx`.
 - `src/routes/` — thin route wrappers. The unified `/agent` renders `pages/AgentPage`; the old
   `/agent-strategies|memory|profile` routes are `beforeLoad` redirect stubs to `/agent`; `/rag` renders

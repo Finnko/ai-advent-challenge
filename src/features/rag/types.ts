@@ -1,7 +1,23 @@
+import type { ChatUsage } from '@lib/llm'
+import type { AnswerVerdict } from './domain/answer-eval'
 import type { RetrievalStats, StructuralStats } from './domain/metrics'
-import type { Chunk, ChunkingStrategyId, ScoredChunk } from './domain/types'
+import type {
+  AnswerMode,
+  Chunk,
+  ChunkingStrategyId,
+  ScoredChunk,
+} from './domain/types'
 
-export type { Chunk, ChunkingStrategyId, ScoredChunk, RetrievalStats, StructuralStats }
+export type {
+  AnswerMode,
+  AnswerVerdict,
+  Chunk,
+  ChunkingStrategyId,
+  ScoredChunk,
+  RetrievalStats,
+  StructuralStats,
+}
+export type { ControlQuestion } from './data/control-questions'
 
 export type DocumentRecord = {
   id: string
@@ -55,4 +71,23 @@ export type StrategyComparison = {
 export type RagComparison = {
   strategies: StrategyComparison[]
   queryCount: number
+}
+
+export type AnswerResult = {
+  mode: AnswerMode
+  query: string
+  answer: string
+  sources: ScoredChunk[]
+  verdict: AnswerVerdict | null
+  usage: ChatUsage | null
+  latencyMs: number
+}
+
+export type AnswerInput = {
+  mode: AnswerMode
+  strategy: ChunkingStrategyId
+  query: string
+  k?: number
+  expected?: string[]
+  expectedSources?: string[]
 }

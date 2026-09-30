@@ -11,15 +11,18 @@
 
 ```
 src/features/rag/
-  pages/         # RagPage — табы Индекс / Поиск / Сравнение
-  api/           # react-query: use-rag-index, use-rag-search, use-rag-corpus, use-rag-chunks
-  functions/     # createServerFn-адаптеры: build-index, search, get-index-stats, get-comparison,
+  pages/         # RagPage — табы Индекс / Поиск / Ответ / Контроль / Сравнение
+  api/           # react-query: use-rag-index, use-rag-search, use-rag-corpus, use-rag-chunks,
+                 # use-rag-answer, use-control-run
+  functions/     # createServerFn-адаптеры: build-index, search, answer, get-index-stats, get-comparison,
                  # list-corpus, list-chunks + validation.ts
-  server/        # *.server.ts: corpus, embedder, index-store, indexing, retrieval, comparison, rag
+  server/        # *.server.ts: corpus, embedder, index-store, indexing, retrieval, comparison, answer, rag
   domain/        # изоморфно, без env/fetch: chunking/{fixed,structural,registry,windows,types}, corpus,
-                 # embedder (шов + hash-эмбеддер), wikipedia (парсер заголовков), metrics, types
-  data/          # cities (15 городов), corpus (снапшот 15 статей), eval-queries (16 вопросов), rag-ui (подписи)
-  components/    # IndexPanel, SearchPanel, ComparisonPanel, ChunkBrowser
+                 # embedder (шов + hash-эмбеддер), wikipedia (парсер заголовков), metrics, answer-prompt,
+                 # answer-eval, types
+  data/          # cities (15 городов), corpus (снапшот 15 статей), eval-queries (16 вопросов),
+                 # control-questions (10 контрольных), rag-ui (подписи)
+  components/    # IndexPanel, SearchPanel, AnswerPanel, ControlPanel, AnswerCard, ComparisonPanel, ChunkBrowser
   tests/         # офлайн-тесты + gated интеграционные
   types.ts       # wire-типы ответов API
   shared/        # resolveStorePath (пути к БД)
@@ -92,6 +95,32 @@ char_start, char_end, n_tokens, crosses_section, text`.
 - retrieval-метрики на наборе `data/eval-queries.ts` (16 вопросов, релевантность на уровне статьи):
   `recall@3`, `recall@5`, `MRR`.
 
+## Ответ (Day 22)
+
+Вкладка «Ответ» — первый RAG-запрос: `вопрос → поиск релевантных чанков → объединение с вопросом →
+запрос к LLM`. Реализован как **фиксированный пайплайн** (не агентный цикл).
+
+- `server/answer.server.ts` (`answerQuestion`) — глубокий модуль. Шов
+  `AnswerDeps = { embedder, store, llm }`; `AnswerLlm` по умолчанию оборачивает
+  `callCompletions(TIER_ENDPOINTS.medium, …)` (`temperature: 0`, `max_tokens: 700`). Для режима
+  `baseline` поиск пропускается, для `rag` при `countChunks(strategy) === 0` бросается явная ошибка
+  («соберите индекс») — без автосборки и фолбэков.
+- `domain/answer-prompt.ts` — чистая сборка сообщений. Один базовый system для обоих режимов; у RAG
+  добавляется требование опираться только на контекст и ссылаться `[n]`, контекст — нумерованный блок
+  `[n] title — section\n<text>`. У baseline — просьба честно говорить «не знаю».
+- `domain/answer-eval.ts` — детерминированная оценка: `matchExpected` (нормализация регистра,
+  схлопывание разрядов чисел в «1 190 254»), `parseCitations` (`[n]`), `citedTitles`, `verdictFor` →
+  `correct | partial | wrong | ungrounded`. «Без опоры» — RAG-ответ с фактами, но без цитат или со
+  ссылкой мимо ожидаемого источника.
+- `data/control-questions.ts` — 10 контрольных вопросов (`ControlQuestion { query, expected, sources }`).
+  Вопросы — трудные специфики по городу (точные годы, числа переписей, имена), чтобы без RAG модель
+  ошибалась/оговаривалась, а RAG отвечал по статье. Состав — дискриминирующий: подтверждается
+  реальным прогоном обоих режимов, вопросы без разрыва или нерешаемые в корпусе выбрасываются.
+- `functions/answer.functions.ts` — тонкий адаптер (`mode`/`strategy`/`query`/`k` + опциональные
+  `expected`/`expectedSources`); `api/use-rag-answer.ts` — одиночный запрос,
+  `api/use-control-run.ts` — последовательный клиентский прогон 10 вопросов (прогресс, без
+  монолитного server fn на 20 вызовов) и scorecard «RAG N / 10 · без RAG M / 10».
+
 ## Env
 
 | Переменная | По умолчанию | Смысл |
@@ -107,7 +136,9 @@ char_start, char_end, n_tokens, crosses_section, text`.
 ## Тесты
 
 - Офлайн (по умолчанию, `npm run test`): chunking/парсер заголовков, метрики, хеш-эмбеддер,
-  corpus-кеш (фейковый `fetch`), пайплайн индексации/поиска/сравнения (фикстура + temp sqlite).
+  corpus-кеш (фейковый `fetch`), пайплайн индексации/поиска/сравнения (фикстура + temp sqlite),
+  ответы `answer.test.ts` (фейковый `llm`: baseline без контекста, rag с цитатами, ошибка на пустом
+  индексе) и оценка `answer-eval.test.ts` (факты, цитаты, вердикты).
 - Gated: `embedder-integration.test.ts` (реальная модель) — `RUN_MODEL_TESTS=1`;
   `pipeline-integration.test.ts` (реальная статья + реальная модель) — `RUN_MODEL_TESTS=1` и
   `RUN_NETWORK_TESTS=1`.
