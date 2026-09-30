@@ -180,7 +180,9 @@ export async function createRagStore(
     replaceIndex(input) {
       db.exec('BEGIN')
       try {
-        db.prepare('DELETE FROM rag_chunks WHERE strategy = ?').run(input.strategy)
+        db.prepare('DELETE FROM rag_chunks WHERE strategy = ?').run(
+          input.strategy,
+        )
         for (const doc of input.docs) {
           upsertDocument.run(
             doc.id,
@@ -217,10 +219,7 @@ export async function createRagStore(
         }
         upsertMeta.run(`${input.strategy}.built_at`, input.indexedAt)
         upsertMeta.run(`${input.strategy}.model`, input.model)
-        upsertMeta.run(
-          `${input.strategy}.chunks`,
-          String(input.rows.length),
-        )
+        upsertMeta.run(`${input.strategy}.chunks`, String(input.rows.length))
         upsertMeta.run(
           `${input.strategy}.dim`,
           String(input.rows[0]?.embedding.length ?? 0),

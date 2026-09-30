@@ -54,8 +54,12 @@ describe('memory store', () => {
   })
 
   it('хранит рабочую память отдельно по сессиям', async () => {
-    const sessionA = await store.createSession('tok-a', 'A', { memoryEnabled: true })
-    const sessionB = await store.createSession('tok-a', 'B', { memoryEnabled: true })
+    const sessionA = await store.createSession('tok-a', 'A', {
+      memoryEnabled: true,
+    })
+    const sessionB = await store.createSession('tok-a', 'B', {
+      memoryEnabled: true,
+    })
 
     await store.saveWorkingMemory(sessionA, [
       memory('working', 'Цель', 'запуск'),
@@ -103,16 +107,14 @@ describe('memory store', () => {
       memory('working', 'A', '1'),
       memory('working', 'B', '2'),
     ])
-    await store.saveLongTermMemory('tok-del', [
-      memory('long-term', 'A', '1'),
-    ])
+    await store.saveLongTermMemory('tok-del', [memory('long-term', 'A', '1')])
 
     await store.deleteMemoryEntry({ sessionId }, 'working', 'A')
     await store.deleteMemoryEntry({ token: 'tok-del' }, 'long-term', 'A')
 
-    expect((await store.getWorkingMemory(sessionId)).map((e) => e.key)).toEqual([
-      'B',
-    ])
+    expect((await store.getWorkingMemory(sessionId)).map((e) => e.key)).toEqual(
+      ['B'],
+    )
     expect(await store.getLongTermMemory('tok-del')).toEqual([])
   })
 

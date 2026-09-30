@@ -91,7 +91,9 @@ export async function updateSessionTitleIfDefault(
   ).run(trimmed.slice(0, 80), sessionId)
 }
 
-export async function getSession(sessionId: number): Promise<SessionRow | null> {
+export async function getSession(
+  sessionId: number,
+): Promise<SessionRow | null> {
   const db = await getDb()
   const row = db
     .prepare(

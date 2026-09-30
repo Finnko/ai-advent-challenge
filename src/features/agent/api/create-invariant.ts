@@ -6,7 +6,11 @@ import { invariantsQueryOptions } from './get-invariants'
 export function useCreateInvariant() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (data: InvariantInput & { token: string }) => createInvariantFn({ data }),
-    onSuccess: (_result, vars) => queryClient.invalidateQueries({ queryKey: invariantsQueryOptions(vars.token).queryKey }),
+    mutationFn: (data: InvariantInput & { token: string }) =>
+      createInvariantFn({ data }),
+    onSuccess: (_result, vars) =>
+      queryClient.invalidateQueries({
+        queryKey: invariantsQueryOptions(vars.token).queryKey,
+      }),
   })
 }

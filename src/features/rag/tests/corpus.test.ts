@@ -2,7 +2,10 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createWikiCorpusSource, listCorpusStatus } from '../server/corpus.server'
+import {
+  createWikiCorpusSource,
+  listCorpusStatus,
+} from '../server/corpus.server'
 
 let cleanup: (() => Promise<void>) | null = null
 
@@ -31,7 +34,10 @@ function wikiResponse(extract: string): Response {
   } as unknown as Response
 }
 
-function errorResponse(status: number, headers?: Record<string, string>): Response {
+function errorResponse(
+  status: number,
+  headers?: Record<string, string>,
+): Response {
   return {
     ok: false,
     status,
@@ -42,7 +48,9 @@ function errorResponse(status: number, headers?: Record<string, string>): Respon
 describe('wiki corpus source', () => {
   it('fetches once and then serves from cache', async () => {
     const dir = await makeDir()
-    const fetchImpl = vi.fn(async () => wikiResponse('== Раздел ==\nТекст статьи.'))
+    const fetchImpl = vi.fn(async () =>
+      wikiResponse('== Раздел ==\nТекст статьи.'),
+    )
     const corpus = createWikiCorpusSource({
       dir,
       cities: [{ id: 'test', title: 'Тест' }],
@@ -144,14 +152,18 @@ describe('corpus status', () => {
       fetchImpl: (async () => wikiResponse('abcde')) as unknown as typeof fetch,
     }).load({ id: 'test', title: 'Тест', source: 's' })
 
-    const statuses = await listCorpusStatus(dir, [{ id: 'test', title: 'Тест' }])
+    const statuses = await listCorpusStatus(dir, [
+      { id: 'test', title: 'Тест' },
+    ])
     expect(statuses[0].cached).toBe(true)
     expect(statuses[0].charCount).toBe(5)
   })
 
   it('reports bundled snapshots as cached without a cache file', async () => {
     const dir = await makeDir()
-    const statuses = await listCorpusStatus(dir, [{ id: 'voronezh', title: 'Воронеж' }])
+    const statuses = await listCorpusStatus(dir, [
+      { id: 'voronezh', title: 'Воронеж' },
+    ])
     expect(statuses[0].cached).toBe(true)
     expect(statuses[0].charCount).toBeGreaterThan(1000)
   })

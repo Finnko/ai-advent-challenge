@@ -12,7 +12,8 @@ export type SaveMemoryInput = {
   scenario?: string | null
 }
 
-export const saveMemory = (input: SaveMemoryInput) => saveMemoryFn({ data: input })
+export const saveMemory = (input: SaveMemoryInput) =>
+  saveMemoryFn({ data: input })
 
 export function useSaveMemory() {
   const queryClient = useQueryClient()

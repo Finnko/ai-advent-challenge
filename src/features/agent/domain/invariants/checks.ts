@@ -1,6 +1,15 @@
 import type { AgentIdentity, ToolArgs } from '../agent'
-import { clampDuration, normalizeName, pickString, timeToMinutes } from '../agent-tools'
-import { invariantCode, type InvariantCode, type InvariantRecord } from './types'
+import {
+  clampDuration,
+  normalizeName,
+  pickString,
+  timeToMinutes,
+} from '../agent-tools'
+import {
+  invariantCode,
+  type InvariantCode,
+  type InvariantRecord,
+} from './types'
 
 export type InvariantCheckResult = {
   ok: boolean
@@ -16,12 +25,17 @@ const dateDiff = (start: string, end: string) => {
     : null
 }
 
-function hasCheck(invariants: InvariantRecord[], check: InvariantRecord['check']) {
+function hasCheck(
+  invariants: InvariantRecord[],
+  check: InvariantRecord['check'],
+) {
   return invariants.find((record) => record.check === check)
 }
 
 function recommendsForbiddenDatabase(text: string): boolean {
-  return /(?:используем|использовать|предлагаю|предложить|схем\w*|переход\w*|подключ\w*)[^.\n]{0,60}\b(?:postgres(?:ql)?|mysql|mongo(?:db)?)\b|\b(?:postgres(?:ql)?|mysql|mongo(?:db)?)\b[^.\n]{0,60}(?:используем|использовать|предлагаю|предложить|схем\w*|подключ\w*)/.test(text)
+  return /(?:используем|использовать|предлагаю|предложить|схем\w*|переход\w*|подключ\w*)[^.\n]{0,60}\b(?:postgres(?:ql)?|mysql|mongo(?:db)?)\b|\b(?:postgres(?:ql)?|mysql|mongo(?:db)?)\b[^.\n]{0,60}(?:используем|использовать|предлагаю|предложить|схем\w*|подключ\w*)/.test(
+    text,
+  )
 }
 
 function resultForHits(hits: InvariantRecord[]): InvariantCheckResult {
@@ -30,7 +44,9 @@ function resultForHits(hits: InvariantRecord[]): InvariantCheckResult {
     hits: hits.map(invariantCode),
     reason:
       hits.length > 0
-        ? hits.map((record) => `${invariantCode(record)}: ${record.text}`).join('\n')
+        ? hits
+            .map((record) => `${invariantCode(record)}: ${record.text}`)
+            .join('\n')
         : null,
   }
 }
@@ -80,11 +96,18 @@ export function runAnswerChecks(
   const hits: InvariantRecord[] = []
   const lower = answer.toLowerCase()
   const sqlite = hasCheck(invariants, 'sqlite-only')
-  if (sqlite && (recommendsForbiddenDatabase(lower) || /\bprisma\b|использ\w*[^.\n]{0,60}внешн(?:яя|ей|их)\s+бд/.test(lower))) {
+  if (
+    sqlite &&
+    (recommendsForbiddenDatabase(lower) ||
+      /\bprisma\b|использ\w*[^.\n]{0,60}внешн(?:яя|ей|их)\s+бд/.test(lower))
+  ) {
     hits.push(sqlite)
   }
   const secrets = hasCheck(invariants, 'server-secrets')
-  if (secrets && /vite_\w*|import\.meta\.env|ключ\w*\s+в\s+браузер/.test(lower)) {
+  if (
+    secrets &&
+    /vite_\w*|import\.meta\.env|ключ\w*\s+в\s+браузер/.test(lower)
+  ) {
     hits.push(secrets)
   }
   return resultForHits(hits)

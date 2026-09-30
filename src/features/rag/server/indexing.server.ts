@@ -3,7 +3,11 @@ import { resolveChunkingStrategy } from '../domain/chunking/registry'
 import type { CorpusRef, CorpusSource } from '../domain/corpus'
 import type { Embedder } from '../domain/embedder'
 import type { Chunk, ChunkingStrategyId, RawDoc } from '../domain/types'
-import type { DocumentRecord, RagIndexStore, StoredChunk } from './index-store.server'
+import type {
+  DocumentRecord,
+  RagIndexStore,
+  StoredChunk,
+} from './index-store.server'
 
 const DEFAULT_LOAD_CONCURRENCY = 3
 

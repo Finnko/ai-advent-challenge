@@ -62,9 +62,7 @@ export type TurnSession = {
 export type TurnStore = {
   getSession(sessionId: number): Promise<TurnSession | null>
   getActiveBranchTitle(sessionId: number): Promise<string | undefined>
-  loadMessages(
-    sessionId: number,
-  ): Promise<
+  loadMessages(sessionId: number): Promise<
     Array<{
       id: number
       role: 'user' | 'assistant' | 'task'

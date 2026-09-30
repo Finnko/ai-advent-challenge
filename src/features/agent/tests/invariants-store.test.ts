@@ -34,21 +34,31 @@ describe('invariant store', () => {
       check: null,
     })
     expect(await store.getInvariant('other-token', created.id)).toBeNull()
-    expect((await store.listInvariants('tok-custom')).map((item) => item.slug)).toContain('local-rule')
+    expect(
+      (await store.listInvariants('tok-custom')).map((item) => item.slug),
+    ).toContain('local-rule')
   })
 
   it('does not delete pinned rules and keeps their check immutable', async () => {
-    const pinned = (await store.listInvariants('tok-employee-demo')).find((item) => item.slug === 'meeting-end-time')
+    const pinned = (await store.listInvariants('tok-employee-demo')).find(
+      (item) => item.slug === 'meeting-end-time',
+    )
     expect(pinned).toBeDefined()
-    const updated = await store.updateInvariant('tok-employee-demo', pinned!.id, {
-      category: 'business',
-      title: 'Новое название',
-      text: 'Новое описание.',
-      check: null,
-    })
+    const updated = await store.updateInvariant(
+      'tok-employee-demo',
+      pinned!.id,
+      {
+        category: 'business',
+        title: 'Новое название',
+        text: 'Новое описание.',
+        check: null,
+      },
+    )
     expect(updated.check).toBe('meeting-end-time')
     expect(updated.slug).toBe('meeting-end-time')
-    expect(await store.deleteInvariant('tok-employee-demo', pinned!.id)).toBe(false)
+    expect(await store.deleteInvariant('tok-employee-demo', pinned!.id)).toBe(
+      false,
+    )
   })
 
   it('updates custom content without accepting a slug', async () => {
@@ -64,7 +74,11 @@ describe('invariant store', () => {
       text: 'Новое.',
       check: null,
     })
-    expect(updated).toMatchObject({ slug: 'stable-slug', title: 'Новое', text: 'Новое.' })
+    expect(updated).toMatchObject({
+      slug: 'stable-slug',
+      title: 'Новое',
+      text: 'Новое.',
+    })
     expect(await store.deleteInvariant('tok-update', created.id)).toBe(true)
   })
 })

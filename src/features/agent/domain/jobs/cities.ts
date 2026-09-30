@@ -36,11 +36,7 @@ const ALIASES: Record<string, string> = {
 }
 
 function normalize(input: string): string {
-  return input
-    .trim()
-    .toLowerCase()
-    .replace(/[-_]+/g, ' ')
-    .replace(/\s+/g, ' ')
+  return input.trim().toLowerCase().replace(/[-_]+/g, ' ').replace(/\s+/g, ' ')
 }
 
 export function cityNames(): string {
@@ -60,5 +56,8 @@ export function findCity(input: unknown): City | null {
     return null
   }
   const id = ALIASES[key] ?? key
-  return CITIES.find((city) => city.id === id || normalize(city.name) === key) ?? null
+  return (
+    CITIES.find((city) => city.id === id || normalize(city.name) === key) ??
+    null
+  )
 }

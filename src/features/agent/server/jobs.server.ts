@@ -3,7 +3,11 @@ import { runView, scheduleView } from '../domain/jobs/view'
 import { getJobsDb } from '../mcp/jobs/db'
 import { callToolOnServer } from './mcp.server'
 
-export type { JobsOverview, JobRunView, JobScheduleView } from '../domain/jobs/types'
+export type {
+  JobsOverview,
+  JobRunView,
+  JobScheduleView,
+} from '../domain/jobs/types'
 
 export async function listJobsOverview(): Promise<JobsOverview> {
   const store = await getJobsDb()
@@ -12,9 +16,7 @@ export async function listJobsOverview(): Promise<JobsOverview> {
   const runs = store.listRecentRuns(10)
   return {
     schedules: schedules.map((schedule) => scheduleView(store, schedule)),
-    runs: runs.map((run) =>
-      runView(run, byId.get(run.scheduleId)?.city ?? ''),
-    ),
+    runs: runs.map((run) => runView(run, byId.get(run.scheduleId)?.city ?? '')),
   }
 }
 

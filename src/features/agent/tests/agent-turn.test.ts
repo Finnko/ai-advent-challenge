@@ -16,7 +16,11 @@ import { buildMcpAgentTools } from '../domain/mcp/agent-tools'
 import type { McpCallResult, McpToolDescriptor } from '../domain/mcp/types'
 import type { AgentRuntime } from '../server/agent-service.server'
 import { runAgentTurn } from '../server/agent-turn.server'
-import type { TurnDeps, TurnSession, TurnStore } from '../server/agent-turn.server'
+import type {
+  TurnDeps,
+  TurnSession,
+  TurnStore,
+} from '../server/agent-turn.server'
 import { TEST_NOW, createBooking, createFakeStore } from './agent-testkit'
 
 type AppendedMessage = {
@@ -198,7 +202,9 @@ describe('runAgentTurn', () => {
       callLLM: async ({ messages, response_format }) => {
         captured.push(messages)
         return {
-          content: response_format ? '{"tool":null,"args":{}}' : 'Используем PostgreSQL.',
+          content: response_format
+            ? '{"tool":null,"args":{}}'
+            : 'Используем PostgreSQL.',
           usage: null,
           latencyMs: 0,
         }
@@ -212,7 +218,13 @@ describe('runAgentTurn', () => {
 
     expect(result.run.blocked).toBe(true)
     expect(result.run.invariantHits).toEqual(['INV-4'])
-    expect(captured[0].some((message) => message.role === 'system' && message.content.includes('Только SQLite'))).toBe(true)
+    expect(
+      captured[0].some(
+        (message) =>
+          message.role === 'system' &&
+          message.content.includes('Только SQLite'),
+      ),
+    ).toBe(true)
     expect(appended[1]?.run).toBe(result.run)
   })
 
@@ -392,13 +404,13 @@ describe('runAgentTurn', () => {
 
     expect(result.taskState?.stage).toBe('planning')
     expect(getTask()?.previousStage).toBeNull()
-    expect(appended.find((message) => message.role === 'task')?.run).toMatchObject(
-      {
-        kind: 'transition',
-        from: 'paused',
-        to: 'planning',
-      },
-    )
+    expect(
+      appended.find((message) => message.role === 'task')?.run,
+    ).toMatchObject({
+      kind: 'transition',
+      from: 'paused',
+      to: 'planning',
+    })
     expect(
       captured
         .flat()
@@ -468,7 +480,9 @@ describe('runAgentTurn', () => {
     expect(savedTask).toEqual([])
     expect(result.taskState).toBeNull()
     expect(
-      captured.flat().some((message) => message.content.includes('СОСТОЯНИЕ ЗАДАЧИ:')),
+      captured
+        .flat()
+        .some((message) => message.content.includes('СОСТОЯНИЕ ЗАДАЧИ:')),
     ).toBe(false)
   })
 
@@ -614,10 +628,7 @@ describe('runAgentTurn', () => {
       if (name === 'summarize') {
         return { ok: true, text: `СЖАТО: ${String(args.text)}` }
       }
-      writeFileSync(
-        join(dir, `${String(args.name)}.md`),
-        String(args.content),
-      )
+      writeFileSync(join(dir, `${String(args.name)}.md`), String(args.content))
       return { ok: true, text: `Сохранено: ${String(args.name)}.md` }
     }
     const tools = buildMcpAgentTools(descriptors, call)
@@ -1296,7 +1307,8 @@ describe('runAgentTurn', () => {
       kind: 'rejected',
       from: 'planning',
       to: 'execution',
-      reason: 'В плане остались незакрытые пункты — сначала утвердите все пункты.',
+      reason:
+        'В плане остались незакрытые пункты — сначала утвердите все пункты.',
     })
   })
 
@@ -1351,7 +1363,10 @@ describe('runAgentTurn', () => {
           stage: 'execution',
           step: 'Сохранить отчёт',
           steps: ['Сохранить отчёт'],
-          expectedAction: { actor: 'user', description: 'Подтвердить сохранение' },
+          expectedAction: {
+            actor: 'user',
+            description: 'Подтвердить сохранение',
+          },
         },
         usage: null,
       }),

@@ -25,7 +25,9 @@ export function formatInvariantsBlock(
     INVARIANT_BLOCK_TITLE,
     `Текущая роль пользователя: ${ROLE_LABELS[role]} (${role}). Ролевые правила применяй только к этой роли.`,
   ]
-  for (const category of Object.keys(CATEGORY_LABELS) as InvariantRecord['category'][]) {
+  for (const category of Object.keys(
+    CATEGORY_LABELS,
+  ) as InvariantRecord['category'][]) {
     const group = groups.get(category)
     if (!group || group.length === 0) {
       continue

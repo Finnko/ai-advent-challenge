@@ -27,7 +27,11 @@ export default function AssistantMessage({ run }: { run: AgentRunResult }) {
           <VerdictPill key={verdict.judge} verdict={verdict} />
         ))}
         {(run.invariantHits ?? []).map((hit) => (
-          <Badge key={hit} variant="danger" title="Сработала детерминированная проверка инварианта">
+          <Badge
+            key={hit}
+            variant="danger"
+            title="Сработала детерминированная проверка инварианта"
+          >
             {hit}
           </Badge>
         ))}
@@ -99,4 +103,3 @@ export default function AssistantMessage({ run }: { run: AgentRunResult }) {
     </div>
   )
 }
-

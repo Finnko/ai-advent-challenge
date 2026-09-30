@@ -1,9 +1,5 @@
 import { round1 } from './round.ts'
-import type {
-  RangeStats,
-  SummaryValue,
-  WeatherObservation,
-} from './types.ts'
+import type { RangeStats, SummaryValue, WeatherObservation } from './types.ts'
 
 function stats(values: number[]): RangeStats | null {
   if (values.length === 0) {
@@ -41,7 +37,8 @@ export function filterByWindow(
   to: string,
 ): WeatherObservation[] {
   return observations.filter(
-    (observation) => observation.observedAt >= from && observation.observedAt <= to,
+    (observation) =>
+      observation.observedAt >= from && observation.observedAt <= to,
   )
 }
 

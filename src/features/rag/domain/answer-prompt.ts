@@ -18,7 +18,9 @@ export function systemPromptFor(mode: AnswerMode): string {
 
 export function buildContextBlock(chunks: Chunk[]): string {
   const lines = chunks.map((chunk, index) => {
-    const where = chunk.section ? `${chunk.title} — ${chunk.section}` : chunk.title
+    const where = chunk.section
+      ? `${chunk.title} — ${chunk.section}`
+      : chunk.title
     return `[${index + 1}] ${where}\n${chunk.text}`
   })
   return `Фрагменты документов:\n\n${lines.join('\n\n')}`

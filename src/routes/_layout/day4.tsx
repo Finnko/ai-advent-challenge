@@ -18,12 +18,7 @@ import TypingDots from '@/components/TypingDots'
 import TempCard from './-day4/TempCard'
 import CheckPill from './-day4/CheckPill'
 import Inspector from './-day4/Inspector'
-import type {
-  Answer,
-  LastRun,
-  Source,
-  TempState,
-} from './-day4/types'
+import type { Answer, LastRun, Source, TempState } from './-day4/types'
 
 export const Route = createFileRoute('/_layout/day4')({ component: Day4 })
 

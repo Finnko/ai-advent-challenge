@@ -74,9 +74,7 @@ function coerceCandidate(entry: unknown): MemoryCandidate | null {
   }
   const rawLayer = record.layer
   const layer =
-    typeof rawLayer === 'string' && isMemoryLayer(rawLayer)
-      ? rawLayer
-      : null
+    typeof rawLayer === 'string' && isMemoryLayer(rawLayer) ? rawLayer : null
   return { layer, key, value: value.trim() }
 }
 

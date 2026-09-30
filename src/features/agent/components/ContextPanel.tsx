@@ -13,8 +13,8 @@ export default function ContextPanel({ note, onClear }: ContextPanelProps) {
         <p className="island-kicker m-0 text-[10px]">{note.label}</p>
         <p className="demo-muted m-0 text-[10px]">
           покрывает {note.messages} сообщ.
-          {note.throughMessageId ? ` до #${note.throughMessageId}` : ''} · в запрос
-          уходит вместо полной истории
+          {note.throughMessageId ? ` до #${note.throughMessageId}` : ''} · в
+          запрос уходит вместо полной истории
         </p>
       </div>
       <p className="m-0 mt-1 whitespace-pre-wrap text-xs text-[var(--ink-soft)]">

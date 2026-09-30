@@ -10,9 +10,7 @@ export default function TokenChip({
   note?: string
 }) {
   return (
-    <Badge
-      title={note ? `${label}: ${value} · ${note}` : `${label}: ${value}`}
-    >
+    <Badge title={note ? `${label}: ${value} · ${note}` : `${label}: ${value}`}>
       <span className="text-[var(--ink-muted)]">{label}</span>{' '}
       <span className="font-bold text-[var(--ink)]">{value}</span>
       {note && <span className="text-[var(--ink-muted)]"> · {note}</span>}

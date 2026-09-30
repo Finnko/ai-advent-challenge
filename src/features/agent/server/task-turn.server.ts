@@ -192,7 +192,8 @@ export async function resolveTaskState(
     rejection = {
       from: 'planning',
       to: 'execution',
-      reason: 'В плане остались незакрытые пункты — сначала утвердите все пункты.',
+      reason:
+        'В плане остались незакрытые пункты — сначала утвердите все пункты.',
     }
     analysis = { ...analysis, stage: 'planning' }
   }
@@ -252,7 +253,13 @@ export async function beginTaskTurn(
       if (event) {
         await store.appendMessage(input.sessionId, 'task', '', event)
       }
-      return { halt: { run: silentRun(cancelled), auxUsage: null, taskState: cancelled } }
+      return {
+        halt: {
+          run: silentRun(cancelled),
+          auxUsage: null,
+          taskState: cancelled,
+        },
+      }
     }
   }
 
@@ -268,7 +275,9 @@ export async function beginTaskTurn(
       }
     } else {
       await store.appendMessage(input.sessionId, 'user', input.user)
-      return { halt: { run: silentRun(started), auxUsage: null, taskState: started } }
+      return {
+        halt: { run: silentRun(started), auxUsage: null, taskState: started },
+      }
     }
   }
 
@@ -284,7 +293,9 @@ export function resolveCorrection(
     return null
   }
   const correction = advanceToExecution(state, at)
-  return correction ? { state: correction.state, event: correction.event } : null
+  return correction
+    ? { state: correction.state, event: correction.event }
+    : null
 }
 
 export type TaskCompletion = {

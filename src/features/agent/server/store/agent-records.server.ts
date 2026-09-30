@@ -162,13 +162,21 @@ export function createAgentStore(): AgentStore {
            WHERE employee_name = ? AND status = 'pending' AND (? IS NULL OR reference = ?)
            ORDER BY id DESC LIMIT 1`,
         )
-        .all(employeeName, reference ?? null, reference ?? null) as VacationRow[]
+        .all(
+          employeeName,
+          reference ?? null,
+          reference ?? null,
+        ) as VacationRow[]
       return rows.length > 0 ? vacationFromRow(rows[0]) : null
     },
-    async setVacationStatus(reference: string, status: 'cancelled' | 'rejected', approverName?: string) {
+    async setVacationStatus(
+      reference: string,
+      status: 'cancelled' | 'rejected',
+      approverName?: string,
+    ) {
       const db = await getDb()
       db.prepare(
-        'UPDATE vacations SET status = ?, approver_name = COALESCE(?, approver_name) WHERE reference = ? AND status = \'pending\'',
+        "UPDATE vacations SET status = ?, approver_name = COALESCE(?, approver_name) WHERE reference = ? AND status = 'pending'",
       ).run(status, approverName ?? null, reference)
     },
     async insertBooking(record: BookingRecord) {
@@ -269,7 +277,12 @@ export function createAgentStore(): AgentStore {
         'DELETE FROM bookings WHERE room = ? AND date = ? AND time = ?',
       ).run(room, date, time)
     },
-    async updateBooking(room: string, date: string, time: string, patch: { title?: string; durationMin?: number }) {
+    async updateBooking(
+      room: string,
+      date: string,
+      time: string,
+      patch: { title?: string; durationMin?: number },
+    ) {
       const db = await getDb()
       const assignments: string[] = []
       const values: (string | number)[] = []
@@ -284,15 +297,32 @@ export function createAgentStore(): AgentStore {
       if (assignments.length === 0) {
         return
       }
-      db.prepare(`UPDATE bookings SET ${assignments.join(', ')} WHERE room = ? AND date = ? AND time = ?`).run(...values, room, date, time)
+      db.prepare(
+        `UPDATE bookings SET ${assignments.join(', ')} WHERE room = ? AND date = ? AND time = ?`,
+      ).run(...values, room, date, time)
     },
-    async findOwnBooking(bookedBy: string, room?: string, date?: string, time?: string) {
+    async findOwnBooking(
+      bookedBy: string,
+      room?: string,
+      date?: string,
+      time?: string,
+    ) {
       const db = await getDb()
-      const rows = db.prepare(
-        `SELECT room, date, time, duration_min, capacity, title, reference, booked_by, participants, created_at
+      const rows = db
+        .prepare(
+          `SELECT room, date, time, duration_min, capacity, title, reference, booked_by, participants, created_at
          FROM bookings WHERE booked_by = ? AND (? IS NULL OR room = ?) AND (? IS NULL OR date = ?) AND (? IS NULL OR time = ?)
          ORDER BY date DESC, time DESC, id DESC LIMIT 1`,
-      ).all(bookedBy, room ?? null, room ?? null, date ?? null, date ?? null, time ?? null, time ?? null) as BookingRow[]
+        )
+        .all(
+          bookedBy,
+          room ?? null,
+          room ?? null,
+          date ?? null,
+          date ?? null,
+          time ?? null,
+          time ?? null,
+        ) as BookingRow[]
       return rows.length > 0 ? bookingFromRow(rows[0]) : null
     },
     async findOverlap(

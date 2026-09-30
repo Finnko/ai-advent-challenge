@@ -47,14 +47,12 @@ export function buildMcpAgentTools(
   descriptors: McpToolDescriptor[],
   call: McpToolCall,
 ): AgentTool[] {
-  return descriptors.map(
-    (descriptor): AgentTool => ({
-      name: `${MCP_TOOL_PREFIX}${descriptor.name}`,
-      description: toolDescription(descriptor),
-      argsExample: formatArgsExample(descriptor.inputSchema),
-      roles: ['employee', 'manager'],
-      mutating: descriptor.mutating,
-      run: async (args) => toOutcome(await call(descriptor.name, args)),
-    }),
-  )
+  return descriptors.map((descriptor): AgentTool => ({
+    name: `${MCP_TOOL_PREFIX}${descriptor.name}`,
+    description: toolDescription(descriptor),
+    argsExample: formatArgsExample(descriptor.inputSchema),
+    roles: ['employee', 'manager'],
+    mutating: descriptor.mutating,
+    run: async (args) => toOutcome(await call(descriptor.name, args)),
+  }))
 }

@@ -54,10 +54,13 @@ export function registerJobsTools(
     'cancel_schedule',
     {
       title: 'Отменить расписание',
-      description:
-        'Отключает расписание по id. Изменяющий инструмент.',
+      description: 'Отключает расписание по id. Изменяющий инструмент.',
       inputSchema: {
-        id: z.number().int().positive().describe('id расписания из list_schedules'),
+        id: z
+          .number()
+          .int()
+          .positive()
+          .describe('id расписания из list_schedules'),
       },
       annotations: { readOnlyHint: false, destructiveHint: true },
     },
@@ -116,7 +119,9 @@ export function registerJobsTools(
         city: z.string().describe(`Город: ${cityNames()}`),
         datetime: z
           .string()
-          .describe('Дата и время в формате ISO 8601 (например 2026-09-24T15:00:00Z)'),
+          .describe(
+            'Дата и время в формате ISO 8601 (например 2026-09-24T15:00:00Z)',
+          ),
       },
       annotations: { readOnlyHint: true },
     },

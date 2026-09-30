@@ -32,9 +32,9 @@ describe('MemoryRouter', () => {
       ],
     })
 
-    expect(entries.find((e) => e.key === 'Предпочтения по отчётам')?.layer).toBe(
-      'long-term',
-    )
+    expect(
+      entries.find((e) => e.key === 'Предпочтения по отчётам')?.layer,
+    ).toBe('long-term')
     expect(entries.find((e) => e.key === 'Цель запуска')?.layer).toBe('working')
   })
 

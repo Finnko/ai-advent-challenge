@@ -44,10 +44,7 @@ function containsWord(text: string, word: string): boolean {
   let pattern = WORD_PATTERN_CACHE.get(word)
   if (!pattern) {
     const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    pattern = new RegExp(
-      `(?:^|[^а-яёa-z])${escaped}(?:[^а-яёa-z]|$)`,
-      'u',
-    )
+    pattern = new RegExp(`(?:^|[^а-яёa-z])${escaped}(?:[^а-яёa-z]|$)`, 'u')
     WORD_PATTERN_CACHE.set(word, pattern)
   }
   return pattern.test(text)
@@ -80,9 +77,7 @@ export function withinOneEdit(a: string, b: string): boolean {
       return first !== -1
     }
     return (
-      second === first + 1 &&
-      a[first] === b[second] &&
-      a[second] === b[first]
+      second === first + 1 && a[first] === b[second] && a[second] === b[first]
     )
   }
   const shorter = la < lb ? a : b

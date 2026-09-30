@@ -16,7 +16,10 @@ describe.skipIf(!runModelTests)('local embedder (real model)', () => {
       'passage',
     )
     const [related] = await embedder.embed(['Столица России — Москва'], 'query')
-    const [unrelated] = await embedder.embed(['Рецепт борща со свёклой'], 'query')
+    const [unrelated] = await embedder.embed(
+      ['Рецепт борща со свёклой'],
+      'query',
+    )
     expect(dot(related, passage)).toBeGreaterThan(dot(unrelated, passage))
   }, 120_000)
 

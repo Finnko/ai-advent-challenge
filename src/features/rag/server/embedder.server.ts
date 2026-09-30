@@ -92,9 +92,7 @@ export function createLocalEmbedder(modelId = resolveEmbedModelId()): Embedder {
         pooling: config.pooling,
         normalize: true,
       })
-      return output
-        .tolist()
-        .map((row) => l2Normalize(Float32Array.from(row)))
+      return output.tolist().map((row) => l2Normalize(Float32Array.from(row)))
     },
   }
 }
@@ -121,7 +119,9 @@ export function createHfApiEmbedder(
         }),
       })
       if (!res.ok) {
-        throw new Error(`Ошибка HF embeddings (${res.status}): ${await res.text()}`)
+        throw new Error(
+          `Ошибка HF embeddings (${res.status}): ${await res.text()}`,
+        )
       }
       const json = (await res.json()) as { data?: { embedding: number[] }[] }
       const rows = json.data ?? []

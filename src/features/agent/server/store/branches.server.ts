@@ -55,7 +55,9 @@ export async function getActiveBranch(
     return null
   }
   const branches = await listBranches(sessionId)
-  return branches.find((branch) => branch.id === session.active_branch_id) ?? null
+  return (
+    branches.find((branch) => branch.id === session.active_branch_id) ?? null
+  )
 }
 
 export async function countMessagesByBranch(

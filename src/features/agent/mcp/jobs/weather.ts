@@ -5,8 +5,7 @@ import type {
 } from '../../domain/jobs/types.ts'
 
 const API_URL = 'https://api.open-meteo.com/v1/forecast'
-const FIELDS =
-  'temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m'
+const FIELDS = 'temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m'
 const REQUEST_TIMEOUT_MS = 8000
 
 type CurrentResponse = {
@@ -50,7 +49,8 @@ function toSample(value: {
   return {
     observedAt: '',
     temperatureC: temperature_2m,
-    humidity: typeof relative_humidity_2m === 'number' ? relative_humidity_2m : 0,
+    humidity:
+      typeof relative_humidity_2m === 'number' ? relative_humidity_2m : 0,
     weatherCode: typeof weather_code === 'number' ? weather_code : 0,
     windSpeedKmh: typeof wind_speed_10m === 'number' ? wind_speed_10m : 0,
   }

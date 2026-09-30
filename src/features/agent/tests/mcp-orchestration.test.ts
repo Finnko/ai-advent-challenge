@@ -1,11 +1,21 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 import { noneStrategy } from '../domain/context/none'
 import type { CallLLM } from '../domain/agent'
 import { buildMcpAgentTools } from '../domain/mcp/agent-tools'
-import type { JsonValue, McpCallResult, McpToolDescriptor } from '../domain/mcp/types'
+import type {
+  JsonValue,
+  McpCallResult,
+  McpToolDescriptor,
+} from '../domain/mcp/types'
 import { executeAgent } from '../server/agent-service.server'
 import type { AgentRuntime } from '../server/agent-service.server'
 import {
@@ -33,7 +43,9 @@ function descriptor(
 const DESCRIPTORS: McpToolDescriptor[] = [
   descriptor('db_overview', 'agent-mcp-demo', {}),
   descriptor('exchange_rate', 'agent-mcp-market', { base: { type: 'string' } }),
-  descriptor('get_weather_report', 'agent-mcp-jobs', { city: { type: 'string' } }),
+  descriptor('get_weather_report', 'agent-mcp-jobs', {
+    city: { type: 'string' },
+  }),
   descriptor('search', 'agent-mcp-research', { query: { type: 'string' } }),
   descriptor('summarize', 'agent-mcp-research', {
     text: { type: 'string' },
@@ -141,7 +153,10 @@ describe('MCP orchestration across servers', () => {
     const tools = buildMcpAgentTools(DESCRIPTORS, call)
     const steps = [
       () => ({ tool: 'mcp_db_overview', args: {} }),
-      () => ({ tool: 'mcp_exchange_rate', args: { base: 'EUR', quote: 'USD' } }),
+      () => ({
+        tool: 'mcp_exchange_rate',
+        args: { base: 'EUR', quote: 'USD' },
+      }),
       () => ({
         tool: 'mcp_get_weather_report',
         args: { city: 'Москва' },
@@ -176,8 +191,7 @@ describe('MCP orchestration across servers', () => {
     const execution = await executeAgent(
       {
         capabilities: createCapabilities(createIdentity(), []),
-        user:
-          'Собери мини-отчёт по евро/доллар: новости, курс, погода, и сохрани в файл.',
+        user: 'Собери мини-отчёт по евро/доллар: новости, курс, погода, и сохрани в файл.',
         strategy: noneStrategy,
         rows: [],
       },

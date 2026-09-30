@@ -24,7 +24,10 @@ function analysis(overrides: Partial<TaskAnalysis> = {}): TaskAnalysis {
   }
 }
 
-function state(stage: TaskStage, overrides: Partial<TaskState> = {}): TaskState {
+function state(
+  stage: TaskStage,
+  overrides: Partial<TaskState> = {},
+): TaskState {
   return {
     title: 'Задача',
     stage,
@@ -148,9 +151,9 @@ describe('task state machine', () => {
   })
 
   it('первая задача всегда создаётся в planning', () => {
-    expect(
-      createTaskState(analysis({ stage: 'execution' }), AT).stage,
-    ).toBe('planning')
+    expect(createTaskState(analysis({ stage: 'execution' }), AT).stage).toBe(
+      'planning',
+    )
     expect(createTaskState(analysis({ stage: 'done' }), AT).stage).toBe(
       'planning',
     )
@@ -176,7 +179,11 @@ describe('task state machine', () => {
   })
 
   it('ставит на паузу с любой активной стадии и запоминает этап', () => {
-    for (const stage of ['planning', 'execution', 'validation'] as TaskStage[]) {
+    for (const stage of [
+      'planning',
+      'execution',
+      'validation',
+    ] as TaskStage[]) {
       const paused = pauseTask(state(stage), AT)
       expect(paused.stage).toBe('paused')
       expect(paused.previousStage).toBe(stage)
@@ -213,7 +220,10 @@ describe('task state machine', () => {
   })
 
   it('отменяет из паузы и отказывается отменять терминальные', () => {
-    const cancelled = cancelTask(state('paused', { previousStage: 'planning' }), AT)
+    const cancelled = cancelTask(
+      state('paused', { previousStage: 'planning' }),
+      AT,
+    )
     expect(cancelled.stage).toBe('cancelled')
     expect(cancelled.history.at(-1)).toMatchObject({ to: 'cancelled' })
     const done = state('done')
@@ -233,7 +243,12 @@ describe('task state machine', () => {
 
   it('ограничивает историю переходов', () => {
     let current = state('planning')
-    const stages: TaskStage[] = ['execution', 'planning', 'execution', 'planning']
+    const stages: TaskStage[] = [
+      'execution',
+      'planning',
+      'execution',
+      'planning',
+    ]
     for (let i = 0; i < TASK_HISTORY_LIMIT + 5; i += 1) {
       const target = stages[i % stages.length]
       current = applyAnalysis(current, analysis({ stage: target }), AT).state

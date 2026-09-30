@@ -12,8 +12,7 @@ export function useCreateSession() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: (input: CreateSessionInput) =>
-      createSession({ data: input }),
+    mutationFn: (input: CreateSessionInput) => createSession({ data: input }),
     onSuccess: (_result, vars) => {
       queryClient.invalidateQueries({
         queryKey: sessionsQueryOptions(vars.token).queryKey,

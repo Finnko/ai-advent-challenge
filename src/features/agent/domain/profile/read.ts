@@ -1,11 +1,13 @@
 import type { SystemBlock } from '../agent'
 import type { ProfileRecord } from './types'
-import { PROFILE_BLOCK_TITLE, PROFILE_FIELDS, PROFILE_FIELD_LABELS } from './types'
+import {
+  PROFILE_BLOCK_TITLE,
+  PROFILE_FIELDS,
+  PROFILE_FIELD_LABELS,
+} from './types'
 
 export function formatProfileBlock(profile: ProfileRecord): string {
-  const fieldLines = PROFILE_FIELDS.filter(
-    (field) => field !== 'instructions',
-  )
+  const fieldLines = PROFILE_FIELDS.filter((field) => field !== 'instructions')
     .map((field) => {
       const value = profile[field]
       return value ? `- ${PROFILE_FIELD_LABELS[field]}: ${value}` : null

@@ -1,10 +1,5 @@
 export type JsonValue =
-  | string
-  | number
-  | boolean
-  | null
-  | JsonValue[]
-  | { [key: string]: JsonValue }
+  string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue }
 
 export const MCP_TOOL_REPORT_MAX_CHARS = 4000
 
@@ -18,9 +13,7 @@ export type McpToolDescriptor = {
 }
 
 export type McpToolsResult =
-  | { ok: true; tools: McpToolDescriptor[] }
-  | { ok: false; error: string }
+  { ok: true; tools: McpToolDescriptor[] } | { ok: false; error: string }
 
 export type McpCallResult =
-  | { ok: true; text: string }
-  | { ok: false; error: string }
+  { ok: true; text: string } | { ok: false; error: string }

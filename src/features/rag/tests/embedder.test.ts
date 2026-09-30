@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { createHashEmbedder, dot, hashEmbedding, l2Normalize } from '../domain/embedder'
+import {
+  createHashEmbedder,
+  dot,
+  hashEmbedding,
+  l2Normalize,
+} from '../domain/embedder'
 
 describe('hash embedding', () => {
   it('is deterministic and normalised', () => {

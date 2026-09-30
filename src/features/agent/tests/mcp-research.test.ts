@@ -272,7 +272,9 @@ describe('research toolkit', () => {
     })
     expect((await toolkit.search({ query: '   ' })).ok).toBe(false)
     expect((await toolkit.summarize({ text: '' })).ok).toBe(false)
-    expect((await toolkit.saveToFile({ name: 'x', content: ' ' })).ok).toBe(false)
+    expect((await toolkit.saveToFile({ name: 'x', content: ' ' })).ok).toBe(
+      false,
+    )
   })
 
   it('сохраняет факт-оговорку при сжатии (евро)', async () => {
@@ -413,8 +415,16 @@ describe('research wikipedia source', () => {
           return {
             query: {
               pages: {
-                '2': { title: 'Доллар США', extract: 'Доллар — валюта США.', index: 2 },
-                '1': { title: 'Евро', extract: 'Евро — валюта еврозоны.   Лид.', index: 1 },
+                '2': {
+                  title: 'Доллар США',
+                  extract: 'Доллар — валюта США.',
+                  index: 2,
+                },
+                '1': {
+                  title: 'Евро',
+                  extract: 'Евро — валюта еврозоны.   Лид.',
+                  index: 1,
+                },
               },
             },
           }

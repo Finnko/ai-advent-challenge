@@ -265,7 +265,8 @@ describe('Agent pipeline', () => {
     }).run('Покажи свободные комнаты')
     const employeeDecide = employee.calls.find((call) => call.isDecide)
     const employeeUser =
-      employeeDecide?.messages[employeeDecide.messages.length - 1]?.content ?? ''
+      employeeDecide?.messages[employeeDecide.messages.length - 1]?.content ??
+      ''
     expect(employeeUser).not.toContain('Орион')
 
     const manager = scriptedLLM({
@@ -444,7 +445,9 @@ describe('Agent pipeline', () => {
     })
     const summaryContext: PreparedContext = {
       history: [],
-      blocks: [{ kind: 'summary', content: 'СВОДКА ПРЕДЫДУЩЕГО ДИАЛОГА:\nПлан.' }],
+      blocks: [
+        { kind: 'summary', content: 'СВОДКА ПРЕДЫДУЩЕГО ДИАЛОГА:\nПлан.' },
+      ],
       note: null,
     }
     await buildAgent({ callLLM }).run('Как дела?', summaryContext)
@@ -563,8 +566,9 @@ describe('этап planning и мульти-действия', () => {
       taskState: buildTaskState({ stage: 'planning' }),
     }).run('Забронируй Ладогу завтра')
 
-    const decideUser = calls.find((call) => call.isDecide)?.messages.at(-1)
-      ?.content
+    const decideUser = calls
+      .find((call) => call.isDecide)
+      ?.messages.at(-1)?.content
     expect(decideUser).not.toContain('bookMeetingRoom')
     expect(decideUser).not.toContain('inviteToMeeting')
     expect(decideUser).toContain('listBookings')
@@ -586,7 +590,9 @@ describe('этап planning и мульти-действия', () => {
     }
     const identity = createIdentity()
     await new Agent({
-      capabilities: createCapabilities(identity, ['mcp_schedule_weather_report']),
+      capabilities: createCapabilities(identity, [
+        'mcp_schedule_weather_report',
+      ]),
       tools: [scheduleTool],
       judges: AGENT_JUDGES,
       callLLM,
@@ -989,7 +995,9 @@ describe('этап planning и мульти-действия', () => {
       finalize:
         'У вас забронирована встреча 2026-09-11 в 16:00. Иван приглашён.',
     })
-    const run = await buildAgent({ store, callLLM }).run('Какие у меня встречи?')
+    const run = await buildAgent({ store, callLLM }).run(
+      'Какие у меня встречи?',
+    )
 
     expect(run.blocked).toBe(false)
   })

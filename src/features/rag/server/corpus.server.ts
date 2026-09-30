@@ -104,7 +104,9 @@ async function readCache(path: string): Promise<string | null> {
   }
 }
 
-export function createWikiCorpusSource(options: WikiCorpusOptions): CorpusSource {
+export function createWikiCorpusSource(
+  options: WikiCorpusOptions,
+): CorpusSource {
   const cities = options.cities ?? WIKI_CITIES
   const lang = options.lang ?? 'ru'
   const doFetch = options.fetchImpl ?? fetch

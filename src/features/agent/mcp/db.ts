@@ -29,7 +29,10 @@ const RANGE_START = '0000-01-01'
 const RANGE_END = '9999-12-31'
 
 function normalizeRange(from?: string, to?: string): [string, string] {
-  return [from && from.trim() ? from.trim() : RANGE_START, to && to.trim() ? to.trim() : RANGE_END]
+  return [
+    from && from.trim() ? from.trim() : RANGE_START,
+    to && to.trim() ? to.trim() : RANGE_END,
+  ]
 }
 
 type CountRow = {
@@ -72,7 +75,10 @@ export async function dbOverview(): Promise<string> {
 
 type RoomRow = { room: string; count: number }
 
-export async function bookingsByRoom(from?: string, to?: string): Promise<string> {
+export async function bookingsByRoom(
+  from?: string,
+  to?: string,
+): Promise<string> {
   const [start, end] = normalizeRange(from, to)
   const rows = await withReadonlyDb(
     (db) =>

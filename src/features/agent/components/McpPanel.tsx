@@ -50,7 +50,10 @@ export default function McpPanel() {
           ) : (
             <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
               {tools.map((tool) => (
-                <McpToolCard key={`${tool.server ?? 'mcp'}:${tool.name}`} tool={tool} />
+                <McpToolCard
+                  key={`${tool.server ?? 'mcp'}:${tool.name}`}
+                  tool={tool}
+                />
               ))}
             </div>
           ))}

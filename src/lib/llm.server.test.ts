@@ -108,7 +108,13 @@ describe('callCompletions retry', () => {
     ])
 
     await expect(
-      callCompletions(ENDPOINT, 'key', MESSAGES, {}, { fetchImpl: impl, baseDelayMs: 0 }),
+      callCompletions(
+        ENDPOINT,
+        'key',
+        MESSAGES,
+        {},
+        { fetchImpl: impl, baseDelayMs: 0 },
+      ),
     ).rejects.toThrow('Ошибка API (400)')
     expect(calls()).toBe(1)
   })
@@ -117,20 +123,34 @@ describe('callCompletions retry', () => {
     const { impl, calls } = makeFetch([{ error: connectTimeout() }])
 
     await expect(
-      callCompletions(ENDPOINT, 'key', MESSAGES, {}, {
-        fetchImpl: impl,
-        attempts: 3,
-        baseDelayMs: 0,
-      }),
+      callCompletions(
+        ENDPOINT,
+        'key',
+        MESSAGES,
+        {},
+        {
+          fetchImpl: impl,
+          attempts: 3,
+          baseDelayMs: 0,
+        },
+      ),
     ).rejects.toThrow(/UND_ERR_CONNECT_TIMEOUT/)
     expect(calls()).toBe(3)
   })
 
   it('не ретраит невосстановимую сетевую ошибку без кода', async () => {
-    const { impl, calls } = makeFetch([{ error: new TypeError('fetch failed') }])
+    const { impl, calls } = makeFetch([
+      { error: new TypeError('fetch failed') },
+    ])
 
     await expect(
-      callCompletions(ENDPOINT, 'key', MESSAGES, {}, { fetchImpl: impl, baseDelayMs: 0 }),
+      callCompletions(
+        ENDPOINT,
+        'key',
+        MESSAGES,
+        {},
+        { fetchImpl: impl, baseDelayMs: 0 },
+      ),
     ).rejects.toThrow('fetch failed')
     expect(calls()).toBe(1)
   })

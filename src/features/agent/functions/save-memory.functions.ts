@@ -1,9 +1,6 @@
 import { createServerFn } from '@tanstack/react-start'
 import type { MemoryEntry, MemoryLayer } from '../domain/memory/types'
-import {
-  applyLongTermLimit,
-  mergeMemoryEntries,
-} from '../domain/memory/read'
+import { applyLongTermLimit, mergeMemoryEntries } from '../domain/memory/read'
 import {
   getLongTermMemory,
   getWorkingMemory,

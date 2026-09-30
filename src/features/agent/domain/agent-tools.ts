@@ -240,8 +240,7 @@ function toNameList(value: unknown): string[] {
 }
 
 type ParticipantPlan =
-  | { ok: true; names: string[] }
-  | { ok: false; text: string }
+  { ok: true; names: string[] } | { ok: false; text: string }
 
 function resolveParticipants(
   args: ToolArgs,
@@ -486,21 +485,24 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: 'cancelVacation',
     description: 'отменить свою ожидающую заявку на отпуск',
-    argsExample: '{ "reference": "VAC-..." } (можно опустить для последней заявки)',
+    argsExample:
+      '{ "reference": "VAC-..." } (можно опустить для последней заявки)',
     roles: ['employee', 'manager'],
     mutating: true,
   },
   {
     name: 'rejectVacation',
     description: 'отклонить заявку подчинённого с причиной',
-    argsExample: '{ "employeeName": "имя", "reference": "VAC-...", "reason": "причина" }',
+    argsExample:
+      '{ "employeeName": "имя", "reference": "VAC-...", "reason": "причина" }',
     roles: ['manager'],
     mutating: true,
   },
   {
     name: 'rescheduleBooking',
     description: 'перенести свою встречу или встречу подчинённого',
-    argsExample: '{ "room": "старая комната", "date": "старая дата", "time": "старое время", "newRoom": "...", "newDate": "YYYY-MM-DD", "newTime": "HH:MM", "duration": минуты }',
+    argsExample:
+      '{ "room": "старая комната", "date": "старая дата", "time": "старое время", "newRoom": "...", "newDate": "YYYY-MM-DD", "newTime": "HH:MM", "duration": минуты }',
     roles: ['employee', 'manager'],
     mutating: true,
   },
@@ -513,15 +515,18 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: 'updateBooking',
-    description: 'изменить тему или длительность своей встречи или встречи подчинённого',
-    argsExample: '{ "room": "название комнаты", "date": "YYYY-MM-DD", "time": "HH:MM", "title": "новая тема", "duration": минуты }',
+    description:
+      'изменить тему или длительность своей встречи или встречи подчинённого',
+    argsExample:
+      '{ "room": "название комнаты", "date": "YYYY-MM-DD", "time": "HH:MM", "title": "новая тема", "duration": минуты }',
     roles: ['employee', 'manager'],
     mutating: true,
   },
   {
     name: 'declineInvite',
     description: 'выйти из встречи, куда вас пригласили',
-    argsExample: '{ "room": "название комнаты", "date": "YYYY-MM-DD", "time": "HH:MM" }',
+    argsExample:
+      '{ "room": "название комнаты", "date": "YYYY-MM-DD", "time": "HH:MM" }',
     roles: ['employee', 'manager'],
     mutating: true,
   },
@@ -595,8 +600,7 @@ const TOOL_RUNNERS: Record<
   listBookings: (store, clock) => async (args, identity) => {
     const from = pickString(args, 'from')
     const to = pickString(args, 'to')
-    const includePast =
-      args.includePast === true || args.includePast === 'true'
+    const includePast = args.includePast === true || args.includePast === 'true'
     if ((from && isInvalidDate(from)) || (to && isInvalidDate(to))) {
       return {
         ok: false,
@@ -665,8 +669,7 @@ const TOOL_RUNNERS: Record<
     for (const room of roomsForRole(identity.role)) {
       const conflict = dayBookings.find(
         (booking) =>
-          booking.room === room &&
-          overlaps(time, durationMin, booking),
+          booking.room === room && overlaps(time, durationMin, booking),
       )
       if (conflict) {
         busy.push(
@@ -948,76 +951,221 @@ const TOOL_RUNNERS: Record<
     const reference = pickString(args, 'reference') || undefined
     const vacation = await store.findOwnVacation(identity.name, reference)
     if (!vacation) {
-      return { ok: false, text: 'Ожидающая заявка на отпуск не найдена.', reference: null }
+      return {
+        ok: false,
+        text: 'Ожидающая заявка на отпуск не найдена.',
+        reference: null,
+      }
     }
     await store.setVacationStatus(vacation.reference, 'cancelled')
-    return { ok: true, text: `Заявка на отпуск ${vacation.reference} отменена.`, reference: vacation.reference }
+    return {
+      ok: true,
+      text: `Заявка на отпуск ${vacation.reference} отменена.`,
+      reference: vacation.reference,
+    }
   },
   rejectVacation: (store) => async (args, identity) => {
     const employeeName = pickString(args, 'employeeName')
     const reason = pickString(args, 'reason')
     const reference = pickString(args, 'reference') || undefined
-    if (!reason) {return { ok: false, text: 'Укажи причину отказа.', reference: null }}
-    if (!employeeName || !identity.subordinates.some((name) => normalizeName(name) === normalizeName(employeeName))) {
-      return { ok: false, text: 'Отклонять можно только заявки подчинённых.', reference: null }
+    if (!reason) {
+      return { ok: false, text: 'Укажи причину отказа.', reference: null }
+    }
+    if (
+      !employeeName ||
+      !identity.subordinates.some(
+        (name) => normalizeName(name) === normalizeName(employeeName),
+      )
+    ) {
+      return {
+        ok: false,
+        text: 'Отклонять можно только заявки подчинённых.',
+        reference: null,
+      }
     }
     const vacation = await store.findOwnVacation(employeeName, reference)
-    if (!vacation) {return { ok: false, text: 'Ожидающая заявка на отпуск не найдена.', reference: null }}
+    if (!vacation) {
+      return {
+        ok: false,
+        text: 'Ожидающая заявка на отпуск не найдена.',
+        reference: null,
+      }
+    }
     await store.setVacationStatus(vacation.reference, 'rejected', identity.name)
-    return { ok: true, text: `Заявка ${vacation.reference} отклонена. Причина: ${reason}`, reference: vacation.reference }
+    return {
+      ok: true,
+      text: `Заявка ${vacation.reference} отклонена. Причина: ${reason}`,
+      reference: vacation.reference,
+    }
   },
   rescheduleBooking: (store, clock) => async (args, identity) => {
     const oldRoom = resolveRoom(pickString(args, 'room'))
     const oldDate = pickString(args, 'date')
     const oldTime = pickString(args, 'time')
-    if (!oldRoom || !oldDate || !oldTime) {return { ok: false, text: 'Укажи текущие комнату, дату и время встречи.', reference: null }}
+    if (!oldRoom || !oldDate || !oldTime) {
+      return {
+        ok: false,
+        text: 'Укажи текущие комнату, дату и время встречи.',
+        reference: null,
+      }
+    }
     const existing = await store.findBooking(oldRoom, oldDate, oldTime)
-    if (!existing) {return { ok: false, text: 'Исходная встреча не найдена.', reference: null }}
+    if (!existing) {
+      return {
+        ok: false,
+        text: 'Исходная встреча не найдена.',
+        reference: null,
+      }
+    }
     const managed = canManageBooking(existing, identity)
-    if (!managed) {return { ok: false, text: 'Переносить можно только свою встречу или встречу подчинённого.', reference: null }}
+    if (!managed) {
+      return {
+        ok: false,
+        text: 'Переносить можно только свою встречу или встречу подчинённого.',
+        reference: null,
+      }
+    }
     const newRoom = resolveRoom(pickString(args, 'newRoom')) ?? oldRoom
     const newDate = pickString(args, 'newDate')
     const newTime = pickString(args, 'newTime')
-    const plan = planBooking({ date: newDate, time: newTime, duration: args.duration ?? existing.durationMin, room: newRoom, title: existing.title }, clock)
-    if (!plan.ok || !plan.room) {return { ok: false, text: plan.ok ? 'Не удалось определить комнату.' : plan.text, reference: null }}
-    const conflicts = (await store.findOverlap(plan.room, plan.date, plan.time, plan.durationMin)).filter((row) => row.reference !== existing.reference)
-    if (conflicts.length > 0) {return { ok: false, text: `Новое время занято: ${bookingTitle(conflicts[0])}.`, reference: null }}
+    const plan = planBooking(
+      {
+        date: newDate,
+        time: newTime,
+        duration: args.duration ?? existing.durationMin,
+        room: newRoom,
+        title: existing.title,
+      },
+      clock,
+    )
+    if (!plan.ok || !plan.room) {
+      return {
+        ok: false,
+        text: plan.ok ? 'Не удалось определить комнату.' : plan.text,
+        reference: null,
+      }
+    }
+    const conflicts = (
+      await store.findOverlap(plan.room, plan.date, plan.time, plan.durationMin)
+    ).filter((row) => row.reference !== existing.reference)
+    if (conflicts.length > 0) {
+      return {
+        ok: false,
+        text: `Новое время занято: ${bookingTitle(conflicts[0])}.`,
+        reference: null,
+      }
+    }
     await store.deleteBooking(existing.room, existing.date, existing.time)
-    await store.insertBooking({ ...existing, room: plan.room, date: plan.date, time: plan.time, durationMin: plan.durationMin, title: plan.title })
-    return { ok: true, text: `Встреча перенесена на ${plan.date} ${plan.time}, ${plan.room}.`, reference: existing.reference }
+    await store.insertBooking({
+      ...existing,
+      room: plan.room,
+      date: plan.date,
+      time: plan.time,
+      durationMin: plan.durationMin,
+      title: plan.title,
+    })
+    return {
+      ok: true,
+      text: `Встреча перенесена на ${plan.date} ${plan.time}, ${plan.room}.`,
+      reference: existing.reference,
+    }
   },
   getRoomSchedule: (store) => async (args) => {
     const room = resolveRoom(pickString(args, 'room'))
     const date = pickString(args, 'date')
-    if (!room || !date) {return { ok: false, text: 'Укажи комнату и дату.', reference: null }}
-    if (isInvalidDate(date)) {return { ok: false, text: 'Дата должна быть в формате YYYY-MM-DD.', reference: null }}
-    const rows = (await store.listBookingsOnDate(date)).filter((row) => row.room === room)
-    return { ok: true, text: rows.length ? `${room}, ${date}:\n${rows.map((row) => `- ${bookingTitle(row)} — ${row.title} (${row.bookedBy})`).join('\n')}` : `${room} свободна весь день ${date}.`, reference: null }
+    if (!room || !date) {
+      return { ok: false, text: 'Укажи комнату и дату.', reference: null }
+    }
+    if (isInvalidDate(date)) {
+      return {
+        ok: false,
+        text: 'Дата должна быть в формате YYYY-MM-DD.',
+        reference: null,
+      }
+    }
+    const rows = (await store.listBookingsOnDate(date)).filter(
+      (row) => row.room === room,
+    )
+    return {
+      ok: true,
+      text: rows.length
+        ? `${room}, ${date}:\n${rows.map((row) => `- ${bookingTitle(row)} — ${row.title} (${row.bookedBy})`).join('\n')}`
+        : `${room} свободна весь день ${date}.`,
+      reference: null,
+    }
   },
   updateBooking: (store) => async (args, identity) => {
     const room = resolveRoom(pickString(args, 'room'))
     const date = pickString(args, 'date')
     const time = pickString(args, 'time')
     const booking = room ? await store.findBooking(room, date, time) : null
-    if (!booking) {return { ok: false, text: 'Встреча не найдена.', reference: null }}
+    if (!booking) {
+      return { ok: false, text: 'Встреча не найдена.', reference: null }
+    }
     const managed = canManageBooking(booking, identity)
-    if (!managed) {return { ok: false, text: 'Изменять можно только свою встречу или встречу подчинённого.', reference: null }}
+    if (!managed) {
+      return {
+        ok: false,
+        text: 'Изменять можно только свою встречу или встречу подчинённого.',
+        reference: null,
+      }
+    }
     const title = pickString(args, 'title') || undefined
-    const durationMin = args.duration === undefined ? undefined : clampDuration(args.duration)
-    if (!title && durationMin === undefined) {return { ok: false, text: 'Укажи новую тему или длительность.', reference: null }}
+    const durationMin =
+      args.duration === undefined ? undefined : clampDuration(args.duration)
+    if (!title && durationMin === undefined) {
+      return {
+        ok: false,
+        text: 'Укажи новую тему или длительность.',
+        reference: null,
+      }
+    }
     await store.updateBooking(room!, date, time, { title, durationMin })
-    return { ok: true, text: `Встреча обновлена: ${title ?? booking.title}, ${durationMin ?? booking.durationMin} мин.`, reference: booking.reference }
+    return {
+      ok: true,
+      text: `Встреча обновлена: ${title ?? booking.title}, ${durationMin ?? booking.durationMin} мин.`,
+      reference: booking.reference,
+    }
   },
   declineInvite: (store) => async (args, identity) => {
     const room = resolveRoom(pickString(args, 'room'))
     const date = pickString(args, 'date')
     const time = pickString(args, 'time')
     const booking = room ? await store.findBooking(room, date, time) : null
-    if (!booking) {return { ok: false, text: 'Встреча не найдена.', reference: null }}
-    if (normalizeName(booking.bookedBy) === normalizeName(identity.name)) {return { ok: false, text: 'Вы организатор встречи — отменить её можно через cancelBooking.', reference: null }}
-    if (!booking.participants.some((name) => normalizeName(name) === normalizeName(identity.name))) {return { ok: false, text: 'Вы не приглашены на эту встречу.', reference: null }}
-    await store.updateBookingParticipants(room!, date, time, booking.participants.filter((name) => normalizeName(name) !== normalizeName(identity.name)))
-    return { ok: true, text: `Вы вышли из встречи ${room}, ${date} ${time}.`, reference: booking.reference }
+    if (!booking) {
+      return { ok: false, text: 'Встреча не найдена.', reference: null }
+    }
+    if (normalizeName(booking.bookedBy) === normalizeName(identity.name)) {
+      return {
+        ok: false,
+        text: 'Вы организатор встречи — отменить её можно через cancelBooking.',
+        reference: null,
+      }
+    }
+    if (
+      !booking.participants.some(
+        (name) => normalizeName(name) === normalizeName(identity.name),
+      )
+    ) {
+      return {
+        ok: false,
+        text: 'Вы не приглашены на эту встречу.',
+        reference: null,
+      }
+    }
+    await store.updateBookingParticipants(
+      room!,
+      date,
+      time,
+      booking.participants.filter(
+        (name) => normalizeName(name) !== normalizeName(identity.name),
+      ),
+    )
+    return {
+      ok: true,
+      text: `Вы вышли из встречи ${room}, ${date} ${time}.`,
+      reference: booking.reference,
+    }
   },
   listVacations: (store) => async (_args, identity) => {
     const records = await store.listVacations(

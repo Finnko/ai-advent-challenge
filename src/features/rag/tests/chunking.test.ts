@@ -29,9 +29,10 @@ describe('parseWikiSections', () => {
 
 describe('tokenWindows', () => {
   it('covers the whole text and overlaps', () => {
-    const text = Array.from({ length: 120 }, (_, index) => `слово${index}`).join(
-      ' ',
-    )
+    const text = Array.from(
+      { length: 120 },
+      (_, index) => `слово${index}`,
+    ).join(' ')
     const windows = tokenWindows(text, { size: 20, overlap: 5 })
     expect(windows.length).toBeGreaterThan(3)
     expect(windows[0].start).toBe(0)
@@ -82,9 +83,10 @@ describe('structuralStrategy', () => {
   })
 
   it('splits oversized sections but keeps section metadata', () => {
-    const body = Array.from({ length: 600 }, (_, index) => `токен${index}`).join(
-      ' ',
-    )
+    const body = Array.from(
+      { length: 600 },
+      (_, index) => `токен${index}`,
+    ).join(' ')
     const text = `== Большой раздел ==\n${body}`
     const chunks = structuralStrategy.chunk(makeDoc({ text }))
     expect(chunks.length).toBeGreaterThan(1)

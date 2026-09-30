@@ -138,7 +138,10 @@ export function useSessionWorkspace({
       if (isBusy() || state.sessionId === null) {
         return
       }
-      branchMutation.mutate({ sessionId: state.sessionId, fromMessageId: messageId })
+      branchMutation.mutate({
+        sessionId: state.sessionId,
+        fromMessageId: messageId,
+      })
     },
     switchBranch(branchId: number) {
       if (isBusy() || state.sessionId === null) {

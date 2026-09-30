@@ -65,7 +65,10 @@ describe('session config', () => {
       sessionConfigInput({ strategy: 'branch', profileId: 5 }),
       42,
     )
-    const draft = { ...DEFAULT_SESSION_CONFIG_DRAFT, strategy: 'window' as const }
+    const draft = {
+      ...DEFAULT_SESSION_CONFIG_DRAFT,
+      strategy: 'window' as const,
+    }
     expect(resolveActiveSessionConfig(session, draft)).toEqual({
       strategy: 'branch',
       windowSize: 10,

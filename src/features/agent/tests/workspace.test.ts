@@ -5,10 +5,7 @@ import {
   isSessionLocked,
   workspaceReducer,
 } from '../domain/workspace'
-import type {
-  WorkspaceIntent,
-  WorkspaceState,
-} from '../domain/workspace'
+import type { WorkspaceIntent, WorkspaceState } from '../domain/workspace'
 
 function apply(
   state: WorkspaceState,
@@ -57,9 +54,9 @@ describe('workspace reducer', () => {
       kind: 'activateToken',
       token: 'manager',
     })
-    expect(workspaceReducer(state, { kind: 'pickPerson', token: 'manager' })).toBe(
-      state,
-    )
+    expect(
+      workspaceReducer(state, { kind: 'pickPerson', token: 'manager' }),
+    ).toBe(state)
   })
 
   it('открытие сессии очищает редактор и авто-выбор', () => {
@@ -155,10 +152,12 @@ describe('workspace reducer', () => {
     expect(sent.sessionId).toBe(3)
 
     expect(
-      workspaceReducer(sent, { kind: 'sessionDeleted', sessionId: 3 }).sessionId,
+      workspaceReducer(sent, { kind: 'sessionDeleted', sessionId: 3 })
+        .sessionId,
     ).toBeNull()
     expect(
-      workspaceReducer(sent, { kind: 'sessionDeleted', sessionId: 99 }).sessionId,
+      workspaceReducer(sent, { kind: 'sessionDeleted', sessionId: 99 })
+        .sessionId,
     ).toBe(3)
   })
 })
@@ -166,7 +165,9 @@ describe('workspace reducer', () => {
 describe('canApplyIntent', () => {
   it('блокирует навигацию при busy, но пропускает правки', () => {
     expect(canApplyIntent({ kind: 'pickPerson', token: 'x' }, true)).toBe(false)
-    expect(canApplyIntent({ kind: 'openSession', sessionId: 1 }, true)).toBe(false)
+    expect(canApplyIntent({ kind: 'openSession', sessionId: 1 }, true)).toBe(
+      false,
+    )
     expect(canApplyIntent({ kind: 'newSession' }, true)).toBe(false)
     expect(canApplyIntent({ kind: 'setDraft', draft: 'x' }, true)).toBe(true)
     expect(canApplyIntent({ kind: 'patchConfig', patch: {} }, true)).toBe(true)

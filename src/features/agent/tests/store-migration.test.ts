@@ -178,9 +178,11 @@ describe('migrateInvariants', () => {
       'INSERT INTO invariants (token, slug, category, title, text, pinned, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 0, ?, ?)',
     ).run('t', 'rule', 'business', 'Кастомное', 'Текст', 'now', 'now')
     expect(() =>
-      db.prepare(
-        'INSERT INTO invariants (token, slug, category, title, text, pinned, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?)',
-      ).run('t', 'rule', 'business', 'Дубликат', 'Текст', 'now', 'now'),
+      db
+        .prepare(
+          'INSERT INTO invariants (token, slug, category, title, text, pinned, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?)',
+        )
+        .run('t', 'rule', 'business', 'Дубликат', 'Текст', 'now', 'now'),
     ).toThrow()
   })
 })

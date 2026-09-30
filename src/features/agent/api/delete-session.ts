@@ -7,8 +7,10 @@ export type DeleteSessionInput = {
   sessionId: number
 }
 
-export const deleteSession = ({ token: _token, sessionId }: DeleteSessionInput) =>
-  deleteSessionFn({ data: { sessionId } })
+export const deleteSession = ({
+  token: _token,
+  sessionId,
+}: DeleteSessionInput) => deleteSessionFn({ data: { sessionId } })
 
 export function useDeleteSession() {
   const queryClient = useQueryClient()

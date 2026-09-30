@@ -42,10 +42,10 @@ function parseVerdict(
       reason?: unknown
     }
     const hits: InvariantCode[] = Array.isArray(value.hits)
-      ? value.hits.filter(
+      ? (value.hits.filter(
           (hit): hit is string =>
             typeof hit === 'string' && allowedCodes.has(hit),
-        ) as InvariantCode[]
+        ) as InvariantCode[])
       : []
     const failed = value.status === 'fail' && hits.length > 0
     return {
@@ -79,7 +79,8 @@ export function createInvariantGuard(callLLM: CallLLM): InvariantGuard {
             `Сводка отчётов инструментов:\n${report || '(нет)'}`,
             'Правила без детерминированной проверки:',
             ...checkless.map(
-              (record) => `${invariantCode(record)} — ${record.title}: ${record.text}`,
+              (record) =>
+                `${invariantCode(record)} — ${record.title}: ${record.text}`,
             ),
           ].join('\n\n'),
         },

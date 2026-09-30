@@ -3,10 +3,11 @@ import { fixedStrategy, FIXED_CHUNK_OVERLAP, FIXED_CHUNK_TOKENS } from './fixed'
 import { structuralStrategy, STRUCTURAL_MAX_TOKENS } from './structural'
 import type { ChunkingStrategy } from './types'
 
-export const CHUNKING_STRATEGIES: Record<ChunkingStrategyId, ChunkingStrategy> = {
-  fixed: fixedStrategy,
-  structural: structuralStrategy,
-}
+export const CHUNKING_STRATEGIES: Record<ChunkingStrategyId, ChunkingStrategy> =
+  {
+    fixed: fixedStrategy,
+    structural: structuralStrategy,
+  }
 
 export const CHUNKING_STRATEGY_IDS: ChunkingStrategyId[] = [
   'fixed',

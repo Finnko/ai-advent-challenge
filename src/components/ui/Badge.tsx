@@ -4,12 +4,7 @@ import { Slot } from '@radix-ui/react-slot'
 import { cn } from '@lib/utils'
 
 export type BadgeVariant =
-  | 'default'
-  | 'accent'
-  | 'success'
-  | 'danger'
-  | 'warn'
-  | 'outline'
+  'default' | 'accent' | 'success' | 'danger' | 'warn' | 'outline'
 
 const variantClasses: Record<BadgeVariant, string> = {
   default:

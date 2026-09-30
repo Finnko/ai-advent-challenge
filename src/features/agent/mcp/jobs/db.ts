@@ -174,7 +174,10 @@ export type JobsStore = {
   }): void
   listRuns(scheduleId: number, limit: number): RunRecord[]
   listRecentRuns(limit: number): RunRecord[]
-  listCityObservations(city: string, sinceIso: string | null): TimedObservation[]
+  listCityObservations(
+    city: string,
+    sinceIso: string | null,
+  ): TimedObservation[]
   latestRun(scheduleId: number): RunRecord | null
   insertSummary(input: {
     scheduleId: number
@@ -214,9 +217,8 @@ export async function createJobsDb(pathOverride?: string): Promise<JobsStore> {
       return rows.map(toSchedule)
     },
     getSchedule(id) {
-      const row = db
-        .prepare('SELECT * FROM schedules WHERE id = ?')
-        .get(id) as ScheduleRow | undefined
+      const row = db.prepare('SELECT * FROM schedules WHERE id = ?').get(id) as
+        ScheduleRow | undefined
       return row ? toSchedule(row) : null
     },
     countSchedules() {
@@ -257,7 +259,9 @@ export async function createJobsDb(pathOverride?: string): Promise<JobsStore> {
     },
     disableSchedule(id) {
       const result = db
-        .prepare('UPDATE schedules SET enabled = 0 WHERE id = ? AND enabled = 1')
+        .prepare(
+          'UPDATE schedules SET enabled = 0 WHERE id = ? AND enabled = 1',
+        )
         .run(id)
       return result.changes > 0
     },
@@ -299,9 +303,7 @@ export async function createJobsDb(pathOverride?: string): Promise<JobsStore> {
     },
     listRecentRuns(limit) {
       const rows = db
-        .prepare(
-          'SELECT * FROM runs ORDER BY ran_at DESC, id DESC LIMIT ?',
-        )
+        .prepare('SELECT * FROM runs ORDER BY ran_at DESC, id DESC LIMIT ?')
         .all(limit) as RunRow[]
       return rows.map(toRun)
     },

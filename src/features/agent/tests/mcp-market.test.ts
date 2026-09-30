@@ -45,9 +45,7 @@ describe('market toolkit', () => {
     expect(result.ok).toBe(true)
     expect(result.text).toContain('1 USD = 90.5 RUB')
     expect(result.text).toContain('2026-01-02')
-    expect(calls).toEqual([
-      { base: 'USD', quote: 'RUB', date: '2026-01-02' },
-    ])
+    expect(calls).toEqual([{ base: 'USD', quote: 'RUB', date: '2026-01-02' }])
   })
 
   it('обрабатывает одинаковые валюты без обращения к источнику', async () => {

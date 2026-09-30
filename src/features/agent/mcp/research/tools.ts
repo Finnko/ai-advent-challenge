@@ -15,12 +15,7 @@ import {
   type SearchResult,
   type WebSource,
 } from '../../domain/research/types.ts'
-import {
-  errorMessage,
-  fail,
-  ok,
-  type ToolResult,
-} from '../shared/response.ts'
+import { errorMessage, fail, ok, type ToolResult } from '../shared/response.ts'
 
 type Args = Record<string, unknown>
 
@@ -111,7 +106,8 @@ export function createResearchToolkit(
         return fail('text не должен быть пустым.')
       }
       const targetWords =
-        typeof args.targetWords === 'number' && Number.isFinite(args.targetWords)
+        typeof args.targetWords === 'number' &&
+        Number.isFinite(args.targetWords)
           ? Math.max(1, Math.round(args.targetWords))
           : undefined
       const maxSentences =
@@ -120,9 +116,7 @@ export function createResearchToolkit(
           : clampSummarizeSentences(args.maxSentences)
       const summary = summarizeText(
         text,
-        targetWords !== undefined
-          ? { words: targetWords }
-          : maxSentences,
+        targetWords !== undefined ? { words: targetWords } : maxSentences,
       )
       if (!summary) {
         return fail('В тексте нет предложений для пересказа.')
