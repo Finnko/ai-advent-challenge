@@ -2,15 +2,9 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import {
-  aggregateSamples,
-  nearestObservation,
-} from '../domain/jobs/aggregate'
+import { aggregateSamples, nearestObservation } from '../domain/jobs/aggregate'
 import { validateScheduleInput } from '../domain/jobs/schedule'
-import type {
-  WeatherObservation,
-  WeatherSource,
-} from '../domain/jobs/types'
+import type { WeatherObservation, WeatherSource } from '../domain/jobs/types'
 import { createJobsDb } from '../mcp/jobs/db'
 import type { JobsStore } from '../mcp/jobs/db'
 import { createJobsToolkit } from '../mcp/jobs/tools'
@@ -230,7 +224,9 @@ describe('jobs toolkit', () => {
     expect(spbFirst.ok).toBe(true)
     expect(spbAgain.ok).toBe(true)
     expect(spbAgain.text).toContain('уже существует')
-    expect(store.listSchedules().filter((s) => s.city === 'spb')).toHaveLength(1)
+    expect(store.listSchedules().filter((s) => s.city === 'spb')).toHaveLength(
+      1,
+    )
 
     const cancelled = await toolkit.cancelSchedule({ id: moscow!.id })
     expect(cancelled.ok).toBe(true)
@@ -238,9 +234,7 @@ describe('jobs toolkit', () => {
   })
 
   it('идемпотентно открывает схему повторно', async () => {
-    const second = await createJobsDb(
-      join(dir, 'jobs.sqlite'),
-    )
+    const second = await createJobsDb(join(dir, 'jobs.sqlite'))
     expect(second.listSchedules().length).toBeGreaterThan(0)
     second.close()
   })

@@ -71,8 +71,14 @@ export function formatMemoryBlock(
 
 export function buildMemoryBlocks(snapshot: MemorySnapshot): SystemBlock[] {
   return [
-    { kind: 'long-term' as const, content: formatMemoryBlock('long-term', snapshot.longTerm) },
-    { kind: 'working' as const, content: formatMemoryBlock('working', snapshot.working) },
+    {
+      kind: 'long-term' as const,
+      content: formatMemoryBlock('long-term', snapshot.longTerm),
+    },
+    {
+      kind: 'working' as const,
+      content: formatMemoryBlock('working', snapshot.working),
+    },
   ].filter((block) => block.content.length > 0)
 }
 

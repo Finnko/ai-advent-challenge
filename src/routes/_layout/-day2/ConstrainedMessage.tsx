@@ -74,9 +74,7 @@ export default function ConstrainedMessage({
         </p>
       )}
       {parsed.summary && (
-        <p className="mb-3 text-sm text-[var(--ink-muted)]">
-          {parsed.summary}
-        </p>
+        <p className="mb-3 text-sm text-[var(--ink-muted)]">{parsed.summary}</p>
       )}
       {Array.isArray(parsed.keywords) && parsed.keywords.length > 0 && (
         <div className="flex flex-wrap gap-1.5">

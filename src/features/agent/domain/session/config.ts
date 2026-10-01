@@ -118,8 +118,5 @@ export function clampWindowSize(value: number): number {
   if (!Number.isFinite(value)) {
     return DEFAULT_WINDOW_SIZE
   }
-  return Math.min(
-    WINDOW_SIZE_MAX,
-    Math.max(WINDOW_SIZE_MIN, Math.round(value)),
-  )
+  return Math.min(WINDOW_SIZE_MAX, Math.max(WINDOW_SIZE_MIN, Math.round(value)))
 }

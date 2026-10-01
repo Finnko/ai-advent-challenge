@@ -52,17 +52,21 @@ function run(
 
 describe('классификация хода', () => {
   it('находит успешное изменяющее действие', () => {
-    expect(hasSuccessfulMutation(run([act('bookMeetingRoom', true)]))).toBe(true)
-    expect(hasSuccessfulMutation(run([act('bookMeetingRoom', true, false)]))).toBe(
-      false,
+    expect(hasSuccessfulMutation(run([act('bookMeetingRoom', true)]))).toBe(
+      true,
     )
+    expect(
+      hasSuccessfulMutation(run([act('bookMeetingRoom', true, false)])),
+    ).toBe(false)
     expect(hasSuccessfulMutation(run([act('listBookings')]))).toBe(false)
   })
 
   it('находит успешную справочную проверку', () => {
     expect(hasReadonlyVerification(run([act('listBookings')]))).toBe(true)
     expect(hasReadonlyVerification(run([]))).toBe(false)
-    expect(hasReadonlyVerification(run([act('bookMeetingRoom', true)]))).toBe(false)
+    expect(hasReadonlyVerification(run([act('bookMeetingRoom', true)]))).toBe(
+      false,
+    )
   })
 
   it('распознаёт правку по тексту', () => {
@@ -118,12 +122,7 @@ describe('классификация хода', () => {
   })
 
   it('распознаёт согласие с опечаткой в одну правку', () => {
-    for (const text of [
-      'подтвреждаю',
-      'подтвердаю',
-      'согласн',
-      'приступаю',
-    ]) {
+    for (const text of ['подтвреждаю', 'подтвердаю', 'согласн', 'приступаю']) {
       expect(looksLikeApproval(text)).toBe(true)
     }
   })
@@ -336,10 +335,7 @@ describe('advanceToExecution', () => {
 
   it('не двигает завершённую задачу', () => {
     expect(
-      advanceToExecution(
-        taskState({ stage: 'done' }),
-        TEST_NOW.toISOString(),
-      ),
+      advanceToExecution(taskState({ stage: 'done' }), TEST_NOW.toISOString()),
     ).toBeNull()
   })
 })

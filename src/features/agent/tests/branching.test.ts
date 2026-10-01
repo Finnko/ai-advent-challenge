@@ -54,10 +54,9 @@ describe('branching', () => {
     expect(child?.parentBranchId).toBe(root.id)
     expect(child?.forkMessageId).toBe(forkAt.id)
     expect(child?.isActive).toBe(true)
-    expect((await store.loadMessages(sessionId)).map((m) => m.content)).toEqual([
-      'u1',
-      'a1',
-    ])
+    expect((await store.loadMessages(sessionId)).map((m) => m.content)).toEqual(
+      ['u1', 'a1'],
+    )
   })
 
   it('два форка одного checkpoint дают сиблингов и независимые истории', async () => {
@@ -83,17 +82,14 @@ describe('branching', () => {
 
     expect(second?.parentBranchId).toBe(root.id)
     expect(second?.forkMessageId).toBe(forkAt.id)
-    expect((await store.loadMessages(sessionId)).map((m) => m.content)).toEqual([
-      'u1',
-      'a1',
-    ])
+    expect((await store.loadMessages(sessionId)).map((m) => m.content)).toEqual(
+      ['u1', 'a1'],
+    )
 
     await store.setActiveBranch(sessionId, firstId)
-    expect((await store.loadMessages(sessionId)).map((m) => m.content)).toEqual([
-      'u1',
-      'a1',
-      'only-in-first',
-    ])
+    expect((await store.loadMessages(sessionId)).map((m) => m.content)).toEqual(
+      ['u1', 'a1', 'only-in-first'],
+    )
   })
 
   it('форк сообщения из неактивной ветки крепится к своей ветке', async () => {

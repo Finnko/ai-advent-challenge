@@ -7,4 +7,7 @@ export const deleteInvariant = createServerFn({ method: 'POST' })
     const data = asObject(input)
     return { token: requireToken(data.token), id: requireInvariantId(data.id) }
   })
-  .handler(async ({ data }) => ({ ok: await deleteInvariantInStore(data.token, data.id) }) as const)
+  .handler(
+    async ({ data }) =>
+      ({ ok: await deleteInvariantInStore(data.token, data.id) }) as const,
+  )

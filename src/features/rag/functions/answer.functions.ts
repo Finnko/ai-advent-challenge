@@ -3,6 +3,7 @@ import { asObject } from '@lib/functions/validation'
 import { answer } from '../server/rag.server'
 import {
   optionalK,
+  optionalRagPipeline,
   optionalStringArray,
   requireAnswerMode,
   requireChunkingStrategy,
@@ -17,6 +18,7 @@ export const answerQuestionFn = createServerFn({ method: 'POST' })
       strategy: requireChunkingStrategy(data.strategy),
       query: requireQuery(data.query),
       k: optionalK(data.k),
+      pipeline: optionalRagPipeline(data.pipeline, 'rag'),
       expected: optionalStringArray(data.expected),
       expectedSources: optionalStringArray(data.expectedSources),
     }
@@ -27,6 +29,7 @@ export const answerQuestionFn = createServerFn({ method: 'POST' })
       strategy: data.strategy,
       query: data.query,
       k: data.k,
+      pipeline: data.pipeline,
       expected: data.expected,
       expectedSources: data.expectedSources,
     }),

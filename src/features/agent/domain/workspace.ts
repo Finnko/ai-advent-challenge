@@ -119,7 +119,11 @@ export function workspaceReducer(
     case 'startCreateProfile':
       return { ...state, creatingProfile: true, editingProfileId: null }
     case 'startEditProfile':
-      return { ...state, creatingProfile: false, editingProfileId: intent.profileId }
+      return {
+        ...state,
+        creatingProfile: false,
+        editingProfileId: intent.profileId,
+      }
     case 'finishProfileEdit':
       return { ...state, creatingProfile: false, editingProfileId: null }
     case 'clearProfile':

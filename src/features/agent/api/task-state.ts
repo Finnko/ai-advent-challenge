@@ -1,4 +1,9 @@
-import { queryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  queryOptions,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query'
 import { approveTask } from '../functions/approve-task.functions'
 import { cancelTask } from '../functions/cancel-task.functions'
 import { getTaskState } from '../functions/get-task-state.functions'
@@ -17,7 +22,10 @@ export function useTaskState(sessionId: number | null) {
   return useQuery(taskStateQueryOptions(sessionId ?? 0))
 }
 
-function invalidateTask(queryClient: ReturnType<typeof useQueryClient>, sessionId: number) {
+function invalidateTask(
+  queryClient: ReturnType<typeof useQueryClient>,
+  sessionId: number,
+) {
   queryClient.invalidateQueries({
     queryKey: taskStateQueryOptions(sessionId).queryKey,
   })

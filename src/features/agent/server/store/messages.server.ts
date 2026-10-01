@@ -52,9 +52,7 @@ export async function loadMessages(
         role: 'task',
         content: '',
         run: null,
-        taskEvent: row.run_json
-          ? (safeParse(row.run_json) as TaskEvent)
-          : null,
+        taskEvent: row.run_json ? (safeParse(row.run_json) as TaskEvent) : null,
       }
     }
     const role = row.role === 'assistant' ? 'assistant' : 'user'

@@ -1,5 +1,10 @@
 import type { City } from '../../domain/jobs/cities.ts'
-import { CITIES, cityNames, findCity, findCityById } from '../../domain/jobs/cities.ts'
+import {
+  CITIES,
+  cityNames,
+  findCity,
+  findCityById,
+} from '../../domain/jobs/cities.ts'
 import {
   aggregateSamples,
   filterByWindow,
@@ -7,7 +12,10 @@ import {
 } from '../../domain/jobs/aggregate.ts'
 import { coverageKey, missingDataText } from '../../domain/jobs/coverage.ts'
 import { sampleText } from '../../domain/jobs/format.ts'
-import { computeNextRun, validateScheduleInput } from '../../domain/jobs/schedule.ts'
+import {
+  computeNextRun,
+  validateScheduleInput,
+} from '../../domain/jobs/schedule.ts'
 import { scheduleView } from '../../domain/jobs/view.ts'
 import {
   BOOTSTRAP_DAYS,
@@ -208,7 +216,10 @@ export function createJobsToolkit(deps: JobsToolkitDeps): JobsToolkit {
     return cities.length > 0 ? cities : CITIES
   }
 
-  async function runSchedule(schedule: Schedule, reference: Date): Promise<string> {
+  async function runSchedule(
+    schedule: Schedule,
+    reference: Date,
+  ): Promise<string> {
     const city = findCityById(schedule.city)
     const ranAt = reference.toISOString()
     if (!city) {
@@ -244,7 +255,11 @@ export function createJobsToolkit(deps: JobsToolkitDeps): JobsToolkit {
         observation.observedAt,
         computeNextRun(reference, schedule.intervalMinutes),
       )
-      const summary = buildWindowSummary(city.id, schedule.windowHours, reference)
+      const summary = buildWindowSummary(
+        city.id,
+        schedule.windowHours,
+        reference,
+      )
       if (summary) {
         store.insertSummary({
           scheduleId: schedule.id,
@@ -281,7 +296,10 @@ export function createJobsToolkit(deps: JobsToolkitDeps): JobsToolkit {
       if (!city) {
         return fail(`Неизвестный город. Доступны: ${cityNames()}.`)
       }
-      const input = validateScheduleInput(args.intervalMinutes, args.windowHours)
+      const input = validateScheduleInput(
+        args.intervalMinutes,
+        args.windowHours,
+      )
       if (!input.ok) {
         return fail(input.error)
       }
@@ -355,7 +373,8 @@ export function createJobsToolkit(deps: JobsToolkitDeps): JobsToolkit {
     },
 
     async getWeatherReport(args) {
-      const requested = args.city === undefined || args.city === '' ? null : args.city
+      const requested =
+        args.city === undefined || args.city === '' ? null : args.city
       let cities: City[]
       if (requested === null) {
         cities = reportCities()
@@ -370,7 +389,9 @@ export function createJobsToolkit(deps: JobsToolkitDeps): JobsToolkit {
       if (args.windowHours !== undefined) {
         const parsed = Number(args.windowHours)
         if (!Number.isInteger(parsed) || parsed < 1) {
-          return fail('windowHours должен быть целым положительным числом часов.')
+          return fail(
+            'windowHours должен быть целым положительным числом часов.',
+          )
         }
         windowArg = parsed
       }

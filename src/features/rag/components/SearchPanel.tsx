@@ -13,6 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
 
 const K_OPTIONS = [3, 5, 10]
+const CANDIDATE_K_OPTIONS = [10, 20, 40]
 
 function scoreLabel(score: number): string {
   return score.toFixed(3)
@@ -22,21 +23,35 @@ export default function SearchPanel() {
   const [strategy, setStrategy] = useState<ChunkingStrategyId>('fixed')
   const [query, setQuery] = useState('')
   const [k, setK] = useState(5)
+  const [candidateK, setCandidateK] = useState(20)
+  const [rerank, setRerank] = useState(false)
+  const [rewrite, setRewrite] = useState(false)
+  const [useThreshold, setUseThreshold] = useState(true)
+  const [threshold, setThreshold] = useState(0.5)
   const search = useRagSearch()
-  const results = search.data ?? []
+  const result = search.data
+  const results = result?.results ?? []
 
   const submit = () => {
     if (query.trim().length === 0) {
       return
     }
-    search.mutate({ strategy, query, k })
+    search.mutate({
+      strategy,
+      query,
+      k,
+      candidateK,
+      rerank,
+      rewrite,
+      threshold: rerank && useThreshold ? threshold : null,
+    })
   }
 
   return (
     <div className="flex flex-col gap-4">
       <Card>
         <CardHeader>
-          <CardTitle>Поиск по индексу</CardTitle>
+          <CardTitle>Поиск по индексу: реранкинг и порог</CardTitle>
         </CardHeader>
         <CardContent className="mt-3 flex flex-col gap-3">
           <div className="flex flex-wrap items-center gap-2">
@@ -64,6 +79,60 @@ export default function SearchPanel() {
               ))}
             </div>
           </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="xs"
+              variant={rerank ? 'default' : 'secondary'}
+              onClick={() => setRerank((value) => !value)}
+            >
+              {rerank ? 'Реранк: вкл' : 'Реранк: выкл'}
+            </Button>
+            <Button
+              size="xs"
+              variant={rewrite ? 'default' : 'secondary'}
+              onClick={() => setRewrite((value) => !value)}
+            >
+              {rewrite ? 'Rewrite: вкл' : 'Rewrite: выкл'}
+            </Button>
+            <span className="demo-muted ml-auto text-xs">кандидатов</span>
+            {CANDIDATE_K_OPTIONS.map((option) => (
+              <Button
+                key={option}
+                size="xs"
+                variant={candidateK === option ? 'default' : 'secondary'}
+                onClick={() => setCandidateK(option)}
+              >
+                {option}
+              </Button>
+            ))}
+          </div>
+
+          {rerank && (
+            <div className="flex flex-wrap items-center gap-3">
+              <Button
+                size="xs"
+                variant={useThreshold ? 'default' : 'secondary'}
+                onClick={() => setUseThreshold((value) => !value)}
+              >
+                {useThreshold ? 'Порог: вкл' : 'Порог: выкл'}
+              </Button>
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.05}
+                value={threshold}
+                disabled={!useThreshold}
+                onChange={(event) => setThreshold(Number(event.target.value))}
+                className="h-1 flex-1 cursor-pointer accent-[var(--accent)]"
+              />
+              <span className="demo-muted text-xs">
+                {useThreshold ? threshold.toFixed(2) : 'без порога'}
+              </span>
+            </div>
+          )}
+
           <div className="flex gap-2">
             <Input
               value={query}
@@ -89,30 +158,53 @@ export default function SearchPanel() {
         </CardContent>
       </Card>
 
+      {result && (
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <Badge variant="outline">кандидатов: {result.candidateCount}</Badge>
+          <Badge variant={result.reranked ? 'success' : 'outline'}>
+            {result.reranked ? 'реранк применён' : 'реранк не применён'}
+          </Badge>
+          {result.rewrittenQuery && (
+            <Badge variant="accent">запрос: {result.rewrittenQuery}</Badge>
+          )}
+        </div>
+      )}
+
       {results.length > 0 && (
         <div className="flex flex-col gap-2">
-          {results.map((result, index) => (
+          {results.map((item, index) => (
             <div
-              key={result.chunk.chunkId}
+              key={item.chunk.chunkId}
               className="demo-panel flex flex-col gap-1 rounded-lg border border-[var(--line)] p-3"
             >
               <div className="flex flex-wrap items-center gap-2 text-xs">
                 <Badge variant="accent">#{index + 1}</Badge>
-                <Badge>score {scoreLabel(result.score)}</Badge>
+                {item.relevance !== undefined ? (
+                  <>
+                    <Badge>rel {scoreLabel(item.relevance)}</Badge>
+                    {item.originalScore !== undefined && (
+                      <Badge variant="outline">
+                        cos {scoreLabel(item.originalScore)}
+                      </Badge>
+                    )}
+                  </>
+                ) : (
+                  <Badge>score {scoreLabel(item.score)}</Badge>
+                )}
                 <span className="font-semibold text-[var(--ink)]">
-                  {result.chunk.title}
+                  {item.chunk.title}
                 </span>
-                {result.chunk.section && (
+                {item.chunk.section && (
                   <span className="demo-muted">
-                    раздел: {result.chunk.section}
+                    раздел: {item.chunk.section}
                   </span>
                 )}
                 <span className="demo-muted">
-                  {STRATEGY_SHORT_LABELS[result.chunk.strategy]}
+                  {STRATEGY_SHORT_LABELS[item.chunk.strategy]}
                 </span>
               </div>
               <p className="m-0 whitespace-pre-wrap text-xs leading-relaxed text-[var(--ink-soft)]">
-                {result.chunk.text}
+                {item.chunk.text}
               </p>
             </div>
           ))}

@@ -37,7 +37,10 @@ export function validateScheduleInput(
   }
   const windowHours = toInteger(window)
   if (windowHours === null) {
-    return { ok: false, error: 'Окно агрегации должно быть целым числом часов.' }
+    return {
+      ok: false,
+      error: 'Окно агрегации должно быть целым числом часов.',
+    }
   }
   if (windowHours < MIN_WINDOW_HOURS || windowHours > MAX_WINDOW_HOURS) {
     return {

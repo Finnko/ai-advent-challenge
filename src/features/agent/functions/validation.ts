@@ -29,7 +29,10 @@ import type {
   InvariantInput,
   InvariantUpdateInput,
 } from '../domain/invariants/types'
-import { INVARIANT_CATEGORIES, invariantCheckIds } from '../domain/invariants/types'
+import {
+  INVARIANT_CATEGORIES,
+  invariantCheckIds,
+} from '../domain/invariants/types'
 
 export { WINDOW_SIZE_MAX, WINDOW_SIZE_MIN }
 
@@ -53,11 +56,20 @@ function parseInvariantFields(value: unknown): Omit<InvariantInput, 'slug'> {
   if (!INVARIANT_CATEGORIES.includes(data.category as InvariantCategory)) {
     throw new Error('Некорректная категория инварианта')
   }
-  const check = data.check === undefined || data.check === null ? null : String(data.check)
-  if (check !== null && !(invariantCheckIds as readonly string[]).includes(check)) {
+  const check =
+    data.check === undefined || data.check === null ? null : String(data.check)
+  if (
+    check !== null &&
+    !(invariantCheckIds as readonly string[]).includes(check)
+  ) {
     throw new Error('Некорректная проверка инварианта')
   }
-  return { category: data.category as InvariantCategory, title, text, check: check as InvariantCheckId | null }
+  return {
+    category: data.category as InvariantCategory,
+    title,
+    text,
+    check: check as InvariantCheckId | null,
+  }
 }
 
 export function requireInvariantInput(value: unknown): InvariantInput {
@@ -94,10 +106,7 @@ export function optionalWindowSize(value: unknown): number {
   return requireWindowSize(value)
 }
 
-export function optionalBoolean(
-  value: unknown,
-  fallback = false,
-): boolean {
+export function optionalBoolean(value: unknown, fallback = false): boolean {
   if (value === undefined || value === null) {
     return fallback
   }
@@ -163,7 +172,9 @@ export function requireMemoryValue(value: unknown): string {
     throw new Error('Пустое значение памяти')
   }
   if (trimmed.length > MAX_MEMORY_VALUE_CHARS) {
-    throw new Error(`Значение памяти длиннее ${MAX_MEMORY_VALUE_CHARS} символов`)
+    throw new Error(
+      `Значение памяти длиннее ${MAX_MEMORY_VALUE_CHARS} символов`,
+    )
   }
   return trimmed
 }
@@ -175,9 +186,7 @@ export function requireProfileId(value: unknown): number {
   return value
 }
 
-export function optionalProfileId(
-  value: unknown,
-): number | null | undefined {
+export function optionalProfileId(value: unknown): number | null | undefined {
   if (value === undefined) {
     return undefined
   }

@@ -75,7 +75,9 @@ export default function Chat({
       </div>
 
       {error && (
-        <Alert variant="destructive" className="mb-3">{error}</Alert>
+        <Alert variant="destructive" className="mb-3">
+          {error}
+        </Alert>
       )}
 
       <form
@@ -114,4 +116,3 @@ function toMessage(
   const words = content.trim().split(/\s+/).filter(Boolean).length
   return { role, content, usage, chars: content.length, words }
 }
-

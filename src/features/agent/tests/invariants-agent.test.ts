@@ -31,10 +31,17 @@ const invariant: InvariantRecord = {
   pinned: true,
 }
 
-function agent(callLLM: CallLLM, invariants: InvariantRecord[], invariantGuard?: InvariantGuard) {
+function agent(
+  callLLM: CallLLM,
+  invariants: InvariantRecord[],
+  invariantGuard?: InvariantGuard,
+) {
   return new Agent({
     capabilities: createCapabilities(employee, ['rescheduleBooking']),
-    tools: createAgentTools(createFakeStore({ bookings: [createBooking()] }), TEST_NOW),
+    tools: createAgentTools(
+      createFakeStore({ bookings: [createBooking()] }),
+      TEST_NOW,
+    ),
     judges: [],
     callLLM,
     model: 'test',
@@ -74,12 +81,16 @@ function scripted(
 describe('agent invariants enforcement', () => {
   it('blocks a destination-slot violation before reschedule runs', async () => {
     const calls: LlmMessage[][] = []
-    const run = await agent(scripted(calls), [invariant]).run('Перенеси встречу на 19:00')
+    const run = await agent(scripted(calls), [invariant]).run(
+      'Перенеси встречу на 19:00',
+    )
     expect(run.blocked).toBe(true)
     expect(run.invariantHits).toEqual(['INV-1'])
     expect(run.answer).toContain('INV-1')
     const act = run.trace.find((step) => step.stage === 'act')
-    expect(act && act.stage === 'act' ? act.invariantHits : []).toEqual(['INV-1'])
+    expect(act && act.stage === 'act' ? act.invariantHits : []).toEqual([
+      'INV-1',
+    ])
   })
 
   it('adds invariant instructions to decide and finalize prompts', async () => {
@@ -97,14 +108,26 @@ describe('agent invariants enforcement', () => {
     ).run('Что делать?')
     expect(run.ok).toBe(true)
     expect(calls[0].at(-1)?.content).toContain('Учитывай инварианты')
-    expect(calls[1].at(-1)?.content).toContain('Если решение нарушает инвариант')
+    expect(calls[1].at(-1)?.content).toContain(
+      'Если решение нарушает инвариант',
+    )
   })
 
   it('blocks an employee rescheduling into Orion', async () => {
     const calls: LlmMessage[][] = []
-    const run = await agent(scripted(calls, 'Готово.', { newRoom: 'Орион', newTime: '16:00' }), [
-      { ...invariant, id: 3, slug: 'orion-employee', title: 'Орион', text: 'Сотрудникам нельзя в «Орион».', check: 'orion-employee' },
-    ]).run('Перенеси встречу в Орион')
+    const run = await agent(
+      scripted(calls, 'Готово.', { newRoom: 'Орион', newTime: '16:00' }),
+      [
+        {
+          ...invariant,
+          id: 3,
+          slug: 'orion-employee',
+          title: 'Орион',
+          text: 'Сотрудникам нельзя в «Орион».',
+          check: 'orion-employee',
+        },
+      ],
+    ).run('Перенеси встречу в Орион')
     expect(run.blocked).toBe(true)
     expect(run.invariantHits).toEqual(['INV-3'])
     expect(run.answer).toContain('INV-3')
@@ -164,19 +187,42 @@ describe('agent invariants enforcement', () => {
   })
 
   it('skips the LLM guard when a deterministic answer check already blocks', async () => {
-    const custom: InvariantRecord = { ...invariant, id: 9, slug: 'custom', check: null, pinned: false, title: 'Правило', text: 'Соблюдай правило.' }
-    const sqlite: InvariantRecord = { ...invariant, id: 4, slug: 'sqlite-only', check: 'sqlite-only', title: 'SQLite', text: 'Только SQLite.' }
+    const custom: InvariantRecord = {
+      ...invariant,
+      id: 9,
+      slug: 'custom',
+      check: null,
+      pinned: false,
+      title: 'Правило',
+      text: 'Соблюдай правило.',
+    }
+    const sqlite: InvariantRecord = {
+      ...invariant,
+      id: 4,
+      slug: 'sqlite-only',
+      check: 'sqlite-only',
+      title: 'SQLite',
+      text: 'Только SQLite.',
+    }
     let guardCalls = 0
     const guard: InvariantGuard = async () => {
       guardCalls += 1
-      return { status: 'fail', hits: ['INV-9'], reason: 'Нарушено.', usage: null, latencyMs: 0 }
+      return {
+        status: 'fail',
+        hits: ['INV-9'],
+        reason: 'Нарушено.',
+        usage: null,
+        latencyMs: 0,
+      }
     }
     const run = await new Agent({
       capabilities: createCapabilities(employee, []),
       tools: createAgentTools(createFakeStore(), TEST_NOW),
       judges: [],
       callLLM: async ({ response_format }) => ({
-        content: response_format ? '{"tool":null,"args":{}}' : 'Используем PostgreSQL.',
+        content: response_format
+          ? '{"tool":null,"args":{}}'
+          : 'Используем PostgreSQL.',
         usage: null,
         latencyMs: 0,
       }),
@@ -191,7 +237,15 @@ describe('agent invariants enforcement', () => {
   })
 
   it('blocks a failing custom invariant guard and cites its code', async () => {
-    const custom: InvariantRecord = { ...invariant, id: 9, slug: 'custom', check: null, pinned: false, title: 'Правило', text: 'Соблюдай правило.' }
+    const custom: InvariantRecord = {
+      ...invariant,
+      id: 9,
+      slug: 'custom',
+      check: null,
+      pinned: false,
+      title: 'Правило',
+      text: 'Соблюдай правило.',
+    }
     const guard: InvariantGuard = async () => ({
       status: 'fail',
       hits: ['INV-9'],
@@ -211,6 +265,8 @@ describe('agent invariants enforcement', () => {
     expect(run.blocked).toBe(true)
     expect(run.invariantHits).toEqual(['INV-9'])
     expect(run.answer).toContain('INV-9')
-    expect(run.trace.some((step) => step.stage === 'invariant-guard')).toBe(true)
+    expect(run.trace.some((step) => step.stage === 'invariant-guard')).toBe(
+      true,
+    )
   })
 })

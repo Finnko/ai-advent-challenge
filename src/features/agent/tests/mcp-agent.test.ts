@@ -57,7 +57,10 @@ describe('MCP → agent adapter', () => {
     ).toBe('{}')
 
     expect(
-      formatArgsExample({ type: 'object', properties: { limit: { type: 'integer' } } }),
+      formatArgsExample({
+        type: 'object',
+        properties: { limit: { type: 'integer' } },
+      }),
     ).toContain('(все поля необязательны)')
   })
 
@@ -141,7 +144,11 @@ describe('MCP → agent adapter', () => {
   it('не ломается, если MCP-сервер недоступен', async () => {
     const captured: LlmMessage[][] = []
     const runtime: AgentRuntime = {
-      callLLM: scriptedLLM(captured, '{"tool":null,"args":{}}', 'Обычный ответ.'),
+      callLLM: scriptedLLM(
+        captured,
+        '{"tool":null,"args":{}}',
+        'Обычный ответ.',
+      ),
       summarize: unused,
       extractFacts: unused,
       extractMemories: async () => ({ candidates: [], usage: null }),

@@ -7,7 +7,10 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const ENTRIES = [
   ['src/features/agent/mcp/server.ts', 'dist/server/mcp/mcp-demo.mjs'],
   ['src/features/agent/mcp/jobs/server.ts', 'dist/server/mcp/mcp-jobs.mjs'],
-  ['src/features/agent/mcp/research/server.ts', 'dist/server/mcp/mcp-research.mjs'],
+  [
+    'src/features/agent/mcp/research/server.ts',
+    'dist/server/mcp/mcp-research.mjs',
+  ],
   ['src/features/agent/mcp/market/server.ts', 'dist/server/mcp/mcp-market.mjs'],
 ]
 

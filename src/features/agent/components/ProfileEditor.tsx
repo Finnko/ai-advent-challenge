@@ -149,7 +149,12 @@ export default function ProfileEditor({
         </label>
 
         <div className="flex items-center justify-end gap-2">
-          <Button variant="secondary" size="sm" onClick={onCancel} disabled={disabled}>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={onCancel}
+            disabled={disabled}
+          >
             Отмена
           </Button>
           <Button

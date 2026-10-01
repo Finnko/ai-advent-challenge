@@ -3,6 +3,8 @@ import type { EvalQuery } from '../data/eval-queries'
 import {
   chunkStats,
   dedupeKeys,
+  ndcgAtK,
+  precisionAtK,
   recallAtK,
   reciprocalRank,
   retrievalStats,
@@ -41,6 +43,19 @@ describe('retrieval metrics', () => {
   it('computes reciprocal rank', () => {
     expect(reciprocalRank(['x', 'y', 'target'], ['target'])).toBeCloseTo(1 / 3)
     expect(reciprocalRank(['x'], ['target'])).toBe(0)
+  })
+
+  it('computes precision at k on unique documents', () => {
+    expect(precisionAtK(['a', 'b', 'c', 'd', 'e'], ['a', 'c'], 5)).toBe(0.4)
+    expect(precisionAtK(['a', 'a', 'c'], ['a', 'b'], 2)).toBe(0.5)
+  })
+
+  it('computes nDCG at k', () => {
+    const perfect = ndcgAtK(['a', 'b', 'c', 'd', 'e'], ['a', 'b'], 5)
+    expect(perfect).toBeCloseTo(1)
+    const worse = ndcgAtK(['b', 'c', 'd', 'e', 'a'], ['a', 'b'], 5)
+    expect(worse).toBeLessThan(perfect)
+    expect(ndcgAtK(['x'], [], 5)).toBe(0)
   })
 
   it('aggregates query-level metrics', () => {

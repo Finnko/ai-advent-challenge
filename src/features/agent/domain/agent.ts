@@ -82,7 +82,14 @@ export type CallLLM = (params: {
 }) => Promise<LlmReply>
 
 export type SystemBlock = {
-  kind: 'summary' | 'facts' | 'working' | 'long-term' | 'profile' | 'task-state' | 'invariants'
+  kind:
+    | 'summary'
+    | 'facts'
+    | 'working'
+    | 'long-term'
+    | 'profile'
+    | 'task-state'
+    | 'invariants'
   content: string
 }
 
@@ -455,14 +462,12 @@ const FABRICATION_JUDGE: AgentJudge = {
     const claims: Array<{ tool: string; test: RegExp; label: string }> = [
       {
         tool: 'inviteToMeeting',
-        test:
-          /приглашения\s+(?:отправлен|разослан)|отправил[аи]?\s+приглашени|пригласил[аи]?\s+(?:всех|всю команду|сотрудник)/,
+        test: /приглашения\s+(?:отправлен|разослан)|отправил[аи]?\s+приглашени|пригласил[аи]?\s+(?:всех|всю команду|сотрудник)/,
         label: 'приглашения',
       },
       {
         tool: 'bookMeetingRoom',
-        test:
-          /забронировал[аи]?\s+(?:переговорк|комнат)|бронь\s+(?:создан|оформлен)|оформил[аи]?\s+бронь/,
+        test: /забронировал[аи]?\s+(?:переговорк|комнат)|бронь\s+(?:создан|оформлен)|оформил[аи]?\s+бронь/,
         label: 'бронь',
       },
       {
@@ -552,12 +557,24 @@ const DECIDE_TOOL_HINTS: Record<string, string[]> = {
   cancelBooking: [
     'Просьбу «отмени эту встречу» решай через cancelBooking. Комнату, дату и время бери из сообщения или из контекста (последняя доступная встреча). Если они известны из контекста — обязательно вызывай инструмент, не переспрашивай.',
   ],
-  cancelVacation: ['Просьбу отменить свою заявку на отпуск решай через cancelVacation.'],
-  rejectVacation: ['Просьбу отклонить отпуск подчинённого решай через rejectVacation и обязательно передай причину.'],
-  rescheduleBooking: ['Просьбу перенести встречу решай через rescheduleBooking; старые и новые дата/время передавай явно или бери старую встречу из контекста.'],
-  getRoomSchedule: ['Расписание конкретной переговорки на дату решай через getRoomSchedule.'],
-  updateBooking: ['Изменение темы или длительности встречи решай через updateBooking.'],
-  declineInvite: ['Если пользователь хочет выйти из приглашённой встречи, используй declineInvite.'],
+  cancelVacation: [
+    'Просьбу отменить свою заявку на отпуск решай через cancelVacation.',
+  ],
+  rejectVacation: [
+    'Просьбу отклонить отпуск подчинённого решай через rejectVacation и обязательно передай причину.',
+  ],
+  rescheduleBooking: [
+    'Просьбу перенести встречу решай через rescheduleBooking; старые и новые дата/время передавай явно или бери старую встречу из контекста.',
+  ],
+  getRoomSchedule: [
+    'Расписание конкретной переговорки на дату решай через getRoomSchedule.',
+  ],
+  updateBooking: [
+    'Изменение темы или длительности встречи решай через updateBooking.',
+  ],
+  declineInvite: [
+    'Если пользователь хочет выйти из приглашённой встречи, используй declineInvite.',
+  ],
   mcp_list_schedules: [
     'Существующие расписания ≠ доступные города. Наличие расписания не требуется, чтобы создать новое для другого города: доступные города перечислены в описании schedule_weather_report, а новый город добавляется вызовом schedule_weather_report. Не отказывай на основании mcp_list_schedules.',
   ],
@@ -681,13 +698,16 @@ function buildDecideUser(
             `Доступные комнаты (для bookMeetingRoom): ${rooms.join(', ')}.`,
             ...(DECIDE_TOOL_HINTS[tool.name] ?? []),
           ]
-        : DECIDE_TOOL_HINTS[tool.name] ?? [],
+        : (DECIDE_TOOL_HINTS[tool.name] ?? []),
     ),
     ...(context ? ['', 'Контекст:', context] : []),
     ...(precedenceLine ? ['', precedenceLine] : []),
     ...(taskLine ? ['', taskLine] : []),
     ...(hasInvariantBlocks
-      ? ['', 'Учитывай инварианты при выборе действия и не выбирай инструмент с нарушающими их аргументами.']
+      ? [
+          '',
+          'Учитывай инварианты при выборе действия и не выбирай инструмент с нарушающими их аргументами.',
+        ]
       : []),
     '',
     'Ответь ровно одним json-объектом вида {"tool": "имя_инструмента" | null, "args": { ... }}. Значение аргумента может быть ссылкой на вывод ранее вызванного инструмента: {"$ref": "<номер>"} или {"$ref": "last"}. Большие тексты передавай ссылкой, а не копированием. Без текста до "{" и после "}", без markdown.',
@@ -729,7 +749,10 @@ function buildFinalizeUser(
     ...(availableCatalog ? [availableCatalog, ''] : []),
     ...(capabilityCatalog ? [capabilityCatalog, ''] : []),
     ...(hasInvariantBlocks
-      ? ['Если решение нарушает инвариант — откажись, укажи INV-<id> и предложи совместимый вариант.', '']
+      ? [
+          'Если решение нарушает инвариант — откажись, укажи INV-<id> и предложи совместимый вариант.',
+          '',
+        ]
       : []),
     'Отвечай по фактам из отчёта инструмента. Если в отчёте есть «Код подтверждения: …» — включи этот код в ответ дословно. Не выдумывай выполненные действия, которых нет в отчёте.',
     'Если инструмент не вызывался — просто ответь на запрос.',
@@ -750,7 +773,9 @@ function refusalText(
     .filter((v) => v.status === 'fail')
     .map((v) => `- ${v.message}`)
   const lines = ['Действие отклонено полиси агента.', ...reasons]
-  const hitRecords = invariants.filter((record) => hits.includes(invariantCode(record)))
+  const hitRecords = invariants.filter((record) =>
+    hits.includes(invariantCode(record)),
+  )
   if (hitRecords.length > 0) {
     lines.push(
       '',
@@ -882,10 +907,10 @@ function isToolArgRef(value: unknown): value is ToolArgRef {
 function refValue(ref: string, outputs: ToolOutput[]): string | null {
   if (ref === 'last') {
     const output = outputs.at(-1)
-    return output ? output.refText ?? output.text : null
+    return output ? (output.refText ?? output.text) : null
   }
   const output = outputs.find((entry) => String(entry.id) === ref)
-  return output ? output.refText ?? output.text : null
+  return output ? (output.refText ?? output.text) : null
 }
 
 export function resolveArgRefs(
@@ -1020,7 +1045,10 @@ export class Agent {
     const requestTokens = estimateTokens(request)
     const historyTokens = estimateMessagesTokens(history)
     const contextTokens = estimateMessagesTokens(
-      blocks.map((block) => ({ role: 'system' as const, content: block.content })),
+      blocks.map((block) => ({
+        role: 'system' as const,
+        content: block.content,
+      })),
     )
     const contextMessages = prepared.note?.messages ?? 0
 
@@ -1262,7 +1290,10 @@ export class Agent {
         })
         return denied
       }
-      const outcome = await requestedTool.run(resolved.args, capabilities.identity)
+      const outcome = await requestedTool.run(
+        resolved.args,
+        capabilities.identity,
+      )
       actions.push({ tool, args: resolved.args, outcome })
       trace.push({
         stage: 'act',
@@ -1404,10 +1435,7 @@ export class Agent {
       ? { ok: true, hits: [], reason: null }
       : runAnswerChecks(answer, this.config.invariants ?? [])
     let invariantHits = [
-      ...new Set([
-        ...answerInvariantCheck.hits,
-        ...actionInvariantHits,
-      ]),
+      ...new Set([...answerInvariantCheck.hits, ...actionInvariantHits]),
     ]
     const checklessInvariants = (this.config.invariants ?? []).filter(
       (record) => record.check === null,
@@ -1447,7 +1475,8 @@ export class Agent {
           verdict: {
             judge: 'invariant-guard',
             status: 'pass',
-            message: 'LLM-проверка инвариантов недоступна; ответ не заблокирован.',
+            message:
+              'LLM-проверка инвариантов недоступна; ответ не заблокирован.',
           },
           hits: [],
           usage: null,

@@ -1,12 +1,14 @@
 import { queryOptions, useQuery } from '@tanstack/react-query'
 import { getComparisonFn } from '../functions/get-comparison.functions'
 
-export const ragComparisonQueryOptions = queryOptions({
-  queryKey: ['rag', 'comparison'] as const,
-  queryFn: () => getComparisonFn(),
-  staleTime: 5_000,
-})
+export function ragComparisonQueryOptions(includeRewrite: boolean) {
+  return queryOptions({
+    queryKey: ['rag', 'comparison', includeRewrite] as const,
+    queryFn: () => getComparisonFn({ data: { includeRewrite } }),
+    staleTime: 5 * 60 * 1000,
+  })
+}
 
-export function useRagComparison() {
-  return useQuery(ragComparisonQueryOptions)
+export function useRagComparison(includeRewrite = false) {
+  return useQuery(ragComparisonQueryOptions(includeRewrite))
 }

@@ -8,8 +8,10 @@ export type DeleteProfileInput = {
   profileId: number
 }
 
-export const deleteProfile = ({ token: _token, profileId }: DeleteProfileInput) =>
-  deleteProfileFn({ data: { profileId } })
+export const deleteProfile = ({
+  token: _token,
+  profileId,
+}: DeleteProfileInput) => deleteProfileFn({ data: { profileId } })
 
 export function useDeleteProfile() {
   const queryClient = useQueryClient()

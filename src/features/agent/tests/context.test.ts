@@ -171,9 +171,7 @@ describe('windowStrategy', () => {
   })
 
   it('не режет короткую историю', async () => {
-    const result = await windowStrategy.prepare(
-      baseInput({ rows: history(6) }),
-    )
+    const result = await windowStrategy.prepare(baseInput({ rows: history(6) }))
 
     expect(result.context.history).toHaveLength(6)
     expect(result.context.note).toBeNull()

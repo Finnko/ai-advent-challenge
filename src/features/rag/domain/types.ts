@@ -28,4 +28,6 @@ export type Chunk = {
 export type ScoredChunk = {
   chunk: Chunk
   score: number
+  originalScore?: number
+  relevance?: number
 }

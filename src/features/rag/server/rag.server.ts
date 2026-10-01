@@ -1,13 +1,26 @@
 import { CHUNKING_STRATEGY_IDS } from '../domain/chunking/registry'
 import type { CorpusSource } from '../domain/corpus'
 import type { Embedder } from '../domain/embedder'
+import type { Reranker } from '../domain/reranker'
+import { rewriteQuery, type Rewriter } from '../domain/rewrite-prompt'
 import type { ChunkingStrategyId } from '../domain/types'
 import { compareStrategies, type RagComparison } from './comparison.server'
-import { createWikiCorpusSource, listCorpusStatus, resolveCorpusDir, type CorpusDocStatus } from './corpus.server'
+import {
+  createWikiCorpusSource,
+  listCorpusStatus,
+  resolveCorpusDir,
+  type CorpusDocStatus,
+} from './corpus.server'
 import { createEmbedder, resolveEmbedModelId } from './embedder.server'
 import { buildIndex, type BuildIndexResult } from './indexing.server'
 import { getRagStore, type RagIndexStore } from './index-store.server'
-import { searchChunks } from './retrieval.server'
+import {
+  createReranker,
+  resolveRerankMargin,
+  resolveRerankThreshold,
+} from './reranker.server'
+import { retrieve, type RetrievalResult } from './retrieval.server'
+import { createDefaultRewriter } from './rewrite.server'
 import {
   answerQuestion,
   defaultAnswerDeps,
@@ -86,25 +99,75 @@ export async function getIndexStats(
   }
 }
 
-export async function getComparison(deps?: RagDeps): Promise<RagComparison> {
-  const resolved = deps ?? (await defaultRagDeps())
-  return compareStrategies({ embedder: resolved.embedder, store: resolved.store })
+export type RetrievalDeps = RagDeps & {
+  reranker: Reranker | null
+  rewriter: Rewriter | null
+  threshold: number
+  margin: number
+}
+
+export async function defaultRetrievalDeps(): Promise<RetrievalDeps> {
+  const base = await defaultRagDeps()
+  return {
+    ...base,
+    reranker: createReranker(),
+    rewriter: createDefaultRewriter(),
+    threshold: resolveRerankThreshold(),
+    margin: resolveRerankMargin(),
+  }
+}
+
+export type SearchInput = {
+  strategy: ChunkingStrategyId
+  query: string
+  k: number
+  candidateK?: number
+  rerank?: boolean
+  rewrite?: boolean
+  threshold?: number | null
+}
+
+export type SearchResult = RetrievalResult & { rewrittenQuery: string | null }
+
+export async function getComparison(
+  input?: { includeRewrite?: boolean },
+  deps?: RetrievalDeps,
+): Promise<RagComparison> {
+  const resolved = deps ?? (await defaultRetrievalDeps())
+  return compareStrategies({
+    embedder: resolved.embedder,
+    store: resolved.store,
+    reranker: resolved.reranker,
+    rewriter: resolved.rewriter,
+    threshold: resolved.threshold,
+    margin: resolved.margin,
+    includeRewrite: input?.includeRewrite ?? false,
+  })
 }
 
 export async function search(
-  strategy: ChunkingStrategyId,
-  query: string,
-  k: number,
-  deps?: RagDeps,
-) {
-  const resolved = deps ?? (await defaultRagDeps())
-  return searchChunks({
-    strategy,
-    query,
-    k,
+  input: SearchInput,
+  deps?: RetrievalDeps,
+): Promise<SearchResult> {
+  const resolved = deps ?? (await defaultRetrievalDeps())
+  const rewrittenQuery = input.rewrite
+    ? await rewriteQuery(input.query, resolved.rewriter)
+    : null
+  const threshold =
+    input.threshold === undefined ? resolved.threshold : input.threshold
+  const outcome = await retrieve({
+    strategy: input.strategy,
+    query: input.query,
+    k: input.k,
+    candidateK: input.candidateK,
     embedder: resolved.embedder,
     store: resolved.store,
+    reranker: input.rerank ? resolved.reranker : null,
+    threshold: input.rerank ? threshold : null,
+    margin: input.rerank ? resolved.margin : null,
+    rewrittenQuery,
   })
+  return { ...outcome, rewrittenQuery }
 }
 
 export async function getCorpus(): Promise<CorpusDocStatus[]> {

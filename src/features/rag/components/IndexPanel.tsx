@@ -1,10 +1,7 @@
 import { useState } from 'react'
 import { useBuildIndex, useRagIndex } from '../api/use-rag-index'
 import { useRagCorpus } from '../api/use-rag-corpus'
-import {
-  STRATEGY_DETAILS,
-  STRATEGY_LABELS,
-} from '../data/rag-ui'
+import { STRATEGY_DETAILS, STRATEGY_LABELS } from '../data/rag-ui'
 import type { ChunkingStrategyId } from '../types'
 import ChunkBrowser from './ChunkBrowser'
 import { Alert } from '@/components/ui/Alert'

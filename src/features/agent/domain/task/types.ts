@@ -1,10 +1,5 @@
 export type TaskStage =
-  | 'planning'
-  | 'execution'
-  | 'validation'
-  | 'done'
-  | 'paused'
-  | 'cancelled'
+  'planning' | 'execution' | 'validation' | 'done' | 'paused' | 'cancelled'
 
 export type TaskActor = 'user' | 'agent'
 

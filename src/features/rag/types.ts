@@ -1,6 +1,7 @@
 import type { ChatUsage } from '@lib/llm'
 import type { AnswerVerdict } from './domain/answer-eval'
 import type { RetrievalStats, StructuralStats } from './domain/metrics'
+import type { RagPipelineId } from './domain/pipelines'
 import type {
   AnswerMode,
   Chunk,
@@ -13,6 +14,7 @@ export type {
   AnswerVerdict,
   Chunk,
   ChunkingStrategyId,
+  RagPipelineId,
   ScoredChunk,
   RetrievalStats,
   StructuralStats,
@@ -60,22 +62,41 @@ export type CorpusDocStatus = {
   charCount: number | null
 }
 
+export type PipelineRetrieval = {
+  pipeline: RagPipelineId
+  retrieval: RetrievalStats
+}
+
 export type StrategyComparison = {
   strategy: ChunkingStrategyId
   model: string | null
   builtAt: string | null
   structural: StructuralStats
   retrieval: RetrievalStats
+  pipelines: PipelineRetrieval[]
 }
 
 export type RagComparison = {
   strategies: StrategyComparison[]
   queryCount: number
+  includeRewrite: boolean
+}
+
+export type RagSearchResult = {
+  results: ScoredChunk[]
+  reranked: boolean
+  candidateCount: number
+  embeddingQuery: string
+  rewrittenQuery: string | null
 }
 
 export type AnswerResult = {
   mode: AnswerMode
+  pipeline: RagPipelineId | null
   query: string
+  embeddingQuery: string
+  rewrittenQuery: string | null
+  reranked: boolean
   answer: string
   sources: ScoredChunk[]
   verdict: AnswerVerdict | null
@@ -88,6 +109,7 @@ export type AnswerInput = {
   strategy: ChunkingStrategyId
   query: string
   k?: number
+  pipeline?: RagPipelineId
   expected?: string[]
   expectedSources?: string[]
 }

@@ -1,7 +1,12 @@
 import { createServerFn } from '@tanstack/react-start'
 import { runAgentTurn } from '../server/agent-turn.server'
 import type { RunAgentResult } from '../types'
-import { asObject, requireSessionId, requireToken, requireUser } from './validation'
+import {
+  asObject,
+  requireSessionId,
+  requireToken,
+  requireUser,
+} from './validation'
 
 export const runAgent = createServerFn({ method: 'POST' })
   .validator((input: { token: string; sessionId: number; user: string }) => {

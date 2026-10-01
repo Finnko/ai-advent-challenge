@@ -22,9 +22,9 @@ const TRANSITIONS: Record<
   approve: approveTask,
 }
 
-async function taskStateFor(sessionId: number): Promise<
-  { enabled: true; current: TaskState | null } | { enabled: false }
-> {
+async function taskStateFor(
+  sessionId: number,
+): Promise<{ enabled: true; current: TaskState | null } | { enabled: false }> {
   const session = await getSession(sessionId)
   if (!session || !session.taskStateEnabled) {
     return { enabled: false }

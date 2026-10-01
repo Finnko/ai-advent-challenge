@@ -100,7 +100,9 @@ export function registerResearchTools(
         '«[Объём: …]» в файл не попадает). ' +
         'Изменяющий инструмент — финальный шаг пайплайна.',
       inputSchema: {
-        name: z.string().describe('Имя отчёта без пути, например euro-usd-report'),
+        name: z
+          .string()
+          .describe('Имя отчёта без пути, например euro-usd-report'),
         content: z.string().describe('Текст отчёта для сохранения'),
       },
       annotations: { readOnlyHint: false },

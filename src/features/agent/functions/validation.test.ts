@@ -80,7 +80,9 @@ describe('agent validators', () => {
     expect(optionalInvariantSetId(undefined)).toBeUndefined()
     expect(optionalInvariantSetId(null)).toBeNull()
     expect(optionalInvariantSetId(7)).toBe(7)
-    expect(() => optionalInvariantSetId(0)).toThrow('Некорректный invariantSetId')
+    expect(() => optionalInvariantSetId(0)).toThrow(
+      'Некорректный invariantSetId',
+    )
   })
 
   it('optionalProfileField тримит, опустошает и ограничивает', () => {
@@ -90,16 +92,49 @@ describe('agent validators', () => {
     expect(() => optionalProfileField('a'.repeat(121), 'tone')).toThrow(
       'длиннее 120 символов',
     )
-    expect(() => optionalProfileField('a'.repeat(1201), 'instructions')).toThrow(
-      'длиннее 1200 символов',
-    )
+    expect(() =>
+      optionalProfileField('a'.repeat(1201), 'instructions'),
+    ).toThrow('длиннее 1200 символов')
   })
 
   it('разделяет create/update input инварианта', () => {
-    expect(requireInvariantInput({ slug: 'rule', category: 'business', title: 'Правило', text: 'Текст' })).toMatchObject({ slug: 'rule' })
-    expect(requireInvariantUpdate({ category: 'business', title: 'Правило', text: 'Текст', slug: 'ignored' })).not.toHaveProperty('slug')
-    expect(() => requireInvariantInput({ slug: 'bad slug', category: 'business', title: 'Правило', text: 'Текст' })).toThrow('Некорректный slug')
-    expect(() => requireInvariantUpdate({ category: 'business', title: '', text: 'Текст' })).toThrow('Название инварианта')
-    expect(() => requireInvariantUpdate({ category: 'security', title: 'Правило', text: 'Текст' })).toThrow('Некорректная категория')
+    expect(
+      requireInvariantInput({
+        slug: 'rule',
+        category: 'business',
+        title: 'Правило',
+        text: 'Текст',
+      }),
+    ).toMatchObject({ slug: 'rule' })
+    expect(
+      requireInvariantUpdate({
+        category: 'business',
+        title: 'Правило',
+        text: 'Текст',
+        slug: 'ignored',
+      }),
+    ).not.toHaveProperty('slug')
+    expect(() =>
+      requireInvariantInput({
+        slug: 'bad slug',
+        category: 'business',
+        title: 'Правило',
+        text: 'Текст',
+      }),
+    ).toThrow('Некорректный slug')
+    expect(() =>
+      requireInvariantUpdate({
+        category: 'business',
+        title: '',
+        text: 'Текст',
+      }),
+    ).toThrow('Название инварианта')
+    expect(() =>
+      requireInvariantUpdate({
+        category: 'security',
+        title: 'Правило',
+        text: 'Текст',
+      }),
+    ).toThrow('Некорректная категория')
   })
 })

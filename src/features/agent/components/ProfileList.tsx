@@ -25,7 +25,12 @@ export default function ProfileList({
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between gap-2">
         <p className="island-kicker m-0 text-[10px]">Профили</p>
-        <Button variant="secondary" size="xs" onClick={onCreate} disabled={disabled}>
+        <Button
+          variant="secondary"
+          size="xs"
+          onClick={onCreate}
+          disabled={disabled}
+        >
           + новый
         </Button>
       </div>

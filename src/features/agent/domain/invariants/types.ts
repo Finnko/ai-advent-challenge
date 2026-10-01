@@ -1,8 +1,5 @@
 export type InvariantCategory =
-  | 'architecture'
-  | 'stack'
-  | 'decision'
-  | 'business'
+  'architecture' | 'stack' | 'decision' | 'business'
 
 export const invariantCheckIds = [
   'meeting-end-time',
@@ -44,12 +41,16 @@ export const CATEGORY_LABELS: Record<InvariantCategory, string> = {
   business: 'Бизнес-правила',
 }
 
-export const INVARIANT_CATEGORIES = Object.keys(CATEGORY_LABELS) as InvariantCategory[]
+export const INVARIANT_CATEGORIES = Object.keys(
+  CATEGORY_LABELS,
+) as InvariantCategory[]
 
 export const INVARIANT_BLOCK_TITLE = 'ИНВАРИАНТЫ И ОГРАНИЧЕНИЯ'
 export const INVARIANT_PRECEDENCE_LINE =
   'Блок ИНВАРИАНТЫ И ОГРАНИЧЕНИЯ выше: не предлагай и не выполняй решения, которые нарушают эти правила. При отказе назови INV-<id> и предложи совместимую альтернативу.'
 
-export function invariantCode(record: Pick<InvariantRecord, 'id'>): InvariantCode {
+export function invariantCode(
+  record: Pick<InvariantRecord, 'id'>,
+): InvariantCode {
   return `INV-${record.id}`
 }

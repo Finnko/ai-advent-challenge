@@ -50,7 +50,15 @@ const BOOKINGS_SEED: Array<
     bookedBy: string,
   ]
 > = [
-  ['Переговорка «Ладога»', '2026-09-10', '10:00', 60, 6, 'Синк команды', 'Анна'],
+  [
+    'Переговорка «Ладога»',
+    '2026-09-10',
+    '10:00',
+    60,
+    6,
+    'Синк команды',
+    'Анна',
+  ],
   [
     'Переговорка «Ладога»',
     '2026-09-10',
@@ -60,7 +68,15 @@ const BOOKINGS_SEED: Array<
     '1:1 с руководителем',
     'Мария',
   ],
-  ['Переговорка «Байкал»', '2026-09-10', '14:00', 45, 8, 'Демо клиенту', 'Пётр'],
+  [
+    'Переговорка «Байкал»',
+    '2026-09-10',
+    '14:00',
+    45,
+    8,
+    'Демо клиенту',
+    'Пётр',
+  ],
   [
     'Переговорка «Онега»',
     '2026-09-11',
@@ -401,19 +417,34 @@ async function openDatabase(): Promise<SqliteDatabase> {
 
 function seedInvariants(db: SqliteDatabase): void {
   const defaults = DEFAULT_INVARIANTS
-  const people = db.prepare('SELECT token FROM people').all() as Array<{ token: string }>
-  const insert = db.prepare('INSERT OR IGNORE INTO invariants (token, slug, category, title, text, check_id, pinned, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)')
+  const people = db.prepare('SELECT token FROM people').all() as Array<{
+    token: string
+  }>
+  const insert = db.prepare(
+    'INSERT OR IGNORE INTO invariants (token, slug, category, title, text, check_id, pinned, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)',
+  )
   for (const person of people) {
     for (const invariant of defaults) {
       const now = nowIso()
-      insert.run(person.token, invariant.slug, invariant.category, invariant.title, invariant.text, invariant.check ?? null, now, now)
+      insert.run(
+        person.token,
+        invariant.slug,
+        invariant.category,
+        invariant.title,
+        invariant.text,
+        invariant.check ?? null,
+        now,
+        now,
+      )
     }
   }
 }
 
 export function migrateInvariants(db: SqliteDatabase): void {
   const schema = db
-    .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'invariants'")
+    .prepare(
+      "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'invariants'",
+    )
     .get() as { sql?: string } | undefined
   if (schema?.sql?.includes('UNIQUE (token, slug)')) {
     db.exec('BEGIN')
@@ -598,7 +629,9 @@ export function migrateSessions(db: SqliteDatabase): void {
     db.exec('ALTER TABLE sessions ADD COLUMN profile_id INTEGER')
   }
   if (!sessionColumns.includes('window_size')) {
-    db.exec('ALTER TABLE sessions ADD COLUMN window_size INTEGER NOT NULL DEFAULT 10')
+    db.exec(
+      'ALTER TABLE sessions ADD COLUMN window_size INTEGER NOT NULL DEFAULT 10',
+    )
   }
   if (!sessionColumns.includes('task_state_enabled')) {
     db.exec(

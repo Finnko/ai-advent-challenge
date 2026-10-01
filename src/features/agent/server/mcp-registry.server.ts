@@ -88,7 +88,9 @@ export function resolveMcpEntry(kind: McpServerKind): string {
   return sourceEntry(spec)
 }
 
-function childEnvFor(spec: McpServerSpec): () => Record<string, string> | undefined {
+function childEnvFor(
+  spec: McpServerSpec,
+): () => Record<string, string> | undefined {
   return () => {
     if (!spec.childEnvKey) {
       return undefined

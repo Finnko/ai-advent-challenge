@@ -63,13 +63,11 @@ export function createWikipediaSource(
             typeof page.title === 'string' && page.title.length > 0,
         )
         .sort((left, right) => (left.index ?? 0) - (right.index ?? 0))
-        .map(
-          (page): SearchResult => ({
-            title: page.title,
-            url: articleUrl(page.title),
-            snippet: (page.extract ?? '').replace(/\s+/g, ' ').trim(),
-          }),
-        )
+        .map((page): SearchResult => ({
+          title: page.title,
+          url: articleUrl(page.title),
+          snippet: (page.extract ?? '').replace(/\s+/g, ' ').trim(),
+        }))
     },
   }
 }

@@ -8,11 +8,7 @@ import type {
 import type { ExtractFacts, Fact } from '../facts'
 
 export type ContextStrategyId =
-  | 'summary'
-  | 'none'
-  | 'window'
-  | 'facts'
-  | 'branch'
+  'summary' | 'none' | 'window' | 'facts' | 'branch'
 
 export type PrepareInput = {
   rows: CompressionMessage[]

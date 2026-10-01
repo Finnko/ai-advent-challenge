@@ -1,7 +1,4 @@
-import {
-  AGENT_JUDGES,
-  Agent,
-} from '../domain/agent'
+import { AGENT_JUDGES, Agent } from '../domain/agent'
 import type {
   AgentCapabilities,
   AgentRunResult,
@@ -39,10 +36,7 @@ import { buildInvariantBlocks } from '../domain/invariants/read'
 import type { InvariantRecord } from '../domain/invariants/types'
 import { createInvariantGuard } from '../domain/invariants/guard'
 import type { InvariantGuard } from '../domain/invariants/guard'
-import {
-  callCompletions,
-  apiKeyFor,
-} from '@lib/llm.server'
+import { callCompletions, apiKeyFor } from '@lib/llm.server'
 import { TIER_ENDPOINTS } from '@lib/llm'
 import { estimateMessagesTokens, estimateTokens } from '../domain/tokens'
 import { createAgentStore } from './store/agent-records.server'
@@ -223,7 +217,10 @@ export async function executeAgent(
     invariantGuard: runtime.invariantGuard,
   })
   try {
-    const memoryBlocks = await prepareMemoryBlocks(options, runtime.extractMemories)
+    const memoryBlocks = await prepareMemoryBlocks(
+      options,
+      runtime.extractMemories,
+    )
     const profileBlocks = buildProfileBlocks(options.profile ?? null)
     const invariantBlocks = buildInvariantBlocks(
       options.invariants ?? [],
@@ -276,7 +273,9 @@ async function prepareMemoryBlocks(
       scenario: memory.scenario,
     })
     const workingEntries = routed.filter((entry) => entry.layer === 'working')
-    const longTermEntries = routed.filter((entry) => entry.layer === 'long-term')
+    const longTermEntries = routed.filter(
+      (entry) => entry.layer === 'long-term',
+    )
     next = {
       working: mergeMemoryEntries(snapshot.working, workingEntries),
       longTerm: applyLongTermLimit(

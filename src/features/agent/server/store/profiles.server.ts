@@ -85,7 +85,8 @@ export async function createProfile(
   const count = db
     .prepare('SELECT COUNT(*) AS count FROM profiles WHERE token = ?')
     .get(token) as { count: number }
-  const makeDefault = options.isDefault === true || Number(count?.count ?? 0) === 0
+  const makeDefault =
+    options.isDefault === true || Number(count?.count ?? 0) === 0
   if (makeDefault) {
     db.prepare('UPDATE profiles SET is_default = 0 WHERE token = ?').run(token)
   }
@@ -184,9 +185,9 @@ export async function deleteProfile(id: number): Promise<void> {
   }
   db.exec('BEGIN')
   try {
-    db.prepare('UPDATE sessions SET profile_id = NULL WHERE profile_id = ?').run(
-      id,
-    )
+    db.prepare(
+      'UPDATE sessions SET profile_id = NULL WHERE profile_id = ?',
+    ).run(id)
     db.prepare('DELETE FROM profiles WHERE id = ?').run(id)
     if (profile.isDefault) {
       const next = db

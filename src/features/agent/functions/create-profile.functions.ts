@@ -1,10 +1,6 @@
 import { createServerFn } from '@tanstack/react-start'
 import { createProfile as createProfileInStore } from '../server/store/profiles.server'
-import {
-  asObject,
-  requireProfileInput,
-  requireToken,
-} from './validation'
+import { asObject, requireProfileInput, requireToken } from './validation'
 
 export const createProfile = createServerFn({ method: 'POST' })
   .validator((input: { token: string; isDefault?: boolean }) => {

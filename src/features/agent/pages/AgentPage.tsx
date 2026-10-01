@@ -27,12 +27,7 @@ import ProfileEditor from '../components/ProfileEditor'
 import TaskStateBar from '../components/TaskStateBar'
 import SessionConfig from '../components/SessionConfig'
 import EmptySessionPanel from '../components/EmptySessionPanel'
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from '@/components/ui/Tabs'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/Tabs'
 import { Button } from '@/components/ui/Button'
 import { Textarea } from '@/components/ui/Textarea'
 import { Badge } from '@/components/ui/Badge'
@@ -234,11 +229,7 @@ export default function AgentPage() {
             <Tabs defaultValue="dialog">
               <TabsList>
                 <TabsTrigger value="dialog">Диалог</TabsTrigger>
-                <TabsTrigger
-                  value="invariants"
-                >
-                  Инварианты
-                </TabsTrigger>
+                <TabsTrigger value="invariants">Инварианты</TabsTrigger>
                 <TabsTrigger value="mcp">MCP</TabsTrigger>
                 <TabsTrigger value="settings">Настройки</TabsTrigger>
               </TabsList>
@@ -265,95 +256,107 @@ export default function AgentPage() {
                     onCreate={actions.newSession}
                   />
                 ) : (
-                <div className="flex flex-col gap-3">
-                  <SessionAccounting totals={accounting} />
+                  <div className="flex flex-col gap-3">
+                    <SessionAccounting totals={accounting} />
 
-                  <TokenReport
-                    requestTokens={accounting.requestTokens}
-                    historyTokens={accounting.historyTokens}
-                    historyTokensSent={
-                      lastRun ? lastRun.tokens.historyTokensSent : null
-                    }
-                    responseTokens={
-                      lastRun ? lastRun.tokens.responseTokens : null
-                    }
-                    contextTokens={lastRun ? lastRun.tokens.contextTokens : null}
-                  />
-
-                  {noteState && <ContextPanel note={noteState} />}
-
-                  <TokenMeter
-                    historyTokens={accounting.historyTokens}
-                    requestTokens={accounting.requestTokens}
-                    budget={CONTEXT_BUDGET_TOKENS}
-                    modelContext={MODEL_CONTEXT_TOKENS}
-                  />
-
-                  {activeStrategy === 'facts' && <FactsPanel facts={facts} />}
-
-                  {activeStrategy === 'branch' && (
-                    <BranchPanel
-                      branches={branches}
-                      disabled={busy}
-                      onSwitch={actions.switchBranch}
-                      onForkCheckpoint={actions.forkCheckpoint}
+                    <TokenReport
+                      requestTokens={accounting.requestTokens}
+                      historyTokens={accounting.historyTokens}
+                      historyTokensSent={
+                        lastRun ? lastRun.tokens.historyTokensSent : null
+                      }
+                      responseTokens={
+                        lastRun ? lastRun.tokens.responseTokens : null
+                      }
+                      contextTokens={
+                        lastRun ? lastRun.tokens.contextTokens : null
+                      }
                     />
-                  )}
 
-                  <ChatThread
-                    messages={messages}
-                    running={sending}
-                    onFork={activeStrategy === 'branch' ? actions.fork : undefined}
-                    forkDisabled={busy}
-                  />
+                    {noteState && <ContextPanel note={noteState} />}
 
-                  {sendError && <Alert variant="destructive">{sendError}</Alert>}
-                  {branchError && (
-                    <Alert variant="destructive">{branchError}</Alert>
-                  )}
-
-                  <TaskStateBar
-                    state={taskState}
-                    enabled={active.taskStateEnabled}
-                    hasSession={sessionLocked}
-                    busy={taskBusy}
-                    onPause={actions.pauseTask}
-                    onResume={actions.resumeTask}
-                    onCancel={actions.cancelTask}
-                    onApprove={actions.approveTask}
-                  />
-                  {taskError && <Alert variant="destructive">{taskError}</Alert>}
-
-                  {taskState?.stage === 'paused' && (
-                    <p className="demo-muted m-0 text-xs">Задача на паузе</p>
-                  )}
-
-                  <form
-                    onSubmit={(event) => {
-                      event.preventDefault()
-                      actions.send()
-                    }}
-                    className="flex flex-col gap-3"
-                  >
-                    <Textarea
-                      value={draft}
-                      onChange={(event) => actions.setDraft(event.target.value)}
-                      placeholder="Например: забронируй переговорку на завтра на 15:00 на 6 человек…"
-                      className="min-h-0"
-                      rows={6}
-                      disabled={busy}
+                    <TokenMeter
+                      historyTokens={accounting.historyTokens}
+                      requestTokens={accounting.requestTokens}
+                      budget={CONTEXT_BUDGET_TOKENS}
+                      modelContext={MODEL_CONTEXT_TOKENS}
                     />
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="demo-muted text-xs">{sessionHint}</span>
-                      <Button
-                        type="submit"
-                        disabled={busy || draft.trim().length === 0}
-                      >
-                        {busy ? 'Агент работает…' : 'Отправить агенту'}
-                      </Button>
-                    </div>
-                  </form>
-                </div>
+
+                    {activeStrategy === 'facts' && <FactsPanel facts={facts} />}
+
+                    {activeStrategy === 'branch' && (
+                      <BranchPanel
+                        branches={branches}
+                        disabled={busy}
+                        onSwitch={actions.switchBranch}
+                        onForkCheckpoint={actions.forkCheckpoint}
+                      />
+                    )}
+
+                    <ChatThread
+                      messages={messages}
+                      running={sending}
+                      onFork={
+                        activeStrategy === 'branch' ? actions.fork : undefined
+                      }
+                      forkDisabled={busy}
+                    />
+
+                    {sendError && (
+                      <Alert variant="destructive">{sendError}</Alert>
+                    )}
+                    {branchError && (
+                      <Alert variant="destructive">{branchError}</Alert>
+                    )}
+
+                    <TaskStateBar
+                      state={taskState}
+                      enabled={active.taskStateEnabled}
+                      hasSession={sessionLocked}
+                      busy={taskBusy}
+                      onPause={actions.pauseTask}
+                      onResume={actions.resumeTask}
+                      onCancel={actions.cancelTask}
+                      onApprove={actions.approveTask}
+                    />
+                    {taskError && (
+                      <Alert variant="destructive">{taskError}</Alert>
+                    )}
+
+                    {taskState?.stage === 'paused' && (
+                      <p className="demo-muted m-0 text-xs">Задача на паузе</p>
+                    )}
+
+                    <form
+                      onSubmit={(event) => {
+                        event.preventDefault()
+                        actions.send()
+                      }}
+                      className="flex flex-col gap-3"
+                    >
+                      <Textarea
+                        value={draft}
+                        onChange={(event) =>
+                          actions.setDraft(event.target.value)
+                        }
+                        placeholder="Например: забронируй переговорку на завтра на 15:00 на 6 человек…"
+                        className="min-h-0"
+                        rows={6}
+                        disabled={busy}
+                      />
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="demo-muted text-xs">
+                          {sessionHint}
+                        </span>
+                        <Button
+                          type="submit"
+                          disabled={busy || draft.trim().length === 0}
+                        >
+                          {busy ? 'Агент работает…' : 'Отправить агенту'}
+                        </Button>
+                      </div>
+                    </form>
+                  </div>
                 )}
               </TabsContent>
 
@@ -371,9 +374,7 @@ export default function AgentPage() {
                       profiles={profiles}
                       selectedProfileId={config.profileId}
                       busy={busy}
-                      onStrategy={(id) =>
-                        actions.patchConfig({ strategy: id })
-                      }
+                      onStrategy={(id) => actions.patchConfig({ strategy: id })}
                       onWindowSize={(size) =>
                         actions.patchConfig({ windowSize: size })
                       }
@@ -443,9 +444,7 @@ export default function AgentPage() {
                   </div>
 
                   <section className="demo-panel p-5">
-                    <h2 className="demo-section-title mb-3">
-                      Слои памяти
-                    </h2>
+                    <h2 className="demo-section-title mb-3">Слои памяти</h2>
                     {sessionId === null ? (
                       <p className="demo-muted m-0 text-xs">
                         Отправь первое сообщение — появится сессия, и станут
@@ -491,7 +490,6 @@ export default function AgentPage() {
 }
 
 function lastUserMessage(messages: ThreadMessage[]): string | undefined {
-  return [...messages]
-    .reverse()
-    .find((message) => message.role === 'user')?.content
+  return [...messages].reverse().find((message) => message.role === 'user')
+    ?.content
 }

@@ -62,9 +62,7 @@ type Selection =
   | { kind: 'words'; budget: number }
 
 export type SummarizeBudget =
-  | number
-  | { sentences?: number; words?: number }
-  | undefined
+  number | { sentences?: number; words?: number } | undefined
 
 function parseBlocks(text: string): TextBlock[] {
   const lines = text.replace(/\r\n?/g, '\n').split('\n')
@@ -102,7 +100,10 @@ function resolveSelection(budget: SummarizeBudget): Selection {
   if (typeof budget.words === 'number' && Number.isFinite(budget.words)) {
     return {
       kind: 'words',
-      budget: Math.min(Math.max(1, Math.round(budget.words)), SUMMARIZE_MAX_WORDS),
+      budget: Math.min(
+        Math.max(1, Math.round(budget.words)),
+        SUMMARIZE_MAX_WORDS,
+      ),
     }
   }
   if (typeof budget.sentences === 'number') {
@@ -130,7 +131,11 @@ export function stripVolumeNote(text: string): string {
     .trim()
 }
 
-function reached(selection: Selection, sentences: number, words: number): boolean {
+function reached(
+  selection: Selection,
+  sentences: number,
+  words: number,
+): boolean {
   if (selection.kind === 'all') {
     return false
   }
@@ -139,10 +144,7 @@ function reached(selection: Selection, sentences: number, words: number): boolea
     : sentences >= selection.budget
 }
 
-function pickCounts(
-  blocks: TextBlock[],
-  selection: Selection,
-): number[] {
+function pickCounts(blocks: TextBlock[], selection: Selection): number[] {
   const counts = blocks.map(() => 0)
   const maxSentences =
     selection.kind === 'words'
@@ -162,7 +164,11 @@ function pickCounts(
     words += countWords(block.sentences[0])
   }
   let progress = true
-  while (sentences < maxSentences && !reached(selection, sentences, words) && progress) {
+  while (
+    sentences < maxSentences &&
+    !reached(selection, sentences, words) &&
+    progress
+  ) {
     progress = false
     for (const [index, block] of blocks.entries()) {
       if (sentences >= maxSentences || reached(selection, sentences, words)) {
@@ -207,7 +213,8 @@ export function summarizeText(text: string, budget: SummarizeBudget): string {
     0,
   )
   const totalWords = blocks.reduce(
-    (total, block) => total + block.sentences.reduce((sum, s) => sum + countWords(s), 0),
+    (total, block) =>
+      total + block.sentences.reduce((sum, s) => sum + countWords(s), 0),
     0,
   )
   if (selection.kind === 'sentences' && totalSentences <= selection.budget) {

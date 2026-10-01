@@ -1,10 +1,6 @@
 import { createServerFn } from '@tanstack/react-start'
 import { updateProfile as updateProfileInStore } from '../server/store/profiles.server'
-import {
-  asObject,
-  requireProfileId,
-  requireProfileInput,
-} from './validation'
+import { asObject, requireProfileId, requireProfileInput } from './validation'
 
 export const updateProfile = createServerFn({ method: 'POST' })
   .validator((input: { profileId: number }) => {

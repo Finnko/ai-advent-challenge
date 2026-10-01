@@ -3,7 +3,8 @@ import { formatMoment, sampleText } from '../domain/jobs/format'
 import { Badge } from '@/components/ui/Badge'
 
 export default function JobRunRow({ run }: { run: JobRunView }) {
-  const detail = run.status === 'ok' ? sampleText(run.value) : (run.error ?? '—')
+  const detail =
+    run.status === 'ok' ? sampleText(run.value) : (run.error ?? '—')
   return (
     <li className="flex flex-wrap items-center gap-2 border-b border-[var(--line)] py-1.5 last:border-b-0">
       <span className="demo-muted text-xs">

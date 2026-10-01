@@ -50,10 +50,9 @@ describe('parseCitations', () => {
 
 describe('citedTitles', () => {
   it('maps citation numbers to chunk titles', () => {
-    expect(citedTitles('смотри [1] и [2]', [chunk('Воронеж'), chunk('Москва')])).toEqual([
-      'Воронеж',
-      'Москва',
-    ])
+    expect(
+      citedTitles('смотри [1] и [2]', [chunk('Воронеж'), chunk('Москва')]),
+    ).toEqual(['Воронеж', 'Москва'])
   })
 })
 

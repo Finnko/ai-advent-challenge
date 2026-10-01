@@ -219,10 +219,10 @@ describe('listAvailableRooms', () => {
   })
 
   it('требует дату и время', async () => {
-    const outcome = await getTool(
-      createFakeStore(),
-      'listAvailableRooms',
-    ).run({}, createIdentity())
+    const outcome = await getTool(createFakeStore(), 'listAvailableRooms').run(
+      {},
+      createIdentity(),
+    )
     expect(outcome.ok).toBe(false)
     expect(outcome.text).toContain('Укажи дату и время')
   })
@@ -412,10 +412,10 @@ describe('listBookings', () => {
   })
 
   it('сообщает об отсутствии встреч', async () => {
-    const outcome = await getTool(
-      createFakeStore(),
-      'listBookings',
-    ).run({}, createIdentity())
+    const outcome = await getTool(createFakeStore(), 'listBookings').run(
+      {},
+      createIdentity(),
+    )
     expect(outcome.text).toContain('Записанных встреч нет')
   })
 

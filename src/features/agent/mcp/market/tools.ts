@@ -3,12 +3,7 @@ import {
   RATE_DEFAULT_QUOTE,
   type MarketSource,
 } from '../../domain/market/types.ts'
-import {
-  errorMessage,
-  fail,
-  ok,
-  type ToolResult,
-} from '../shared/response.ts'
+import { errorMessage, fail, ok, type ToolResult } from '../shared/response.ts'
 
 type Args = Record<string, unknown>
 
@@ -54,7 +49,9 @@ function formatRate(rate: {
   date: string
   source: string
 }): string {
-  const suffix = rate.date ? ` (${rate.date}, ${rate.source})` : ` (${rate.source})`
+  const suffix = rate.date
+    ? ` (${rate.date}, ${rate.source})`
+    : ` (${rate.source})`
   return `1 ${rate.base} = ${rate.rate} ${rate.quote}${suffix}`
 }
 
@@ -68,7 +65,9 @@ export function createMarketToolkit(deps: MarketToolkitDeps): MarketToolkit {
         return fail('base должен быть кодом валюты из трёх букв, например EUR.')
       }
       if (!quote) {
-        return fail('quote должен быть кодом валюты из трёх букв, например USD.')
+        return fail(
+          'quote должен быть кодом валюты из трёх букв, например USD.',
+        )
       }
       if (date === null) {
         return fail('date должен быть в формате YYYY-MM-DD.')

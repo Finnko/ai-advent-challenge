@@ -16,10 +16,11 @@ src/features/rag/
                  # use-rag-answer, use-control-run
   functions/     # createServerFn-адаптеры: build-index, search, answer, get-index-stats, get-comparison,
                  # list-corpus, list-chunks + validation.ts
-  server/        # *.server.ts: corpus, embedder, index-store, indexing, retrieval, comparison, answer, rag
+  server/        # *.server.ts: corpus, embedder, index-store, indexing, retrieval, reranker, rewrite,
+                 # answer-llm, comparison, answer, rag
   domain/        # изоморфно, без env/fetch: chunking/{fixed,structural,registry,windows,types}, corpus,
-                 # embedder (шов + hash-эмбеддер), wikipedia (парсер заголовков), metrics, answer-prompt,
-                 # answer-eval, types
+                 # embedder (шов + hash-эмбеддер), reranker (шов + lexical), pipelines, rewrite-prompt,
+                 # wikipedia (парсер заголовков), metrics, answer-prompt, answer-eval, types
   data/          # cities (15 городов), corpus (снапшот 15 статей), eval-queries (16 вопросов),
                  # control-questions (10 контрольных), rag-ui (подписи)
   components/    # IndexPanel, SearchPanel, AnswerPanel, ControlPanel, AnswerCard, ComparisonPanel, ChunkBrowser
@@ -83,8 +84,46 @@ char_start, char_end, n_tokens, crosses_section, text`.
 - Обе стратегии лежат в одной таблице с колонкой `strategy` — сравнение это `WHERE strategy = ?`.
 - `server/indexing.server.ts` (`buildIndex`): load → chunk → батчевые эмбеддинги (passage) →
   `replaceIndex` (delete стратегии + upsert документов + insert чанков в транзакции).
-- `server/retrieval.server.ts` (`searchChunks`): эмбеддинг запроса (query) → brute-force косинус по
-  сохранённым векторам → top-k.
+- `server/retrieval.server.ts` (`retrieve`/`searchChunks`): эмбеддинг запроса (query) → brute-force
+  косинус по сохранённым векторам → пул кандидатов `candidateK` → опциональный реранк → порог
+  отсечения (гарантированный минимум 1) → top-k.
+
+## Реранкинг и rewrite (Day 23)
+
+После первого этапа (косинус top-`candidateK`) добавляется второй этап: **cross-encoder реранкер** и
+**порог отсечения** нерелевантного. Плюс опциональная **переформулировка запроса** (query rewrite).
+
+- Шов `domain/reranker.ts`: `Reranker { id, rerank({ query, documents }) → number[] }` —
+  вероятности релевантности 0..1. `sigmoid` — нормировка логитов; `createLexicalReranker` —
+  детерминированный оффлайн-реранкер (лексическое пересечение) для тестов и демо.
+- `server/reranker.server.ts`: локальный ONNX cross-encoder
+  (`onnx-community/bge-reranker-v2-m3-ONNX` по умолчанию — мультиязычный, `q8`, CPU). Модель
+  кэшируется по `${model}:${dtype}`, логит проходит через сигмоиду, **fail-open**: при ошибке
+  загрузки/инференса ранжирование откатывается к косинусу (`reranked: false`), приложение остаётся
+  рабочим оффлайн.
+- Пайплайны (`domain/pipelines.ts`) — именованные пресеты: `rag`, `rag+rerank`, `rag+rewrite`,
+  `rag+rewrite+rerank`. Внутри — флаги `{ rewrite, rerank, threshold }`; `DEFAULT_RERANK_THRESHOLD`
+  = 0.5, `DEFAULT_RERANK_MARGIN` = 0.1, `COSINE_TIE_EPSILON` = 1e-6.
+- `server/rewrite.server.ts`: LLM-переформулировка через шов `AnswerLlm` (deepseek-flash, JSON
+  `{"rewritten": "..."}`). Эмбеддинг считается по переформулированному запросу, а реранк — по
+  исходному. Промпт и разбор — в `domain/rewrite-prompt.ts` (`buildRewriteMessages`,
+  `parseRewriteResponse`, `rewriteQuery` с fail-open).
+- **Совместимость моделей**: и эмбеддер, и реранкер грузятся `@huggingface/transformers` v4 напрямую,
+  поэтому подходит только модель с непустым `model_type` (поддержанная архитектура) и с ONNX-весами в
+  самом репозитории. `Xenova/multilingual-e5-base` и `onnx-community/bge-reranker-v2-m3-ONNX` —
+  проверены; `jinaai/jina-reranker-v2-base-multilingual` не грузится (`model_type: null`),
+  `onnx-community/gte-multilingual-reranker-base` — `Unsupported model type: new` (ModernBERT).
+  Новую модель проверяйте пробной загрузкой до того, как вписать в `RAG_*_MODEL`.
+- **Язык реранкера**: `Xenova/bge-reranker-base` — модель Chinese+English, на русских парах шумит
+  (Day 23: на запрос «Какой город основан в 1703» поднимала Екатеринбург над Санкт-Петербургом).
+  Дефолт заменён на мультиязычный `bge-reranker-v2-m3`.
+- **Margin-guard** (`retrieval.server.ts`, `compareWithMargin`): если косинусы кандидатов равны
+  (`|Δcos| ≤ COSINE_TIE_EPSILON`) и разрыв реранк-скоров меньше `RAG_RERANK_MARGIN`, порядок
+  сохраняется косинусный. Страхует от шумной/сменённой модели: реранкер может перевернуть ничью
+  только с уверенным отрывом.
+- В `retrieval.server.ts`: `candidateK` (по умолчанию `max(4*k, 20)`) — пул до реранка; порог
+  применяется **после** реранка по его скору; в выдаче ячейка несёт `score` (итоговый),
+  `originalScore` (косинус) и `relevance` (реранк).
 
 ## Сравнение
 
@@ -92,8 +131,10 @@ char_start, char_end, n_tokens, crosses_section, text`.
 
 - структурные метрики (`domain/metrics.ts`): число чанков, суммарные/средние/медианные/min/max
   токены, доля чанков, режущих границу раздела;
-- retrieval-метрики на наборе `data/eval-queries.ts` (16 вопросов, релевантность на уровне статьи):
-  `recall@3`, `recall@5`, `MRR`.
+- retrieval-метрики по каждому пайплайну на наборе `data/eval-queries.ts` (16 вопросов,
+  релевантность на уровне статьи): `recall@3`, `recall@5`, `MRR`, `precision@5`, `nDCG@5`.
+  По умолчанию считаются дешёвые режимы (`rag`, `rag+rerank`); rewrite-режимы включаются флагом
+  `includeRewrite` (вызывают LLM на каждый вопрос, переформулировки кэшируются на прогон).
 
 ## Ответ (Day 22)
 
@@ -116,10 +157,12 @@ char_start, char_end, n_tokens, crosses_section, text`.
   Вопросы — трудные специфики по городу (точные годы, числа переписей, имена), чтобы без RAG модель
   ошибалась/оговаривалась, а RAG отвечал по статье. Состав — дискриминирующий: подтверждается
   реальным прогоном обоих режимов, вопросы без разрыва или нерешаемые в корпусе выбрасываются.
-- `functions/answer.functions.ts` — тонкий адаптер (`mode`/`strategy`/`query`/`k` + опциональные
-  `expected`/`expectedSources`); `api/use-rag-answer.ts` — одиночный запрос,
-  `api/use-control-run.ts` — последовательный клиентский прогон 10 вопросов (прогресс, без
-  монолитного server fn на 20 вызовов) и scorecard «RAG N / 10 · без RAG M / 10».
+- `functions/answer.functions.ts` — тонкий адаптер (`mode`/`strategy`/`query`/`k`/`pipeline` +
+  опциональные `expected`/`expectedSources`); `api/use-rag-answer.ts` — одиночный запрос,
+  `api/use-control-run.ts` — последовательный клиентский прогон 10 вопросов по выбранным пайплайнам
+  (прогресс, без монолитного server fn) и scorecard «верно по режиму / 10».
+- Ответ несёт `pipeline`, `rewrittenQuery`, `reranked`, `embeddingQuery`, а источники — те же
+  скор-поля, что и у поиска.
 
 ## Env
 
@@ -128,6 +171,10 @@ char_start, char_end, n_tokens, crosses_section, text`.
 | `RAG_EMBED_PROVIDER` | `local` | `local` (ONNX) или `hf` (HF Inference API) |
 | `RAG_EMBED_MODEL` | `Xenova/multilingual-e5-base` | id модели |
 | `RAG_EMBED_DTYPE` | `q8` | тип весов ONNX (`q8`/`fp32`/`fp16`/`int8`) |
+| `RAG_RERANK_MODEL` | `onnx-community/bge-reranker-v2-m3-ONNX` | id кросс-энкодер-модели реранкера |
+| `RAG_RERANK_DTYPE` | `q8` | тип весов реранкера (`q8`/`fp32`/`fp16`/`int8`) |
+| `RAG_RERANK_THRESHOLD` | `0.5` | порог отсечения по вероятности реранкера (0..1) |
+| `RAG_RERANK_MARGIN` | `0.1` | margin-guard: минимальный отрыв реранка, чтобы перевернуть косинусную ничью (0..1) |
 | `RAG_DB_PATH` | `~/.ai-advent-challenge/rag.sqlite` | файл индекса |
 | `RAG_CORPUS_DIR` | `~/.ai-advent-challenge/rag-corpus` | кеш статей |
 | `RAG_WIKI_CONTACT` | URL репозитория проекта | контакт в User-Agent для MediaWiki API |
@@ -137,11 +184,13 @@ char_start, char_end, n_tokens, crosses_section, text`.
 
 - Офлайн (по умолчанию, `npm run test`): chunking/парсер заголовков, метрики, хеш-эмбеддер,
   corpus-кеш (фейковый `fetch`), пайплайн индексации/поиска/сравнения (фикстура + temp sqlite),
-  ответы `answer.test.ts` (фейковый `llm`: baseline без контекста, rag с цитатами, ошибка на пустом
-  индексе) и оценка `answer-eval.test.ts` (факты, цитаты, вердикты).
-- Gated: `embedder-integration.test.ts` (реальная модель) — `RUN_MODEL_TESTS=1`;
-  `pipeline-integration.test.ts` (реальная статья + реальная модель) — `RUN_MODEL_TESTS=1` и
-  `RUN_NETWORK_TESTS=1`.
+  ответы `answer.test.ts` (фейковый `llm`: baseline без контекста, rag с цитатами, реранк/rewrite
+  пайплайны, ошибка на пустом индексе), `rerank.test.ts` (вторая стадия: реордер, порог, минимум 1,
+  margin-guard, fail-open, `candidateK`; lexical-реранкер, sigmoid, разбор rewrite) и оценка
+  `answer-eval.test.ts` (факты, цитаты, вердикты).
+- Gated: `embedder-integration.test.ts` и `reranker-integration.test.ts` (реальная модель) —
+  `RUN_MODEL_TESTS=1`; `pipeline-integration.test.ts` (реальная статья + реальная модель) —
+  `RUN_MODEL_TESTS=1` и `RUN_NETWORK_TESTS=1`.
 
 ## Как портировать
 

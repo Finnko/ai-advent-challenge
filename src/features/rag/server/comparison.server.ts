@@ -4,9 +4,21 @@ import { CHUNKING_STRATEGY_IDS } from '../domain/chunking/registry'
 import type { Embedder } from '../domain/embedder'
 import type { RetrievalStats, StructuralStats } from '../domain/metrics'
 import { chunkStats, retrievalStats } from '../domain/metrics'
+import {
+  RAG_PIPELINE_IDS,
+  resolvePipeline,
+  type RagPipelineId,
+} from '../domain/pipelines'
+import type { Reranker } from '../domain/reranker'
+import type { Rewriter } from '../domain/rewrite-prompt'
 import type { ChunkingStrategyId } from '../domain/types'
 import type { RagIndexStore } from './index-store.server'
-import { searchChunks } from './retrieval.server'
+import { retrieve } from './retrieval.server'
+
+export type PipelineRetrieval = {
+  pipeline: RagPipelineId
+  retrieval: RetrievalStats
+}
 
 export type StrategyComparison = {
   strategy: ChunkingStrategyId
@@ -14,11 +26,13 @@ export type StrategyComparison = {
   builtAt: string | null
   structural: StructuralStats
   retrieval: RetrievalStats
+  pipelines: PipelineRetrieval[]
 }
 
 export type RagComparison = {
   strategies: StrategyComparison[]
   queryCount: number
+  includeRewrite: boolean
 }
 
 export type EvaluateOptions = {
@@ -27,6 +41,72 @@ export type EvaluateOptions = {
   store: RagIndexStore
   queries?: EvalQuery[]
   k?: number
+  reranker?: Reranker | null
+  rewriter?: Rewriter | null
+  threshold?: number
+  margin?: number
+  includeRewrite?: boolean
+  rewriteCache?: Map<string, string | null>
+}
+
+function pipelinesFor(includeRewrite: boolean): RagPipelineId[] {
+  if (includeRewrite) {
+    return RAG_PIPELINE_IDS
+  }
+  return RAG_PIPELINE_IDS.filter((id) => !resolvePipeline(id).rewrite)
+}
+
+async function cachedRewrite(
+  options: EvaluateOptions,
+  query: EvalQuery,
+): Promise<string | null> {
+  if (!options.rewriter) {
+    return null
+  }
+  const cache = options.rewriteCache
+  if (cache?.has(query.id)) {
+    return cache.get(query.id) ?? null
+  }
+  const rewritten = (await options.rewriter(query.query)).trim()
+  const value =
+    rewritten.length > 0 && rewritten !== query.query.trim() ? rewritten : null
+  cache?.set(query.id, value)
+  return value
+}
+
+async function evaluatePipeline(
+  options: EvaluateOptions,
+  pipeline: RagPipelineId,
+  queries: EvalQuery[],
+  k: number,
+  hasChunks: boolean,
+): Promise<RetrievalStats> {
+  const rankedByQuery = new Map<string, string[]>()
+  if (!hasChunks) {
+    return retrievalStats(queries, rankedByQuery)
+  }
+  const config = resolvePipeline(pipeline)
+  for (const query of queries) {
+    const rewritten = config.rewrite
+      ? await cachedRewrite(options, query)
+      : null
+    const outcome = await retrieve({
+      strategy: options.strategy,
+      query: query.query,
+      k,
+      embedder: options.embedder,
+      store: options.store,
+      reranker: config.rerank ? (options.reranker ?? null) : null,
+      threshold: config.rerank ? options.threshold : null,
+      margin: config.rerank ? options.margin : null,
+      rewrittenQuery: rewritten,
+    })
+    rankedByQuery.set(
+      query.id,
+      outcome.results.map((result) => result.chunk.title),
+    )
+  }
+  return retrievalStats(queries, rankedByQuery)
 }
 
 export async function evaluateStrategy(
@@ -35,28 +115,27 @@ export async function evaluateStrategy(
   const queries = options.queries ?? EVAL_QUERIES
   const k = options.k ?? 5
   const chunks = options.store.listChunks(options.strategy)
-  const rankedByQuery = new Map<string, string[]>()
-  if (chunks.length > 0) {
-    for (const query of queries) {
-      const results = await searchChunks({
-        strategy: options.strategy,
-        query: query.query,
+  const pipelines = pipelinesFor(options.includeRewrite ?? false)
+  const results: PipelineRetrieval[] = []
+  for (const pipeline of pipelines) {
+    results.push({
+      pipeline,
+      retrieval: await evaluatePipeline(
+        options,
+        pipeline,
+        queries,
         k,
-        embedder: options.embedder,
-        store: options.store,
-      })
-      rankedByQuery.set(
-        query.id,
-        results.map((result) => result.chunk.title),
-      )
-    }
+        chunks.length > 0,
+      ),
+    })
   }
   return {
     strategy: options.strategy,
     model: options.store.getMeta(`${options.strategy}.model`),
     builtAt: options.store.getMeta(`${options.strategy}.built_at`),
     structural: chunkStats(chunks),
-    retrieval: retrievalStats(queries, rankedByQuery),
+    retrieval: results[0]?.retrieval ?? retrievalStats(queries, new Map()),
+    pipelines: results,
   }
 }
 
@@ -64,11 +143,19 @@ export async function compareStrategies(
   options: Omit<EvaluateOptions, 'strategy'>,
 ): Promise<RagComparison> {
   const queries = options.queries ?? EVAL_QUERIES
+  const includeRewrite = options.includeRewrite ?? false
+  const rewriteCache = options.rewriteCache ?? new Map<string, string | null>()
   const strategies: StrategyComparison[] = []
   for (const strategy of CHUNKING_STRATEGY_IDS) {
     strategies.push(
-      await evaluateStrategy({ ...options, strategy, queries }),
+      await evaluateStrategy({
+        ...options,
+        strategy,
+        queries,
+        includeRewrite,
+        rewriteCache,
+      }),
     )
   }
-  return { strategies, queryCount: queries.length }
+  return { strategies, queryCount: queries.length, includeRewrite }
 }

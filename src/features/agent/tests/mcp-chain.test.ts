@@ -47,7 +47,10 @@ const DESCRIPTORS: McpToolDescriptor[] = [
     description: 'Сжимает.',
     inputSchema: {
       type: 'object',
-      properties: { text: { type: 'string' }, maxSentences: { type: 'integer' } },
+      properties: {
+        text: { type: 'string' },
+        maxSentences: { type: 'integer' },
+      },
       required: ['text'],
     },
     server: 'agent-mcp-research',

@@ -159,7 +159,8 @@ export function createFakeStore(
         vacations.find(
           (vacation) =>
             vacation.status === 'pending' &&
-            normalizeName(vacation.employeeName) === normalizeName(employeeName) &&
+            normalizeName(vacation.employeeName) ===
+              normalizeName(employeeName) &&
             (!reference || vacation.reference === reference),
         ) ?? null
       )
