@@ -230,6 +230,26 @@ export default function ControlPanel() {
         </CardContent>
       </Card>
 
+      {abstain.rows.map((row) => (
+        <div key={row.question.id} className="flex flex-col gap-2">
+          <div className="flex flex-wrap items-center gap-2 px-1">
+            <Badge variant="accent">#{row.question.id}</Badge>
+            <span className="font-semibold text-[var(--ink)]">
+              {row.question.query}
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 px-1">
+            <span className="demo-muted text-xs">{row.question.note}</span>
+          </div>
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+            {pipelines.map((id) => {
+              const result = row.results[id]
+              return result ? <AnswerCard key={id} result={result} /> : null
+            })}
+          </div>
+        </div>
+      ))}
+
       {run.rows.map((row) => (
         <div key={row.question.id} className="flex flex-col gap-2">
           <div className="flex flex-wrap items-center gap-2 px-1">

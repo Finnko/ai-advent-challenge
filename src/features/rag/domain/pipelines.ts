@@ -4,7 +4,6 @@ export type RagPipelineId =
 export type PipelineConfig = {
   rewrite: boolean
   rerank: boolean
-  threshold: number | null
 }
 
 export const DEFAULT_RERANK_THRESHOLD = 0.5
@@ -23,18 +22,10 @@ export const RAG_PIPELINE_IDS: RagPipelineId[] = [
 ]
 
 const PIPELINE_CONFIG: Record<RagPipelineId, PipelineConfig> = {
-  rag: { rewrite: false, rerank: false, threshold: null },
-  'rag+rerank': {
-    rewrite: false,
-    rerank: true,
-    threshold: DEFAULT_RERANK_THRESHOLD,
-  },
-  'rag+rewrite': { rewrite: true, rerank: false, threshold: null },
-  'rag+rewrite+rerank': {
-    rewrite: true,
-    rerank: true,
-    threshold: DEFAULT_RERANK_THRESHOLD,
-  },
+  rag: { rewrite: false, rerank: false },
+  'rag+rerank': { rewrite: false, rerank: true },
+  'rag+rewrite': { rewrite: true, rerank: false },
+  'rag+rewrite+rerank': { rewrite: true, rerank: true },
 }
 
 export function isRagPipelineId(value: unknown): value is RagPipelineId {

@@ -1,7 +1,9 @@
 import type { CityEntry } from '../data/cities'
 import { WIKI_CITIES } from '../data/cities'
-import type { CorpusRef, CorpusSource } from '../domain/corpus'
+import type { CorpusDocStatus, CorpusRef, CorpusSource } from '../domain/corpus'
 import type { RawDoc } from '../domain/types'
+
+export type { CorpusDocStatus } from '../domain/corpus'
 
 const DEFAULT_DIR_NAME = '.ai-advent-challenge'
 const CORPUS_DIR_NAME = 'rag-corpus'
@@ -175,35 +177,32 @@ export function createWikiCorpusSource(
       }
       return doc
     },
+    async status(refsToInspect) {
+      const targets = refsToInspect ?? refs
+      const statuses: CorpusDocStatus[] = []
+      for (const ref of targets) {
+        const path = await cachePath(ref.id)
+        const text = (await readCache(path)) ?? (await loadSnapshot(ref.id))
+        statuses.push({
+          id: ref.id,
+          title: ref.title,
+          source: ref.source,
+          cached: text !== null,
+          charCount: text?.length ?? null,
+        })
+      }
+      return statuses
+    },
   }
-}
-
-export type CorpusDocStatus = {
-  id: string
-  title: string
-  source: string
-  cached: boolean
-  charCount: number | null
 }
 
 export async function listCorpusStatus(
   dir?: string,
   cities: CityEntry[] = WIKI_CITIES,
 ): Promise<CorpusDocStatus[]> {
-  const nodePath = await import('node:path')
-  const baseDir = dir ?? (await resolveCorpusDir())
-  const statuses: CorpusDocStatus[] = []
-  for (const city of cities) {
-    const path = nodePath.join(baseDir, `${city.id}.txt`)
-    const cached = await readCache(path)
-    const text = cached ?? (await loadSnapshot(city.id))
-    statuses.push({
-      id: city.id,
-      title: city.title,
-      source: wikiSourceUrl(city.title),
-      cached: text !== null,
-      charCount: text?.length ?? null,
-    })
-  }
-  return statuses
+  const source = createWikiCorpusSource({
+    dir: dir ?? (await resolveCorpusDir()),
+    cities,
+  })
+  return source.status(await source.list())
 }

@@ -111,6 +111,15 @@ describe('indexing pipeline', () => {
         }
         return doc
       },
+      async status() {
+        return docs.map((doc) => ({
+          id: doc.id,
+          title: doc.title,
+          source: doc.source,
+          cached: true,
+          charCount: doc.text.length,
+        }))
+      },
     }
 
     await buildIndex({
@@ -194,6 +203,28 @@ describe('comparison', () => {
         'rag+rewrite+rerank',
       ])
     }
+    store.close()
+  })
+
+  it('fails open when the rewriter throws during comparison', async () => {
+    const store = await makeStore()
+    const corpus = createFixtureCorpus(DOCS)
+    const embedder = createHashEmbedder(256)
+    for (const strategy of CHUNKING_STRATEGY_IDS) {
+      await buildIndex({ strategy, corpus, embedder, store })
+    }
+
+    const comparison = await compareStrategies({
+      embedder,
+      store,
+      includeRewrite: true,
+      rewriter: async () => {
+        throw new Error('boom')
+      },
+      reranker: createLexicalReranker(),
+    })
+    expect(comparison.includeRewrite).toBe(true)
+    expect(comparison.strategies).toHaveLength(2)
     store.close()
   })
 

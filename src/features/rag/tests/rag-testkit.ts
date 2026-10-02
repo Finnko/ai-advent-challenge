@@ -28,6 +28,15 @@ export function createFixtureCorpus(docs: RawDoc[]): CorpusSource {
       }
       return doc
     },
+    async status() {
+      return docs.map((doc) => ({
+        id: doc.id,
+        title: doc.title,
+        source: doc.source,
+        cached: true,
+        charCount: doc.text.length,
+      }))
+    },
   }
 }
 

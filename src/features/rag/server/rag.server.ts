@@ -1,69 +1,43 @@
 import { CHUNKING_STRATEGY_IDS } from '../domain/chunking/registry'
-import type { CorpusSource } from '../domain/corpus'
-import type { Embedder } from '../domain/embedder'
-import type { Reranker } from '../domain/reranker'
-import { rewriteQuery, type Rewriter } from '../domain/rewrite-prompt'
 import type { ChunkingStrategyId } from '../domain/types'
-import { compareStrategies, type RagComparison } from './comparison.server'
-import {
-  createWikiCorpusSource,
-  listCorpusStatus,
-  resolveCorpusDir,
-  type CorpusDocStatus,
-} from './corpus.server'
-import { createEmbedder, resolveEmbedModelId } from './embedder.server'
-import { buildIndex, type BuildIndexResult } from './indexing.server'
-import { getRagStore, type RagIndexStore } from './index-store.server'
-import {
-  createReranker,
-  resolveRerankMargin,
-  resolveRerankThreshold,
-} from './reranker.server'
-import { retrieve, type RetrievalResult } from './retrieval.server'
-import { createDefaultRewriter } from './rewrite.server'
 import {
   answerQuestion,
-  defaultAnswerDeps,
-  type AnswerDeps,
   type AnswerInput,
   type AnswerResponse,
 } from './answer.server'
-
-export type RagDeps = {
-  corpus: CorpusSource
-  embedder: Embedder
-  store: RagIndexStore
-}
-
-export async function defaultRagDeps(): Promise<RagDeps> {
-  const dir = await resolveCorpusDir()
-  return {
-    corpus: createWikiCorpusSource({ dir }),
-    embedder: createEmbedder(),
-    store: await getRagStore(),
-  }
-}
+import { resolveEmbedModelId } from './embedder.server'
+import { getRagStore, type RagIndexStore } from './index-store.server'
+import { buildIndex, type BuildIndexResult } from './indexing.server'
+import { runPipeline } from './pipeline-run.server'
+import {
+  resolveRuntime,
+  type AnswerRuntimeOverrides,
+  type RagRuntimeOverrides,
+} from './runtime.server'
+import { compareStrategies, type RagComparison } from './comparison.server'
+import { listCorpusStatus, type CorpusDocStatus } from './corpus.server'
+import type { RetrievalResult } from './retrieval.server'
 
 export async function buildStrategyIndex(
   strategy: ChunkingStrategyId,
-  deps?: RagDeps,
+  deps?: RagRuntimeOverrides,
 ): Promise<BuildIndexResult> {
-  const resolved = deps ?? (await defaultRagDeps())
+  const runtime = await resolveRuntime(deps)
   return buildIndex({
     strategy,
-    corpus: resolved.corpus,
-    embedder: resolved.embedder,
-    store: resolved.store,
+    corpus: runtime.corpus,
+    embedder: runtime.embedder,
+    store: runtime.store,
   })
 }
 
 export async function buildAllIndexes(
-  deps?: RagDeps,
+  deps?: RagRuntimeOverrides,
 ): Promise<BuildIndexResult[]> {
-  const resolved = deps ?? (await defaultRagDeps())
+  const runtime = await resolveRuntime(deps)
   const results: BuildIndexResult[] = []
   for (const strategy of CHUNKING_STRATEGY_IDS) {
-    results.push(await buildStrategyIndex(strategy, resolved))
+    results.push(await buildStrategyIndex(strategy, runtime))
   }
   return results
 }
@@ -99,24 +73,6 @@ export async function getIndexStats(
   }
 }
 
-export type RetrievalDeps = RagDeps & {
-  reranker: Reranker | null
-  rewriter: Rewriter | null
-  threshold: number
-  margin: number
-}
-
-export async function defaultRetrievalDeps(): Promise<RetrievalDeps> {
-  const base = await defaultRagDeps()
-  return {
-    ...base,
-    reranker: createReranker(),
-    rewriter: createDefaultRewriter(),
-    threshold: resolveRerankThreshold(),
-    margin: resolveRerankMargin(),
-  }
-}
-
 export type SearchInput = {
   strategy: ChunkingStrategyId
   query: string
@@ -131,57 +87,58 @@ export type SearchResult = RetrievalResult & { rewrittenQuery: string | null }
 
 export async function getComparison(
   input?: { includeRewrite?: boolean },
-  deps?: RetrievalDeps,
+  deps?: RagRuntimeOverrides,
 ): Promise<RagComparison> {
-  const resolved = deps ?? (await defaultRetrievalDeps())
+  const runtime = await resolveRuntime(deps)
   return compareStrategies({
-    embedder: resolved.embedder,
-    store: resolved.store,
-    reranker: resolved.reranker,
-    rewriter: resolved.rewriter,
-    threshold: resolved.threshold,
-    margin: resolved.margin,
+    embedder: runtime.embedder,
+    store: runtime.store,
+    reranker: runtime.reranker,
+    rewriter: runtime.rewriter,
+    threshold: runtime.threshold,
+    margin: runtime.margin,
     includeRewrite: input?.includeRewrite ?? false,
   })
 }
 
 export async function search(
   input: SearchInput,
-  deps?: RetrievalDeps,
+  deps?: RagRuntimeOverrides,
 ): Promise<SearchResult> {
-  const resolved = deps ?? (await defaultRetrievalDeps())
-  const rewrittenQuery = input.rewrite
-    ? await rewriteQuery(input.query, resolved.rewriter)
-    : null
+  const runtime = await resolveRuntime(deps)
   const threshold =
-    input.threshold === undefined ? resolved.threshold : input.threshold
-  const outcome = await retrieve({
-    strategy: input.strategy,
-    query: input.query,
-    k: input.k,
-    candidateK: input.candidateK,
-    embedder: resolved.embedder,
-    store: resolved.store,
-    reranker: input.rerank ? resolved.reranker : null,
-    threshold: input.rerank ? threshold : null,
-    margin: input.rerank ? resolved.margin : null,
-    rewrittenQuery,
-  })
-  return { ...outcome, rewrittenQuery }
+    input.threshold === undefined ? runtime.threshold : input.threshold
+  const { retrieval, rewrittenQuery } = await runPipeline(
+    { rewrite: input.rewrite === true, rerank: input.rerank === true },
+    {
+      strategy: input.strategy,
+      query: input.query,
+      k: input.k,
+      candidateK: input.candidateK,
+      threshold,
+    },
+    {
+      embedder: runtime.embedder,
+      store: runtime.store,
+      reranker: runtime.reranker,
+      rewriter: runtime.rewriter,
+      margin: runtime.margin,
+    },
+  )
+  return { ...retrieval, rewrittenQuery }
 }
 
 export async function getCorpus(): Promise<CorpusDocStatus[]> {
   return listCorpusStatus()
 }
 
-export type { AnswerDeps, AnswerInput, AnswerResponse }
+export type { AnswerInput, AnswerResponse }
 
 export async function answer(
   input: AnswerInput,
-  deps?: AnswerDeps,
+  deps?: AnswerRuntimeOverrides,
 ): Promise<AnswerResponse> {
-  const resolved = deps ?? (await defaultAnswerDeps())
-  return answerQuestion(input, resolved)
+  return answerQuestion(input, deps)
 }
 
 export async function listChunksFor(

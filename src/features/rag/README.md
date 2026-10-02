@@ -16,11 +16,12 @@ src/features/rag/
                  # use-rag-answer, use-control-run, use-abstain-run
   functions/     # createServerFn-адаптеры: build-index, search, answer, get-index-stats, get-comparison,
                  # list-corpus, list-chunks + validation.ts
-  server/        # *.server.ts: corpus, embedder, index-store, indexing, retrieval, reranker, rewrite,
-                 # answer-llm, comparison, answer, rag
+  server/        # *.server.ts: corpus, embedder, index-store, indexing, retrieval, pipeline-run, reranker,
+                 # rewrite, answer-llm, comparison, answer, runtime, rag
   domain/        # изоморфно, без env/fetch: chunking/{fixed,structural,registry,windows,types}, corpus,
                  # embedder (шов + hash-эмбеддер), reranker (шов + lexical), pipelines, rewrite-prompt,
-                 # wikipedia (парсер заголовков), metrics, answer-prompt, answer-format, answer-eval, types
+                 # scoring (доступ к скорам), wikipedia (парсер заголовков), metrics, answer-prompt,
+                 # answer-format, answer-eval, types
   data/          # cities (15 городов), corpus (снапшот 15 статей), eval-queries (16 вопросов),
                  # control-questions (10 контрольных), abstain-questions (3 вне корпуса), rag-ui (подписи)
   components/    # IndexPanel, SearchPanel, AnswerPanel, ControlPanel, AnswerCard, ComparisonPanel, ChunkBrowser
@@ -87,6 +88,8 @@ char_start, char_end, n_tokens, crosses_section, text`.
 - `server/retrieval.server.ts` (`retrieve`/`searchChunks`): эмбеддинг запроса (query) → brute-force
   косинус по сохранённым векторам → пул кандидатов `candidateK` → опциональный реранк → порог
   отсечения (гарантированный минимум 1) → top-k.
+- `domain/scoring.ts`: `relevanceOf`/`cosineOf` — единственные точки трактовки полей `ScoredChunk`
+  (`relevance ?? score`, `originalScore ?? score`); ими пользуются и `retrieval`, и `answer`.
 
 ## Реранкинг и rewrite (Day 23)
 
@@ -102,8 +105,15 @@ char_start, char_end, n_tokens, crosses_section, text`.
   загрузки/инференса ранжирование откатывается к косинусу (`reranked: false`), приложение остаётся
   рабочим оффлайн.
 - Пайплайны (`domain/pipelines.ts`) — именованные пресеты: `rag`, `rag+rerank`, `rag+rewrite`,
-  `rag+rewrite+rerank`. Внутри — флаги `{ rewrite, rerank, threshold }`; `DEFAULT_RERANK_THRESHOLD`
-  = 0.5, `DEFAULT_RERANK_MARGIN` = 0.1, `COSINE_TIE_EPSILON` = 1e-6.
+  `rag+rewrite+rerank`. Внутри — флаги `{ rewrite, rerank }`; порог — явный параметр
+  (`DEFAULT_RERANK_THRESHOLD` = 0.5, `DEFAULT_RERANK_MARGIN` = 0.1, `COSINE_TIE_EPSILON` = 1e-6).
+- `server/pipeline-run.server.ts` (`runPipeline`) — **один шов** для всех пайплайнов: превращает
+  `PipelineConfig` в параметры `retrieve` (реранкер/порог/margin), делает rewrite через
+  `rewriteQuery` (fail-open) и опциональный `rewriteCache`. Им пользуются «Поиск», «Ответ» и
+  «Сравнение» — режимная логика больше не дублируется у вызывающих.
+- `server/runtime.server.ts` (`resolveRuntime`/`resolveAnswerRuntime`) — единая композиция
+  адаптеров (`corpus`, `embedder`, `store`, `reranker`, `rewriter`, `llm`) и resolved-порогов;
+  точки входа принимают частичный override, тесты подменяют только нужный адаптер.
 - `server/rewrite.server.ts`: LLM-переформулировка через шов `AnswerLlm` (deepseek-flash, JSON
   `{"rewritten": "..."}`). Эмбеддинг считается по переформулированному запросу, а реранк — по
   исходному. Промпт и разбор — в `domain/rewrite-prompt.ts` (`buildRewriteMessages`,
@@ -141,8 +151,8 @@ char_start, char_end, n_tokens, crosses_section, text`.
 Вкладка «Ответ» — первый RAG-запрос: `вопрос → поиск релевантных чанков → объединение с вопросом →
 запрос к LLM`. Реализован как **фиксированный пайплайн** (не агентный цикл).
 
-- `server/answer.server.ts` (`answerQuestion`) — глубокий модуль. Шов
-  `AnswerDeps = { embedder, store, llm }`; `AnswerLlm` по умолчанию оборачивает
+- `server/answer.server.ts` (`answerQuestion`) — глубокий модуль. Зависимости — частичный
+  `AnswerRuntime` (см. `server/runtime.server.ts`); `AnswerLlm` по умолчанию оборачивает
   `callCompletions(TIER_ENDPOINTS.medium, …)` (`temperature: 0`, `max_tokens: 700`). Для режима
   `baseline` поиск пропускается, для `rag` при `countChunks(strategy) === 0` бросается явная ошибка
   («соберите индекс») — без автосборки и фолбэков.

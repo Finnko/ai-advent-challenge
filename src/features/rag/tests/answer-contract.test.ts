@@ -128,6 +128,38 @@ describe('answer contract on synthetic, non-memorized facts', () => {
     store.close()
   })
 
+  it('stitchSources preserves the score contract on stitched neighbours', async () => {
+    const store = await makeStore()
+    const embedder = createHashEmbedder(256)
+    const longText = Array.from({ length: 80 }, () => SYNTHETIC).join(' ')
+    await buildIndex({
+      strategy: 'fixed',
+      corpus: createFixtureCorpus([
+        makeDoc({ id: 'testograd', title: 'Тестоград', text: longText }),
+      ]),
+      embedder,
+      store,
+    })
+    const sources = [
+      {
+        chunk: store.listChunks('fixed')[0],
+        score: 0.7,
+        originalScore: 0.6,
+        relevance: 0.8,
+      },
+    ]
+    const stitched = stitchSources(sources, store, 'fixed').filter(
+      (source) => source.stitched,
+    )
+    expect(stitched.length).toBeGreaterThan(0)
+    for (const neighbour of stitched) {
+      expect(neighbour.score).toBe(0.7)
+      expect(neighbour.originalScore).toBe(0.6)
+      expect(neighbour.relevance).toBe(0.8)
+    }
+    store.close()
+  })
+
   it('stitchSources dedupes and respects the document boundary', async () => {
     const store = await makeStore()
     const embedder = createHashEmbedder(256)

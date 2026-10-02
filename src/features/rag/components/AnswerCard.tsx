@@ -48,11 +48,13 @@ export default function AnswerCard({
       <CardHeader className="flex flex-row items-center justify-between gap-2">
         <CardTitle>{title ?? heading}</CardTitle>
         <div className="flex flex-wrap items-center gap-2">
-          {result.verdict && (
+          {result.verdict ? (
             <Badge variant={VERDICT_VARIANT[result.verdict] ?? 'default'}>
               {VERDICT_LABELS[result.verdict]}
             </Badge>
-          )}
+          ) : result.abstained ? (
+            <Badge variant="warn">{VERDICT_LABELS.abstained}</Badge>
+          ) : null}
           <Button
             size="xs"
             variant="ghost"

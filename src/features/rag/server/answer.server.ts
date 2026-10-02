@@ -3,68 +3,37 @@ import { parseAnswerResponse } from '../domain/answer-format'
 import { abstainAnswer, buildAnswerMessages } from '../domain/answer-prompt'
 import { verdictFor, verifyQuotes } from '../domain/answer-eval'
 import type { AnswerQuote, AnswerVerdict } from '../domain/answer-eval'
-import type { Embedder } from '../domain/embedder'
 import {
-  DEFAULT_RERANK_THRESHOLD,
   resolvePipeline,
   type PipelineConfig,
   type RagPipelineId,
 } from '../domain/pipelines'
-import type { Reranker } from '../domain/reranker'
-import { rewriteQuery, type Rewriter } from '../domain/rewrite-prompt'
+import { cosineOf, relevanceOf } from '../domain/scoring'
 import type {
   AnswerMode,
   ChunkingStrategyId,
   ScoredChunk,
 } from '../domain/types'
-import type { AnswerLlm } from './answer-llm.server'
-import { createDeepSeekAnswerLlm } from './answer-llm.server'
-import { createEmbedder } from './embedder.server'
-import type { RagIndexStore } from './index-store.server'
-import { getRagStore } from './index-store.server'
 import {
-  createReranker,
-  resolveCosineThreshold,
-  resolveRerankMargin,
-  resolveRerankThreshold,
-} from './reranker.server'
+  ANSWER_MAX_TOKENS,
+  ANSWER_TEMPERATURE,
+  createDeepSeekAnswerLlm,
+  createDeepSeekLlm,
+} from './answer-llm.server'
+import { runPipeline, type PipelineRunResult } from './pipeline-run.server'
 import {
-  retrieve,
-  stitchSources,
-  type RetrievalResult,
-} from './retrieval.server'
-import { createDefaultRewriter } from './rewrite.server'
+  resolveAnswerRuntime,
+  type AnswerRuntime,
+  type AnswerRuntimeOverrides,
+} from './runtime.server'
+import { stitchSources, type RetrievalResult } from './retrieval.server'
 
 export type { AnswerLlm, AnswerLlmResult } from './answer-llm.server'
 export {
   ANSWER_MAX_TOKENS,
   ANSWER_TEMPERATURE,
   createDeepSeekLlm,
-} from './answer-llm.server'
-export { createDeepSeekAnswerLlm }
-
-export type AnswerDeps = {
-  embedder: Embedder
-  store: RagIndexStore
-  llm: AnswerLlm
-  reranker?: Reranker | null
-  rewriter?: Rewriter | null
-  threshold?: number
-  cosineThreshold?: number
-  margin?: number
-}
-
-export async function defaultAnswerDeps(): Promise<AnswerDeps> {
-  return {
-    embedder: createEmbedder(),
-    store: await getRagStore(),
-    llm: createDeepSeekAnswerLlm(),
-    reranker: createReranker(),
-    rewriter: createDefaultRewriter(),
-    threshold: resolveRerankThreshold(),
-    cosineThreshold: resolveCosineThreshold(),
-    margin: resolveRerankMargin(),
-  }
+  createDeepSeekAnswerLlm,
 }
 
 export type AnswerInput = {
@@ -108,36 +77,41 @@ function pipelineConfig(input: AnswerInput): PipelineConfig | null {
   return resolvePipeline(input.pipeline ?? 'rag')
 }
 
-async function retrieveSources(
+async function runRetrieval(
   input: AnswerInput,
-  deps: AnswerDeps,
+  deps: AnswerRuntime,
   config: PipelineConfig | null,
-  rewrittenQuery: string | null,
-): Promise<RetrievalResult> {
+): Promise<PipelineRunResult> {
   if (config === null) {
     return {
-      results: [],
-      reranked: false,
-      candidateCount: 0,
-      embeddingQuery: input.query,
+      retrieval: {
+        results: [],
+        reranked: false,
+        candidateCount: 0,
+        embeddingQuery: input.query,
+      },
+      rewrittenQuery: null,
     }
   }
   if (deps.store.countChunks(input.strategy) === 0) {
     throw emptyIndexError(input.strategy)
   }
-  return retrieve({
-    strategy: input.strategy,
-    query: input.query,
-    k: input.k,
-    embedder: deps.embedder,
-    store: deps.store,
-    reranker: config.rerank ? (deps.reranker ?? null) : null,
-    threshold: config.rerank
-      ? (deps.threshold ?? DEFAULT_RERANK_THRESHOLD)
-      : null,
-    margin: config.rerank ? deps.margin : null,
-    rewrittenQuery,
-  })
+  return runPipeline(
+    config,
+    {
+      strategy: input.strategy,
+      query: input.query,
+      k: input.k,
+      threshold: deps.threshold,
+    },
+    {
+      embedder: deps.embedder,
+      store: deps.store,
+      reranker: deps.reranker,
+      rewriter: deps.rewriter,
+      margin: deps.margin,
+    },
+  )
 }
 
 function confidence(result: RetrievalResult): number | null {
@@ -145,15 +119,13 @@ function confidence(result: RetrievalResult): number | null {
   if (!top) {
     return null
   }
-  return result.reranked
-    ? (top.relevance ?? top.score)
-    : (top.originalScore ?? top.score)
+  return result.reranked ? relevanceOf(top) : cosineOf(top)
 }
 
 function shouldAbstain(
   config: PipelineConfig | null,
   retrieval: RetrievalResult,
-  deps: AnswerDeps,
+  deps: AnswerRuntime,
 ): boolean {
   if (config === null) {
     return false
@@ -162,22 +134,17 @@ function shouldAbstain(
     return true
   }
   const threshold = retrieval.reranked ? deps.threshold : deps.cosineThreshold
-  if (threshold === null || threshold === undefined) {
-    return false
-  }
   const score = confidence(retrieval)
   return score !== null && score < threshold
 }
 
 export async function answerQuestion(
   input: AnswerInput,
-  deps: AnswerDeps,
+  overrides: AnswerRuntimeOverrides = {},
 ): Promise<AnswerResponse> {
+  const deps = await resolveAnswerRuntime(overrides)
   const config = pipelineConfig(input)
-  const rewrittenQuery = config?.rewrite
-    ? await rewriteQuery(input.query, deps.rewriter)
-    : null
-  const retrieval = await retrieveSources(input, deps, config, rewrittenQuery)
+  const { retrieval, rewrittenQuery } = await runRetrieval(input, deps, config)
   const base = {
     mode: input.mode,
     pipeline: config ? (input.pipeline ?? 'rag') : null,

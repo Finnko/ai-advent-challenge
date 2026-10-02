@@ -6,6 +6,7 @@ import {
   DEFAULT_RERANK_MARGIN,
 } from '../domain/pipelines'
 import type { Reranker } from '../domain/reranker'
+import { cosineOf, relevanceOf } from '../domain/scoring'
 import type { Chunk, ChunkingStrategyId, ScoredChunk } from '../domain/types'
 import type { RagIndexStore } from './index-store.server'
 
@@ -79,18 +80,13 @@ async function rerankCandidates(
   }
 }
 
-function effectiveRelevance(candidate: ScoredChunk): number {
-  return candidate.relevance ?? candidate.score
-}
-
 function compareWithMargin(
   a: ScoredChunk,
   b: ScoredChunk,
   margin: number,
 ): number {
-  const relevanceDelta = effectiveRelevance(b) - effectiveRelevance(a)
-  const cosineDelta =
-    (b.originalScore ?? b.score) - (a.originalScore ?? a.score)
+  const relevanceDelta = relevanceOf(b) - relevanceOf(a)
+  const cosineDelta = cosineOf(b) - cosineOf(a)
   const cosineTied = Math.abs(cosineDelta) <= COSINE_TIE_EPSILON
   if (cosineTied && Math.abs(relevanceDelta) < margin) {
     return cosineDelta
@@ -115,9 +111,7 @@ function selectResults(
     return candidates.slice(0, k)
   }
   const kept = candidates
-    .filter(
-      (candidate) => (candidate.relevance ?? candidate.score) >= threshold,
-    )
+    .filter((candidate) => relevanceOf(candidate) >= threshold)
     .slice(0, k)
   return kept.length > 0 ? kept : [candidates[0]]
 }
@@ -193,7 +187,13 @@ export function stitchSources(
         continue
       }
       seen.add(neighbor.chunkId)
-      expanded.push({ chunk: neighbor, score: source.score, stitched: true })
+      expanded.push({
+        chunk: neighbor,
+        score: source.score,
+        originalScore: source.originalScore,
+        relevance: source.relevance,
+        stitched: true,
+      })
     }
   }
   return expanded
