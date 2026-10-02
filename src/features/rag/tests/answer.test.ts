@@ -89,7 +89,9 @@ describe('answerQuestion', () => {
 
   it('rag retrieves context, cites it and scores the verdict', async () => {
     const store = await makeStore()
-    const { llm, calls } = createFakeLlm('Казань — столица Татарстана [1].')
+    const { llm, calls } = createFakeLlm(
+      '{"answer":"Казань — столица Татарстана [1].","quotes":[{"n":1,"text":"Казань — столица Татарстана."}]}',
+    )
     const deps = await makeDeps(store, llm)
 
     const result = await answerQuestion(
@@ -106,9 +108,68 @@ describe('answerQuestion', () => {
 
     expect(result.sources.length).toBeGreaterThan(0)
     expect(result.sources[0].chunk.title).toBe('Казань')
+    expect(result.format).toBe('json')
+    expect(result.quotes).toHaveLength(1)
+    expect(result.quotes[0].verified).toBe(true)
+    expect(result.abstained).toBe(false)
     expect(result.verdict).toBe('correct')
     expect(calls[0][1].content).toContain('Фрагменты документов')
     expect(calls[0][1].content).toContain('[1] Казань')
+    store.close()
+  })
+
+  it('abstains without calling the model when relevance is below threshold', async () => {
+    const store = await makeStore()
+    const { llm, calls } = createFakeLlm('не должно вызываться')
+    const embedder = createHashEmbedder(256)
+    await buildIndex({
+      strategy: 'fixed',
+      corpus: createFixtureCorpus(DOCS),
+      embedder,
+      store,
+    })
+
+    const result = await answerQuestion(
+      {
+        mode: 'rag',
+        strategy: 'fixed',
+        query: 'урожай пшеницы в 1834 году',
+        k: 3,
+        expected: ['1834'],
+        expectedSources: ['Казань'],
+      },
+      { embedder, store, llm, cosineThreshold: 0.99 },
+    )
+
+    expect(result.abstained).toBe(true)
+    expect(result.verdict).toBe('abstained')
+    expect(result.sources).toEqual([])
+    expect(result.quotes).toEqual([])
+    expect(calls).toHaveLength(0)
+    store.close()
+  })
+
+  it('flags a quote that is not verbatim from its chunk', async () => {
+    const store = await makeStore()
+    const { llm } = createFakeLlm(
+      '{"answer":"Казань — столица Татарстана [1].","quotes":[{"n":1,"text":"Казань — столица Германии."}]}',
+    )
+    const deps = await makeDeps(store, llm)
+
+    const result = await answerQuestion(
+      {
+        mode: 'rag',
+        strategy: 'fixed',
+        query: 'столица Татарстана кремль Кул-Шариф',
+        k: 3,
+        expected: ['Казань'],
+        expectedSources: ['Казань'],
+      },
+      deps,
+    )
+
+    expect(result.quotes[0].verified).toBe(false)
+    expect(result.verdict).toBe('ungrounded')
     store.close()
   })
 

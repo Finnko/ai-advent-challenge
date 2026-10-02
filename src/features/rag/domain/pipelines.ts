@@ -9,6 +9,8 @@ export type PipelineConfig = {
 
 export const DEFAULT_RERANK_THRESHOLD = 0.5
 
+export const DEFAULT_COSINE_THRESHOLD = 0.35
+
 export const DEFAULT_RERANK_MARGIN = 0.1
 
 export const COSINE_TIE_EPSILON = 1e-6

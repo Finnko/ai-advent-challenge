@@ -1,5 +1,5 @@
 import type { ChatUsage } from '@lib/llm'
-import type { AnswerVerdict } from './domain/answer-eval'
+import type { AnswerQuote, AnswerVerdict } from './domain/answer-eval'
 import type { RetrievalStats, StructuralStats } from './domain/metrics'
 import type { RagPipelineId } from './domain/pipelines'
 import type {
@@ -11,6 +11,7 @@ import type {
 
 export type {
   AnswerMode,
+  AnswerQuote,
   AnswerVerdict,
   Chunk,
   ChunkingStrategyId,
@@ -98,7 +99,10 @@ export type AnswerResult = {
   rewrittenQuery: string | null
   reranked: boolean
   answer: string
+  format: 'json' | 'text'
   sources: ScoredChunk[]
+  quotes: AnswerQuote[]
+  abstained: boolean
   verdict: AnswerVerdict | null
   usage: ChatUsage | null
   latencyMs: number
@@ -110,6 +114,7 @@ export type AnswerInput = {
   query: string
   k?: number
   pipeline?: RagPipelineId
+  stitch?: boolean
   expected?: string[]
   expectedSources?: string[]
 }

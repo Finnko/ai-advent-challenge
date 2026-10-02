@@ -1,7 +1,8 @@
 import type { ChatUsage } from '@lib/llm'
-import { buildAnswerMessages } from '../domain/answer-prompt'
-import { verdictFor } from '../domain/answer-eval'
-import type { AnswerVerdict } from '../domain/answer-eval'
+import { parseAnswerResponse } from '../domain/answer-format'
+import { abstainAnswer, buildAnswerMessages } from '../domain/answer-prompt'
+import { verdictFor, verifyQuotes } from '../domain/answer-eval'
+import type { AnswerQuote, AnswerVerdict } from '../domain/answer-eval'
 import type { Embedder } from '../domain/embedder'
 import {
   DEFAULT_RERANK_THRESHOLD,
@@ -23,10 +24,15 @@ import type { RagIndexStore } from './index-store.server'
 import { getRagStore } from './index-store.server'
 import {
   createReranker,
+  resolveCosineThreshold,
   resolveRerankMargin,
   resolveRerankThreshold,
 } from './reranker.server'
-import { retrieve, type RetrievalResult } from './retrieval.server'
+import {
+  retrieve,
+  stitchSources,
+  type RetrievalResult,
+} from './retrieval.server'
 import { createDefaultRewriter } from './rewrite.server'
 
 export type { AnswerLlm, AnswerLlmResult } from './answer-llm.server'
@@ -44,6 +50,7 @@ export type AnswerDeps = {
   reranker?: Reranker | null
   rewriter?: Rewriter | null
   threshold?: number
+  cosineThreshold?: number
   margin?: number
 }
 
@@ -55,6 +62,7 @@ export async function defaultAnswerDeps(): Promise<AnswerDeps> {
     reranker: createReranker(),
     rewriter: createDefaultRewriter(),
     threshold: resolveRerankThreshold(),
+    cosineThreshold: resolveCosineThreshold(),
     margin: resolveRerankMargin(),
   }
 }
@@ -65,6 +73,7 @@ export type AnswerInput = {
   query: string
   k: number
   pipeline?: RagPipelineId
+  stitch?: boolean
   expected?: string[]
   expectedSources?: string[]
 }
@@ -77,7 +86,10 @@ export type AnswerResponse = {
   rewrittenQuery: string | null
   reranked: boolean
   answer: string
+  format: 'json' | 'text'
   sources: ScoredChunk[]
+  quotes: AnswerQuote[]
+  abstained: boolean
   verdict: AnswerVerdict | null
   usage: ChatUsage | null
   latencyMs: number
@@ -128,6 +140,35 @@ async function retrieveSources(
   })
 }
 
+function confidence(result: RetrievalResult): number | null {
+  const top = result.results[0]
+  if (!top) {
+    return null
+  }
+  return result.reranked
+    ? (top.relevance ?? top.score)
+    : (top.originalScore ?? top.score)
+}
+
+function shouldAbstain(
+  config: PipelineConfig | null,
+  retrieval: RetrievalResult,
+  deps: AnswerDeps,
+): boolean {
+  if (config === null) {
+    return false
+  }
+  if (retrieval.results.length === 0) {
+    return true
+  }
+  const threshold = retrieval.reranked ? deps.threshold : deps.cosineThreshold
+  if (threshold === null || threshold === undefined) {
+    return false
+  }
+  const score = confidence(retrieval)
+  return score !== null && score < threshold
+}
+
 export async function answerQuestion(
   input: AnswerInput,
   deps: AnswerDeps,
@@ -137,32 +178,57 @@ export async function answerQuestion(
     ? await rewriteQuery(input.query, deps.rewriter)
     : null
   const retrieval = await retrieveSources(input, deps, config, rewrittenQuery)
-  const sources = retrieval.results
-  const chunks = sources.map((source) => source.chunk)
-  const messages = buildAnswerMessages({
-    question: input.query,
-    mode: input.mode,
-    chunks,
-  })
-  const reply = await deps.llm(messages)
-  const verdict = input.expected
-    ? verdictFor({
-        mode: input.mode,
-        answer: reply.content,
-        expected: input.expected,
-        expectedSources: input.expectedSources ?? [],
-        chunks,
-      })
-    : null
-  return {
+  const base = {
     mode: input.mode,
     pipeline: config ? (input.pipeline ?? 'rag') : null,
     query: input.query,
     embeddingQuery: retrieval.embeddingQuery,
     rewrittenQuery,
     reranked: retrieval.reranked,
-    answer: reply.content,
+  }
+  if (shouldAbstain(config, retrieval, deps)) {
+    return {
+      ...base,
+      answer: abstainAnswer(input.query),
+      format: 'text',
+      sources: [],
+      quotes: [],
+      abstained: true,
+      verdict: input.expected ? 'abstained' : null,
+      usage: null,
+      latencyMs: 0,
+    }
+  }
+  const sources =
+    input.stitch && config !== null
+      ? stitchSources(retrieval.results, deps.store, input.strategy)
+      : retrieval.results
+  const chunks = sources.map((source) => source.chunk)
+  const messages = buildAnswerMessages({
+    question: input.query,
+    mode: input.mode,
+    chunks,
+  })
+  const reply = await deps.llm(messages, { json: input.mode === 'rag' })
+  const parsed = parseAnswerResponse(reply.content)
+  const quotes = verifyQuotes(parsed.quotes, chunks)
+  const verdict = input.expected
+    ? verdictFor({
+        mode: input.mode,
+        answer: parsed.answer,
+        expected: input.expected,
+        expectedSources: input.expectedSources ?? [],
+        chunks,
+        quotes,
+      })
+    : null
+  return {
+    ...base,
+    answer: parsed.answer,
+    format: parsed.format,
     sources,
+    quotes,
+    abstained: false,
     verdict,
     usage: reply.usage,
     latencyMs: reply.latencyMs,

@@ -30,4 +30,5 @@ export type ScoredChunk = {
   score: number
   originalScore?: number
   relevance?: number
+  stitched?: boolean
 }

@@ -1,8 +1,11 @@
 import { useState } from 'react'
+import { useAbstainRun } from '../api/use-abstain-run'
 import { useControlRun } from '../api/use-control-run'
+import { ABSTAIN_QUESTIONS } from '../data/abstain-questions'
 import {
   PIPELINE_IDS,
   PIPELINE_LABELS,
+  PIPELINE_SHORT_LABELS,
   STRATEGY_IDS,
   STRATEGY_LABELS,
   VERDICT_LABELS,
@@ -16,7 +19,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
 
 const K_OPTIONS = [3, 5, 10]
 
-const VERDICTS: AnswerVerdict[] = ['correct', 'partial', 'wrong', 'ungrounded']
+const VERDICTS: AnswerVerdict[] = [
+  'correct',
+  'partial',
+  'wrong',
+  'ungrounded',
+  'abstained',
+]
 
 const DEFAULT_PIPELINES: RagPipelineId[] = ['rag', 'rag+rerank']
 
@@ -27,11 +36,38 @@ function countCorrect(
   return rows.filter((row) => row.results[key]?.verdict === 'correct').length
 }
 
+function countGrounded(
+  rows: {
+    results: Record<
+      string,
+      { sources: unknown[]; quotes: { verified: boolean }[] }
+    >
+  }[],
+  key: string,
+): number {
+  return rows.filter((row) => {
+    const result = row.results[key]
+    return (
+      result !== undefined &&
+      result.sources.length > 0 &&
+      result.quotes.some((quote) => quote.verified)
+    )
+  }).length
+}
+
+function countAbstained(
+  rows: { results: Record<string, { abstained: boolean }> }[],
+  key: string,
+): number {
+  return rows.filter((row) => row.results[key]?.abstained === true).length
+}
+
 export default function ControlPanel() {
   const [strategy, setStrategy] = useState<ChunkingStrategyId>('fixed')
   const [k, setK] = useState(5)
   const [pipelines, setPipelines] = useState<RagPipelineId[]>(DEFAULT_PIPELINES)
   const run = useControlRun()
+  const abstain = useAbstainRun()
 
   const togglePipeline = (id: RagPipelineId) => {
     setPipelines((current) =>
@@ -129,6 +165,66 @@ export default function ControlPanel() {
                 без RAG: {countCorrect(run.rows, 'baseline')} /{' '}
                 {run.rows.length}
               </span>
+            </Alert>
+          )}
+          {run.rows.length > 0 && (
+            <Alert>
+              <span className="demo-muted text-xs">
+                с источниками и подтверждёнными цитатами:{' '}
+              </span>
+              {pipelines.map((id) => (
+                <span key={id} className="mr-3 text-xs">
+                  {PIPELINE_SHORT_LABELS[id]}: {countGrounded(run.rows, id)} /{' '}
+                  {run.rows.length}
+                </span>
+              ))}
+            </Alert>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>
+            Режим «не знаю»: {ABSTAIN_QUESTIONS.length} вопроса
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="mt-3 flex flex-col gap-3">
+          <p className="demo-muted m-0 text-xs">
+            Вопросы заведомо вне корпуса. Для каждого RAG-режима ожидается
+            abstain: ассистент обязан сказать «не знаю» и попросить уточнение,
+            не вызывая модель.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="secondary"
+              onClick={() => void abstain.run({ strategy, k, pipelines })}
+              disabled={abstain.running || pipelines.length === 0}
+            >
+              {abstain.running ? 'Прогоняю…' : 'Проверить «не знаю»'}
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={abstain.reset}
+              disabled={abstain.running || abstain.rows.length === 0}
+            >
+              Сбросить
+            </Button>
+            <span className="demo-muted text-xs">
+              {abstain.completed} / {abstain.total}
+            </span>
+          </div>
+          {abstain.error && (
+            <Alert variant="destructive">{abstain.error}</Alert>
+          )}
+          {abstain.rows.length > 0 && (
+            <Alert>
+              {pipelines.map((id) => (
+                <span key={id} className="mr-3 text-xs">
+                  {PIPELINE_SHORT_LABELS[id]}:{' '}
+                  {countAbstained(abstain.rows, id)} / {abstain.rows.length}
+                </span>
+              ))}
             </Alert>
           )}
         </CardContent>

@@ -6,7 +6,7 @@ import {
   DEFAULT_RERANK_MARGIN,
 } from '../domain/pipelines'
 import type { Reranker } from '../domain/reranker'
-import type { ChunkingStrategyId, ScoredChunk } from '../domain/types'
+import type { Chunk, ChunkingStrategyId, ScoredChunk } from '../domain/types'
 import type { RagIndexStore } from './index-store.server'
 
 export type SearchOptions = {
@@ -150,4 +150,51 @@ export async function searchChunks(
   options: SearchOptions,
 ): Promise<ScoredChunk[]> {
   return (await retrieve(options)).results
+}
+
+export function stitchSources(
+  sources: ScoredChunk[],
+  store: RagIndexStore,
+  strategy: ChunkingStrategyId,
+): ScoredChunk[] {
+  if (sources.length === 0) {
+    return []
+  }
+  const byDoc = new Map<string, Chunk[]>()
+  for (const chunk of store.listChunks(strategy)) {
+    const list = byDoc.get(chunk.docId) ?? []
+    list.push(chunk)
+    byDoc.set(chunk.docId, list)
+  }
+  for (const list of byDoc.values()) {
+    list.sort((a, b) => a.position - b.position)
+  }
+  const seen = new Set(sources.map((source) => source.chunk.chunkId))
+  const expanded: ScoredChunk[] = []
+  for (const source of sources) {
+    expanded.push(source)
+    const siblings = byDoc.get(source.chunk.docId)
+    if (!siblings) {
+      continue
+    }
+    const index = siblings.findIndex(
+      (chunk) => chunk.chunkId === source.chunk.chunkId,
+    )
+    if (index < 0) {
+      continue
+    }
+    for (const offset of [-1, 1]) {
+      const neighbor = siblings[index + offset]
+      if (
+        !neighbor ||
+        seen.has(neighbor.chunkId) ||
+        neighbor.section !== source.chunk.section
+      ) {
+        continue
+      }
+      seen.add(neighbor.chunkId)
+      expanded.push({ chunk: neighbor, score: source.score, stitched: true })
+    }
+  }
+  return expanded
 }

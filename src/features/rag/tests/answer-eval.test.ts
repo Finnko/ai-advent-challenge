@@ -5,6 +5,7 @@ import {
   normalizeFact,
   parseCitations,
   verdictFor,
+  verifyQuotes,
 } from '../domain/answer-eval'
 import type { Chunk } from '../domain/types'
 
@@ -53,6 +54,28 @@ describe('citedTitles', () => {
     expect(
       citedTitles('смотри [1] и [2]', [chunk('Воронеж'), chunk('Москва')]),
     ).toEqual(['Воронеж', 'Москва'])
+  })
+})
+
+describe('verifyQuotes', () => {
+  it('verifies verbatim quotes and rejects paraphrases', () => {
+    const chunkWithText: Chunk = {
+      ...chunk('Воронеж'),
+      text: 'Воронеж основан в 1586 году.',
+    }
+    const quotes = verifyQuotes(
+      [
+        { n: 1, text: 'основан в 1586 году' },
+        { n: 1, text: 'основан в 1700 году' },
+        { n: 2, text: 'что-то' },
+      ],
+      [chunkWithText],
+    )
+    expect(quotes[0].verified).toBe(true)
+    expect(quotes[0].chunkId).toBe('Воронеж')
+    expect(quotes[1].verified).toBe(false)
+    expect(quotes[2].verified).toBe(false)
+    expect(quotes[2].chunkId).toBeNull()
   })
 })
 
@@ -127,6 +150,43 @@ describe('verdictFor', () => {
         expected: ['1586'],
         expectedSources: ['Воронеж'],
         chunks: [chunk('Москва')],
+      }),
+    ).toBe('ungrounded')
+  })
+
+  it('requires verified quotes to back the matched facts', () => {
+    const source: Chunk = {
+      ...chunk('Воронеж'),
+      text: 'Воронеж основан в 1586 году.',
+    }
+    expect(
+      verdictFor({
+        mode: 'rag',
+        answer: rag,
+        expected: ['1586'],
+        expectedSources: ['Воронеж'],
+        chunks: [source],
+        quotes: verifyQuotes([{ n: 1, text: 'основан в 1586 году' }], [source]),
+      }),
+    ).toBe('correct')
+    expect(
+      verdictFor({
+        mode: 'rag',
+        answer: rag,
+        expected: ['1586'],
+        expectedSources: ['Воронеж'],
+        chunks: [source],
+        quotes: [],
+      }),
+    ).toBe('ungrounded')
+    expect(
+      verdictFor({
+        mode: 'rag',
+        answer: rag,
+        expected: ['1586'],
+        expectedSources: ['Воронеж'],
+        chunks: [source],
+        quotes: verifyQuotes([{ n: 1, text: 'другой текст' }], [source]),
       }),
     ).toBe('ungrounded')
   })
