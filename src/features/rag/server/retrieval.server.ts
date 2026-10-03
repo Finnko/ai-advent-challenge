@@ -6,7 +6,8 @@ import {
   DEFAULT_RERANK_MARGIN,
 } from '../domain/pipelines'
 import type { Reranker } from '../domain/reranker'
-import type { ChunkingStrategyId, ScoredChunk } from '../domain/types'
+import { cosineOf, relevanceOf } from '../domain/scoring'
+import type { Chunk, ChunkingStrategyId, ScoredChunk } from '../domain/types'
 import type { RagIndexStore } from './index-store.server'
 
 export type SearchOptions = {
@@ -79,18 +80,13 @@ async function rerankCandidates(
   }
 }
 
-function effectiveRelevance(candidate: ScoredChunk): number {
-  return candidate.relevance ?? candidate.score
-}
-
 function compareWithMargin(
   a: ScoredChunk,
   b: ScoredChunk,
   margin: number,
 ): number {
-  const relevanceDelta = effectiveRelevance(b) - effectiveRelevance(a)
-  const cosineDelta =
-    (b.originalScore ?? b.score) - (a.originalScore ?? a.score)
+  const relevanceDelta = relevanceOf(b) - relevanceOf(a)
+  const cosineDelta = cosineOf(b) - cosineOf(a)
   const cosineTied = Math.abs(cosineDelta) <= COSINE_TIE_EPSILON
   if (cosineTied && Math.abs(relevanceDelta) < margin) {
     return cosineDelta
@@ -115,9 +111,7 @@ function selectResults(
     return candidates.slice(0, k)
   }
   const kept = candidates
-    .filter(
-      (candidate) => (candidate.relevance ?? candidate.score) >= threshold,
-    )
+    .filter((candidate) => relevanceOf(candidate) >= threshold)
     .slice(0, k)
   return kept.length > 0 ? kept : [candidates[0]]
 }
@@ -150,4 +144,57 @@ export async function searchChunks(
   options: SearchOptions,
 ): Promise<ScoredChunk[]> {
   return (await retrieve(options)).results
+}
+
+export function stitchSources(
+  sources: ScoredChunk[],
+  store: RagIndexStore,
+  strategy: ChunkingStrategyId,
+): ScoredChunk[] {
+  if (sources.length === 0) {
+    return []
+  }
+  const byDoc = new Map<string, Chunk[]>()
+  for (const chunk of store.listChunks(strategy)) {
+    const list = byDoc.get(chunk.docId) ?? []
+    list.push(chunk)
+    byDoc.set(chunk.docId, list)
+  }
+  for (const list of byDoc.values()) {
+    list.sort((a, b) => a.position - b.position)
+  }
+  const seen = new Set(sources.map((source) => source.chunk.chunkId))
+  const expanded: ScoredChunk[] = []
+  for (const source of sources) {
+    expanded.push(source)
+    const siblings = byDoc.get(source.chunk.docId)
+    if (!siblings) {
+      continue
+    }
+    const index = siblings.findIndex(
+      (chunk) => chunk.chunkId === source.chunk.chunkId,
+    )
+    if (index < 0) {
+      continue
+    }
+    for (const offset of [-1, 1]) {
+      const neighbor = siblings[index + offset]
+      if (
+        !neighbor ||
+        seen.has(neighbor.chunkId) ||
+        neighbor.section !== source.chunk.section
+      ) {
+        continue
+      }
+      seen.add(neighbor.chunkId)
+      expanded.push({
+        chunk: neighbor,
+        score: source.score,
+        originalScore: source.originalScore,
+        relevance: source.relevance,
+        stitched: true,
+      })
+    }
+  }
+  return expanded
 }

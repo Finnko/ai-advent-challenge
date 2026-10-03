@@ -52,4 +52,5 @@ export const VERDICT_LABELS: Record<AnswerVerdict, string> = {
   partial: 'частично',
   wrong: 'неверно',
   ungrounded: 'без опоры',
+  abstained: 'не знаю',
 }

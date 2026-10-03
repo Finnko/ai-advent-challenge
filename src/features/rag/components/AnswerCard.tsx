@@ -12,6 +12,7 @@ const VERDICT_VARIANT: Record<string, BadgeVariant> = {
   partial: 'warn',
   wrong: 'danger',
   ungrounded: 'danger',
+  abstained: 'warn',
 }
 
 function usageLabel(result: AnswerResult): string {
@@ -47,11 +48,13 @@ export default function AnswerCard({
       <CardHeader className="flex flex-row items-center justify-between gap-2">
         <CardTitle>{title ?? heading}</CardTitle>
         <div className="flex flex-wrap items-center gap-2">
-          {result.verdict && (
+          {result.verdict ? (
             <Badge variant={VERDICT_VARIANT[result.verdict] ?? 'default'}>
               {VERDICT_LABELS[result.verdict]}
             </Badge>
-          )}
+          ) : result.abstained ? (
+            <Badge variant="warn">{VERDICT_LABELS.abstained}</Badge>
+          ) : null}
           <Button
             size="xs"
             variant="ghost"
@@ -86,6 +89,35 @@ export default function AnswerCard({
           </p>
         )}
 
+        {result.quotes.length > 0 && (
+          <div className="flex flex-col gap-1">
+            <span className="demo-muted text-xs">Цитаты:</span>
+            <div className="flex flex-col gap-1">
+              {result.quotes.map((quote, index) => (
+                <div
+                  key={`${quote.n}-${index}`}
+                  className="flex flex-col gap-1 rounded-lg border border-[var(--line)] bg-[var(--surface-tint)] px-3 py-2 text-xs"
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="accent">[{quote.n}]</Badge>
+                    <Badge variant={quote.verified ? 'success' : 'danger'}>
+                      {quote.verified ? 'цитата подтверждена' : 'не найдена'}
+                    </Badge>
+                    {quote.chunkId && (
+                      <span className="demo-muted font-mono">
+                        {quote.chunkId}
+                      </span>
+                    )}
+                  </div>
+                  <span className="italic leading-relaxed text-[var(--ink-soft)]">
+                    «{quote.text}»
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {result.sources.length > 0 && (
           <div className="flex flex-col gap-1">
             <span className="demo-muted text-xs">Найденные фрагменты:</span>
@@ -101,6 +133,7 @@ export default function AnswerCard({
                   ) : (
                     <Badge>score {source.score.toFixed(3)}</Badge>
                   )}
+                  {source.stitched && <Badge variant="outline">контекст</Badge>}
                   <span className="font-semibold text-[var(--ink)]">
                     {source.chunk.title}
                   </span>
@@ -109,10 +142,27 @@ export default function AnswerCard({
                       раздел: {source.chunk.section}
                     </span>
                   )}
+                  <span className="demo-muted font-mono">
+                    {source.chunk.chunkId}
+                  </span>
+                  <a
+                    href={source.chunk.source}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="demo-muted underline"
+                  >
+                    источник
+                  </a>
                 </div>
               ))}
             </div>
           </div>
+        )}
+
+        {result.abstained && (
+          <span className="demo-muted text-xs">
+            релевантность ниже порога — ответ не сгенерирован
+          </span>
         )}
 
         {showPrompt && (

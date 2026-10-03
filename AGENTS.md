@@ -1,9 +1,10 @@
 # Project: AI Advent Challenge
 
-Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 23 (`feature/day23`).
+Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 24 (`feature/day24`).
 Days 13–20 extend the unified `/agent` workspace with task state, invariants and MCP; Day 21 adds the
 `/rag` document-index feature; Day 22 adds RAG answers with/without retrieval and a control set; Day 23
-adds a second retrieval stage (cross-encoder reranking + relevance threshold) and query rewrite.
+adds a second retrieval stage (cross-encoder reranking + relevance threshold) and query rewrite; Day 24
+makes the answer contract structured (mandatory sources + verified quotes) and adds threshold abstention.
 
 ## Where to read more
 

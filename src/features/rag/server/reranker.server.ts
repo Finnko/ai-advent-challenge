@@ -1,4 +1,5 @@
 import {
+  DEFAULT_COSINE_THRESHOLD,
   DEFAULT_RERANK_MARGIN,
   DEFAULT_RERANK_THRESHOLD,
 } from '../domain/pipelines'
@@ -31,6 +32,18 @@ export function resolveRerankThreshold(): number {
   const parsed = Number(value)
   if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1) {
     return DEFAULT_RERANK_THRESHOLD
+  }
+  return parsed
+}
+
+export function resolveCosineThreshold(): number {
+  const value = process.env.RAG_COSINE_THRESHOLD?.trim()
+  if (value === undefined || value === '') {
+    return DEFAULT_COSINE_THRESHOLD
+  }
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1) {
+    return DEFAULT_COSINE_THRESHOLD
   }
   return parsed
 }

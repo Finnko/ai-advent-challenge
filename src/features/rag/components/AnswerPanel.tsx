@@ -19,6 +19,7 @@ export default function AnswerPanel() {
   const [strategy, setStrategy] = useState<ChunkingStrategyId>('fixed')
   const [k, setK] = useState(5)
   const [pipeline, setPipeline] = useState<RagPipelineId>('rag+rerank')
+  const [stitch, setStitch] = useState(true)
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<{
     selected: AnswerResult
@@ -33,7 +34,14 @@ export default function AnswerPanel() {
     setResults(null)
     try {
       const [selected, baseline] = await Promise.all([
-        answer.mutateAsync({ mode: 'rag', strategy, query, k, pipeline }),
+        answer.mutateAsync({
+          mode: 'rag',
+          strategy,
+          query,
+          k,
+          pipeline,
+          stitch,
+        }),
         answer.mutateAsync({ mode: 'baseline', strategy, query, k }),
       ])
       setResults({ selected, baseline })
@@ -87,6 +95,17 @@ export default function AnswerPanel() {
                 {PIPELINE_LABELS[id]}
               </Button>
             ))}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="demo-muted text-xs">контекст</span>
+            <Button
+              size="xs"
+              variant={stitch ? 'default' : 'secondary'}
+              onClick={() => setStitch((value) => !value)}
+            >
+              {stitch ? 'широкий (соседние чанки)' : 'только top-k'}
+            </Button>
           </div>
 
           <div className="flex gap-2">

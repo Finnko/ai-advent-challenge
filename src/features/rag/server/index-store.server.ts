@@ -175,6 +175,12 @@ export async function createRagStore(
   const upsertMeta = db.prepare(
     'INSERT INTO rag_meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
   )
+  const selectRows = (strategy: ChunkingStrategyId): ChunkRow[] =>
+    db
+      .prepare(
+        'SELECT * FROM rag_chunks WHERE strategy = ? ORDER BY doc_id, position',
+      )
+      .all(strategy) as ChunkRow[]
 
   return {
     replaceIndex(input) {
@@ -235,21 +241,11 @@ export async function createRagStore(
       db.prepare('DELETE FROM rag_meta WHERE key LIKE ?').run(`${strategy}.%`)
     },
     listChunks(strategy) {
-      const rows = db
-        .prepare(
-          'SELECT * FROM rag_chunks WHERE strategy = ? ORDER BY doc_id, position',
-        )
-        .all(strategy) as ChunkRow[]
-      return rows.map(toChunk)
+      return selectRows(strategy).map(toChunk)
     },
     listStoredChunks(strategy) {
-      const rows = db
-        .prepare(
-          'SELECT * FROM rag_chunks WHERE strategy = ? ORDER BY doc_id, position',
-        )
-        .all(strategy) as ChunkRow[]
       const stored: StoredChunk[] = []
-      for (const row of rows) {
+      for (const row of selectRows(strategy)) {
         const embedding = fromBlob(row.embedding)
         if (embedding) {
           stored.push({ chunk: toChunk(row), embedding })

@@ -13,7 +13,7 @@ import type { Reranker } from '../domain/reranker'
 import type { Rewriter } from '../domain/rewrite-prompt'
 import type { ChunkingStrategyId } from '../domain/types'
 import type { RagIndexStore } from './index-store.server'
-import { retrieve } from './retrieval.server'
+import { runPipeline } from './pipeline-run.server'
 
 export type PipelineRetrieval = {
   pipeline: RagPipelineId
@@ -56,24 +56,6 @@ function pipelinesFor(includeRewrite: boolean): RagPipelineId[] {
   return RAG_PIPELINE_IDS.filter((id) => !resolvePipeline(id).rewrite)
 }
 
-async function cachedRewrite(
-  options: EvaluateOptions,
-  query: EvalQuery,
-): Promise<string | null> {
-  if (!options.rewriter) {
-    return null
-  }
-  const cache = options.rewriteCache
-  if (cache?.has(query.id)) {
-    return cache.get(query.id) ?? null
-  }
-  const rewritten = (await options.rewriter(query.query)).trim()
-  const value =
-    rewritten.length > 0 && rewritten !== query.query.trim() ? rewritten : null
-  cache?.set(query.id, value)
-  return value
-}
-
 async function evaluatePipeline(
   options: EvaluateOptions,
   pipeline: RagPipelineId,
@@ -87,23 +69,26 @@ async function evaluatePipeline(
   }
   const config = resolvePipeline(pipeline)
   for (const query of queries) {
-    const rewritten = config.rewrite
-      ? await cachedRewrite(options, query)
-      : null
-    const outcome = await retrieve({
-      strategy: options.strategy,
-      query: query.query,
-      k,
-      embedder: options.embedder,
-      store: options.store,
-      reranker: config.rerank ? (options.reranker ?? null) : null,
-      threshold: config.rerank ? options.threshold : null,
-      margin: config.rerank ? options.margin : null,
-      rewrittenQuery: rewritten,
-    })
+    const { retrieval } = await runPipeline(
+      config,
+      {
+        strategy: options.strategy,
+        query: query.query,
+        k,
+        threshold: options.threshold ?? null,
+        rewriteCache: options.rewriteCache,
+      },
+      {
+        embedder: options.embedder,
+        store: options.store,
+        reranker: options.reranker ?? null,
+        rewriter: options.rewriter ?? null,
+        margin: options.margin ?? null,
+      },
+    )
     rankedByQuery.set(
       query.id,
-      outcome.results.map((result) => result.chunk.title),
+      retrieval.results.map((result) => result.chunk.title),
     )
   }
   return retrievalStats(queries, rankedByQuery)

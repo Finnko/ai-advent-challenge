@@ -13,16 +13,17 @@
 src/features/rag/
   pages/         # RagPage — табы Индекс / Поиск / Ответ / Контроль / Сравнение
   api/           # react-query: use-rag-index, use-rag-search, use-rag-corpus, use-rag-chunks,
-                 # use-rag-answer, use-control-run
+                 # use-rag-answer, use-control-run, use-abstain-run
   functions/     # createServerFn-адаптеры: build-index, search, answer, get-index-stats, get-comparison,
                  # list-corpus, list-chunks + validation.ts
-  server/        # *.server.ts: corpus, embedder, index-store, indexing, retrieval, reranker, rewrite,
-                 # answer-llm, comparison, answer, rag
+  server/        # *.server.ts: corpus, embedder, index-store, indexing, retrieval, pipeline-run, reranker,
+                 # rewrite, answer-llm, comparison, answer, runtime, rag
   domain/        # изоморфно, без env/fetch: chunking/{fixed,structural,registry,windows,types}, corpus,
                  # embedder (шов + hash-эмбеддер), reranker (шов + lexical), pipelines, rewrite-prompt,
-                 # wikipedia (парсер заголовков), metrics, answer-prompt, answer-eval, types
+                 # scoring (доступ к скорам), wikipedia (парсер заголовков), metrics, answer-prompt,
+                 # answer-format, answer-eval, types
   data/          # cities (15 городов), corpus (снапшот 15 статей), eval-queries (16 вопросов),
-                 # control-questions (10 контрольных), rag-ui (подписи)
+                 # control-questions (10 контрольных), abstain-questions (3 вне корпуса), rag-ui (подписи)
   components/    # IndexPanel, SearchPanel, AnswerPanel, ControlPanel, AnswerCard, ComparisonPanel, ChunkBrowser
   tests/         # офлайн-тесты + gated интеграционные
   types.ts       # wire-типы ответов API
@@ -87,6 +88,8 @@ char_start, char_end, n_tokens, crosses_section, text`.
 - `server/retrieval.server.ts` (`retrieve`/`searchChunks`): эмбеддинг запроса (query) → brute-force
   косинус по сохранённым векторам → пул кандидатов `candidateK` → опциональный реранк → порог
   отсечения (гарантированный минимум 1) → top-k.
+- `domain/scoring.ts`: `relevanceOf`/`cosineOf` — единственные точки трактовки полей `ScoredChunk`
+  (`relevance ?? score`, `originalScore ?? score`); ими пользуются и `retrieval`, и `answer`.
 
 ## Реранкинг и rewrite (Day 23)
 
@@ -102,8 +105,15 @@ char_start, char_end, n_tokens, crosses_section, text`.
   загрузки/инференса ранжирование откатывается к косинусу (`reranked: false`), приложение остаётся
   рабочим оффлайн.
 - Пайплайны (`domain/pipelines.ts`) — именованные пресеты: `rag`, `rag+rerank`, `rag+rewrite`,
-  `rag+rewrite+rerank`. Внутри — флаги `{ rewrite, rerank, threshold }`; `DEFAULT_RERANK_THRESHOLD`
-  = 0.5, `DEFAULT_RERANK_MARGIN` = 0.1, `COSINE_TIE_EPSILON` = 1e-6.
+  `rag+rewrite+rerank`. Внутри — флаги `{ rewrite, rerank }`; порог — явный параметр
+  (`DEFAULT_RERANK_THRESHOLD` = 0.5, `DEFAULT_RERANK_MARGIN` = 0.1, `COSINE_TIE_EPSILON` = 1e-6).
+- `server/pipeline-run.server.ts` (`runPipeline`) — **один шов** для всех пайплайнов: превращает
+  `PipelineConfig` в параметры `retrieve` (реранкер/порог/margin), делает rewrite через
+  `rewriteQuery` (fail-open) и опциональный `rewriteCache`. Им пользуются «Поиск», «Ответ» и
+  «Сравнение» — режимная логика больше не дублируется у вызывающих.
+- `server/runtime.server.ts` (`resolveRuntime`/`resolveAnswerRuntime`) — единая композиция
+  адаптеров (`corpus`, `embedder`, `store`, `reranker`, `rewriter`, `llm`) и resolved-порогов;
+  точки входа принимают частичный override, тесты подменяют только нужный адаптер.
 - `server/rewrite.server.ts`: LLM-переформулировка через шов `AnswerLlm` (deepseek-flash, JSON
   `{"rewritten": "..."}`). Эмбеддинг считается по переформулированному запросу, а реранк — по
   исходному. Промпт и разбор — в `domain/rewrite-prompt.ts` (`buildRewriteMessages`,
@@ -141,8 +151,8 @@ char_start, char_end, n_tokens, crosses_section, text`.
 Вкладка «Ответ» — первый RAG-запрос: `вопрос → поиск релевантных чанков → объединение с вопросом →
 запрос к LLM`. Реализован как **фиксированный пайплайн** (не агентный цикл).
 
-- `server/answer.server.ts` (`answerQuestion`) — глубокий модуль. Шов
-  `AnswerDeps = { embedder, store, llm }`; `AnswerLlm` по умолчанию оборачивает
+- `server/answer.server.ts` (`answerQuestion`) — глубокий модуль. Зависимости — частичный
+  `AnswerRuntime` (см. `server/runtime.server.ts`); `AnswerLlm` по умолчанию оборачивает
   `callCompletions(TIER_ENDPOINTS.medium, …)` (`temperature: 0`, `max_tokens: 700`). Для режима
   `baseline` поиск пропускается, для `rag` при `countChunks(strategy) === 0` бросается явная ошибка
   («соберите индекс») — без автосборки и фолбэков.
@@ -164,6 +174,29 @@ char_start, char_end, n_tokens, crosses_section, text`.
 - Ответ несёт `pipeline`, `rewrittenQuery`, `reranked`, `embeddingQuery`, а источники — те же
   скор-поля, что и у поиска.
 
+## Контракт ответа и abstain (Day 24)
+
+- **Строгий JSON от модели.** `RAG_SYSTEM` требует `{"answer": "...", "quotes": [{"n": 1, "text": "..."}]}`;
+  `createDeepSeekAnswerLlm` включает `response_format: { type: 'json_object' }`, `temperature: 0`,
+  `ANSWER_MAX_TOKENS = 1200`. `domain/answer-format.ts` (`parseAnswerResponse`) fail-open: битый JSON →
+  `format: 'text'` с пустыми цитатами.
+- **Источники — детерминированные.** Сервер сам собирает `sources` из найденных чанков
+  (`title`, `source` URL, `section`, `chunk_id`, score/relevance). Модель их не придумывает — инвариант
+  ответа, а не просьба.
+- **Цитаты заверяются.** `verifyQuotes(quotes, chunks)` (`domain/answer-eval.ts`) принимает цитату только
+  если её нормализованный текст — подстрока соответствующего чанка (`n`). Вердикт `ungrounded`, если
+  подтверждённых цитат нет или ожидаемые факты не встречаются в них.
+- **«Не знаю» по порогу.** `shouldAbstain` в `server/answer.server.ts`: скор верхнего кандидата ниже
+  порога → сервер без вызова LLM возвращает `abstainAnswer(query)`, `abstained: true`, пустые
+  `sources`/`quotes`, вердикт `abstained`. Для rerank-режимов порог — `relevance` (`RAG_RERANK_THRESHOLD`),
+  для `rag`/`rag+rewrite` — косинус (`RAG_COSINE_THRESHOLD`, дефолт `0.35`). Сам `retrieve` сохраняет
+  гарантию минимум одного результата — это не задевает «Поиск» и сравнение.
+- **Больше контекста.** Опция `stitch` (`stitchSources`) добавляет к выдаче соседние чанки того же
+  раздела/документа с флагом `stitched: true` — против «модель заблудилась» в длинной статье. Ранжирование
+  не меняется.
+- **Проверка.** Табличка «Контроль» считает «с источниками и подтверждёнными цитатами: N / 10»; отдельная
+  кнопка прогоняет `data/abstain-questions.ts` (3 вопроса вне корпуса) и считает abstain по режимам.
+
 ## Env
 
 | Переменная | По умолчанию | Смысл |
@@ -174,6 +207,7 @@ char_start, char_end, n_tokens, crosses_section, text`.
 | `RAG_RERANK_MODEL` | `onnx-community/bge-reranker-v2-m3-ONNX` | id кросс-энкодер-модели реранкера |
 | `RAG_RERANK_DTYPE` | `q8` | тип весов реранкера (`q8`/`fp32`/`fp16`/`int8`) |
 | `RAG_RERANK_THRESHOLD` | `0.5` | порог отсечения по вероятности реранкера (0..1) |
+| `RAG_COSINE_THRESHOLD` | `0.35` | порог косинуса для abstain в режимах без реранка (`rag`, `rag+rewrite`) |
 | `RAG_RERANK_MARGIN` | `0.1` | margin-guard: минимальный отрыв реранка, чтобы перевернуть косинусную ничью (0..1) |
 | `RAG_DB_PATH` | `~/.ai-advent-challenge/rag.sqlite` | файл индекса |
 | `RAG_CORPUS_DIR` | `~/.ai-advent-challenge/rag-corpus` | кеш статей |
@@ -184,10 +218,12 @@ char_start, char_end, n_tokens, crosses_section, text`.
 
 - Офлайн (по умолчанию, `npm run test`): chunking/парсер заголовков, метрики, хеш-эмбеддер,
   corpus-кеш (фейковый `fetch`), пайплайн индексации/поиска/сравнения (фикстура + temp sqlite),
-  ответы `answer.test.ts` (фейковый `llm`: baseline без контекста, rag с цитатами, реранк/rewrite
-  пайплайны, ошибка на пустом индексе), `rerank.test.ts` (вторая стадия: реордер, порог, минимум 1,
-  margin-guard, fail-open, `candidateK`; lexical-реранкер, sigmoid, разбор rewrite) и оценка
-  `answer-eval.test.ts` (факты, цитаты, вердикты).
+  ответы `answer.test.ts` (фейковый `llm`: baseline без контекста, rag с цитатами, abstain без вызова
+  LLM, неверная цитата, реранк/rewrite пайплайны, ошибка на пустом индексе), `answer-format.test.ts`
+  (разбор JSON/фенсов/битых цитат/фолбэк), `answer-contract.test.ts` (синтетический факт: отвечает
+  только grounded-RAG; stitch соседних чанков), `rerank.test.ts` (вторая стадия: реордер, порог,
+  минимум 1, margin-guard, fail-open, `candidateK`; lexical-реранкер, sigmoid, разбор rewrite) и оценка
+  `answer-eval.test.ts` (факты, цитаты, заверение цитат, вердикты).
 - Gated: `embedder-integration.test.ts` и `reranker-integration.test.ts` (реальная модель) —
   `RUN_MODEL_TESTS=1`; `pipeline-integration.test.ts` (реальная статья + реальная модель) —
   `RUN_MODEL_TESTS=1` и `RUN_NETWORK_TESTS=1`.
