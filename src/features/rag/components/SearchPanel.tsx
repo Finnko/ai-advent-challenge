@@ -175,7 +175,7 @@ export default function SearchPanel() {
           {results.map((item, index) => (
             <div
               key={item.chunk.chunkId}
-              className="demo-panel flex flex-col gap-1 rounded-lg border border-[var(--line)] p-3"
+              className="flex flex-col gap-1 rounded-lg border border-[var(--line)] bg-[var(--surface)] p-3"
             >
               <div className="flex flex-wrap items-center gap-2 text-xs">
                 <Badge variant="accent">#{index + 1}</Badge>

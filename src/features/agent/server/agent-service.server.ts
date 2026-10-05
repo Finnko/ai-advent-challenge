@@ -6,6 +6,7 @@ import type {
   AgentTool,
   CallLLM,
   PreparedContext,
+  SystemBlock,
 } from '../domain/agent'
 import { TOOLS_BY_ROLE, createAgentTools } from '../domain/agent-tools'
 import type { ContextStrategy } from '../domain/context/types'
@@ -172,6 +173,8 @@ export type ExecuteOptions = {
   isPaused?: () => boolean | Promise<boolean>
   now?: Date
   invariants?: InvariantRecord[]
+  extraBlocks?: SystemBlock[]
+  extraTools?: AgentTool[]
 }
 
 export type AgentExecution = {
@@ -189,20 +192,23 @@ export async function executeAgent(
   const mcpTools = runtime.loadMcpTools
     ? await runtime.loadMcpTools().catch(() => [])
     : []
-  const capabilities = mcpTools.length
-    ? {
-        ...options.capabilities,
-        allowedTools: [
-          ...options.capabilities.allowedTools,
-          ...mcpTools.map((tool) => tool.name),
-        ],
-      }
-    : options.capabilities
+  const extraTools = options.extraTools ?? []
+  const extraToolNames = [...mcpTools, ...extraTools].map((tool) => tool.name)
+  const capabilities =
+    extraToolNames.length > 0
+      ? {
+          ...options.capabilities,
+          allowedTools: [
+            ...options.capabilities.allowedTools,
+            ...extraToolNames,
+          ],
+        }
+      : options.capabilities
   const context = await buildAgentContext(store, capabilities)
   const taskState = options.taskState ?? null
   const agent = new Agent({
     capabilities,
-    tools: [...runtime.createTools(store, now), ...mcpTools],
+    tools: [...runtime.createTools(store, now), ...mcpTools, ...extraTools],
     judges: AGENT_JUDGES,
     callLLM: runtime.callLLM,
     model: TIER_ENDPOINTS.medium.model,
@@ -240,6 +246,7 @@ export async function executeAgent(
         ...profileBlocks,
         ...memoryBlocks.blocks,
         ...taskBlocks,
+        ...(options.extraBlocks ?? []),
         ...prepared.context.blocks,
       ],
     }

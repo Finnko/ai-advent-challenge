@@ -9,6 +9,10 @@ import type {
   ToolArgs,
 } from '../domain/agent'
 import type { MemoryEntry } from '../domain/memory/types'
+import type {
+  AgentCapability,
+  RetrievedSource,
+} from '../domain/capabilities/types'
 import type { InvariantRecord } from '../domain/invariants/types'
 import type { TaskState } from '../domain/task/types'
 import { createAgentTools } from '../domain/agent-tools'
@@ -38,6 +42,7 @@ function turnSession(overrides: Partial<TurnSession> = {}): TurnSession {
     memoryEnabled: false,
     profileId: null,
     taskStateEnabled: false,
+    ragEnabled: false,
     invariantSetId: null,
     ...overrides,
   }
@@ -1271,6 +1276,50 @@ describe('runAgentTurn', () => {
     expect(act && act.stage === 'act' ? act.outcome.ok : false).toBe(true)
   })
 
+  it('не заводит задачу на знаниевый вопрос без действий', async () => {
+    const { store, getTask, appended } = createTurnStore(
+      turnSession({ taskStateEnabled: true }),
+    )
+    const { runtime, captured } = makeRuntime({
+      analyzeTaskState: async () => ({
+        analysis: {
+          stage: 'planning',
+          step: 'Уточнить башню',
+          steps: ['Уточнить башню', 'Найти данные', 'Сообщить высоту'],
+          expectedAction: { actor: 'user', description: 'Уточнить башню' },
+          requiresTask: false,
+          reason: null,
+        },
+        usage: null,
+      }),
+      callLLM: async ({ response_format }) => ({
+        content: response_format
+          ? JSON.stringify({ tool: null, args: {} })
+          : 'Водонапорная башня в Урюпинске — около 30 метров.',
+        usage: { prompt_tokens: 3, completion_tokens: 2 },
+        latencyMs: 0,
+      }),
+    })
+
+    const result = await runAgentTurn(
+      {
+        token: 'tok-test',
+        sessionId: 7,
+        user: 'Какая высота башни в Урюпинске?',
+      },
+      deps(store, runtime),
+    )
+
+    expect(result.taskState).toBeNull()
+    expect(getTask()).toBeNull()
+    expect(appended.some((message) => message.role === 'task')).toBe(false)
+    const prompt = captured
+      .flat()
+      .map((message) => message.content)
+      .join('\n')
+    expect(prompt).not.toContain('СОСТОЯНИЕ ЗАДАЧИ')
+  })
+
   it('не пускает execution, пока в плане есть незакрытые пункты и нет согласия', async () => {
     const { store, getTask, appended } = createTurnStore(
       turnSession({ taskStateEnabled: true }),
@@ -1562,5 +1611,148 @@ describe('runAgentTurn', () => {
     expect(result.taskState?.stage).toBe('planning')
     expect(result.taskState?.approved).toBe(false)
     expect(getTask()?.stage).toBe('planning')
+  })
+})
+
+describe('runAgentTurn · RAG capability', () => {
+  const source: RetrievedSource = {
+    chunkId: 'moscow-1',
+    title: 'Москва',
+    section: 'История',
+    source: 'https://ru.wikipedia.org/wiki/Москва',
+    text: 'Москва основана в 1147 году.',
+    score: 0.9,
+  }
+
+  function fakeCapability(): AgentCapability {
+    return {
+      id: 'rag',
+      async prepare() {
+        return {
+          block: { kind: 'rag', content: '[1] Москва — История\n1147' },
+          sources: [source],
+          tools: [
+            {
+              name: 'rag_search',
+              description: 'поиск',
+              argsExample: '{}',
+              roles: ['employee', 'manager'],
+              mutating: false,
+              run: async () => ({ ok: true, text: 'нет', reference: null }),
+            },
+          ],
+        }
+      },
+      classify(answer) {
+        return answer.includes('[1]')
+          ? { grounding: 'grounded', citations: [1] }
+          : { grounding: 'ungrounded', citations: [] }
+      },
+    }
+  }
+
+  it('при ragEnabled инжектит блок, источники и опору', async () => {
+    const { store } = createTurnStore(turnSession({ ragEnabled: true }))
+    const { runtime, captured } = makeRuntime({
+      callLLM: async ({ messages, response_format }) => {
+        captured.push(messages)
+        return {
+          content: response_format
+            ? '{"tool":null,"args":{}}'
+            : 'Москва основана в 1147 году [1].',
+          usage: null,
+          latencyMs: 0,
+        }
+      },
+    })
+    const ragDeps: TurnDeps = {
+      ...deps(store, runtime),
+      capabilities: () => [fakeCapability()],
+    }
+
+    const result = await runAgentTurn(
+      { token: 'tok-test', sessionId: 7, user: 'Когда основана Москва?' },
+      ragDeps,
+    )
+
+    expect(result.run.sources).toEqual([source])
+    expect(result.run.grounding).toBe('grounded')
+    expect(result.run.citations).toEqual([1])
+    expect(
+      captured[0].some(
+        (message) =>
+          message.role === 'system' && message.content.includes('1147'),
+      ),
+    ).toBe(true)
+  })
+
+  it('при ragEnabled=false не трогает RAG', async () => {
+    const { store } = createTurnStore(turnSession())
+    const { runtime } = makeRuntime()
+    const ragDeps: TurnDeps = {
+      ...deps(store, runtime),
+      capabilities: () => [fakeCapability()],
+    }
+
+    const result = await runAgentTurn(
+      { token: 'tok-test', sessionId: 7, user: 'привет' },
+      ragDeps,
+    )
+
+    expect(result.run.sources).toBeUndefined()
+    expect(result.run.grounding).toBeUndefined()
+  })
+
+  it('без зарегистрированной способности RAG не падает', async () => {
+    const { store } = createTurnStore(turnSession({ ragEnabled: true }))
+    const { runtime } = makeRuntime()
+
+    const result = await runAgentTurn(
+      { token: 'tok-test', sessionId: 7, user: 'привет' },
+      deps(store, runtime),
+    )
+
+    expect(result.run.sources).toBeUndefined()
+  })
+
+  it('передаёт историю диалога в prepare способности', async () => {
+    const { store } = createTurnStore(turnSession({ ragEnabled: true }))
+    const withHistory: TurnStore = {
+      ...store,
+      loadMessages: async () => [
+        { id: 1, role: 'user', content: 'Сравни Москву и Санкт-Петербург.' },
+        {
+          id: 2,
+          role: 'assistant',
+          content: 'Санкт-Петербург основан в 1703 году.',
+        },
+      ],
+    }
+    let received: unknown
+    const capability: AgentCapability = {
+      id: 'rag',
+      async prepare(input) {
+        received = input.history
+        return { block: null, sources: [], tools: [] }
+      },
+      classify() {
+        return { grounding: 'no-data', citations: [] }
+      },
+    }
+    const { runtime } = makeRuntime()
+
+    await runAgentTurn(
+      {
+        token: 'tok-test',
+        sessionId: 7,
+        user: 'Кто основал более молодой из этих городов?',
+      },
+      { ...deps(withHistory, runtime), capabilities: () => [capability] },
+    )
+
+    expect(received).toEqual([
+      { role: 'user', content: 'Сравни Москву и Санкт-Петербург.' },
+      { role: 'assistant', content: 'Санкт-Петербург основан в 1703 году.' },
+    ])
   })
 })

@@ -2,7 +2,6 @@ import { HeadContent, Scripts, createRootRoute } from '@tanstack/react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
 import { TanStackDevtools } from '@tanstack/react-devtools'
-import Header from '../components/Header'
 
 import appCss from '../styles.css?url'
 
@@ -42,13 +41,10 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         <HeadContent />
       </head>
       <body className="font-sans antialiased [overflow-wrap:anywhere] selection:bg-[rgba(79,70,229,0.26)]">
-        <div className="flex h-dvh flex-col">
-          <Header />
-          <div className="min-h-0 flex-1">
-            <QueryClientProvider client={queryClient}>
-              {children}
-            </QueryClientProvider>
-          </div>
+        <div className="h-dvh">
+          <QueryClientProvider client={queryClient}>
+            {children}
+          </QueryClientProvider>
         </div>
         <TanStackDevtools
           config={{

@@ -15,9 +15,9 @@ export function createLlmRewriter(
     response_format: { type: 'json_object' },
   }),
 ): Rewriter {
-  return async (question) => {
+  return async (question, history) => {
     try {
-      const reply = await llm(buildRewriteMessages(question))
+      const reply = await llm(buildRewriteMessages(question, history))
       return parseRewriteResponse(reply.content) ?? question
     } catch {
       return question

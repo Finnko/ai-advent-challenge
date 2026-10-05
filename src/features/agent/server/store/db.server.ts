@@ -180,6 +180,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   profile_id INTEGER,
   window_size INTEGER NOT NULL DEFAULT 10,
   task_state_enabled INTEGER NOT NULL DEFAULT 0,
+  rag_enabled INTEGER NOT NULL DEFAULT 0,
   invariant_set_id INTEGER,
   created_at TEXT NOT NULL
 );
@@ -636,6 +637,11 @@ export function migrateSessions(db: SqliteDatabase): void {
   if (!sessionColumns.includes('task_state_enabled')) {
     db.exec(
       'ALTER TABLE sessions ADD COLUMN task_state_enabled INTEGER NOT NULL DEFAULT 0',
+    )
+  }
+  if (!sessionColumns.includes('rag_enabled')) {
+    db.exec(
+      'ALTER TABLE sessions ADD COLUMN rag_enabled INTEGER NOT NULL DEFAULT 0',
     )
   }
   if (!sessionColumns.includes('invariant_set_id')) {

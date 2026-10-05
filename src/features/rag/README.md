@@ -117,7 +117,9 @@ char_start, char_end, n_tokens, crosses_section, text`.
 - `server/rewrite.server.ts`: LLM-переформулировка через шов `AnswerLlm` (deepseek-flash, JSON
   `{"rewritten": "..."}`). Эмбеддинг считается по переформулированному запросу, а реранк — по
   исходному. Промпт и разбор — в `domain/rewrite-prompt.ts` (`buildRewriteMessages`,
-  `parseRewriteResponse`, `rewriteQuery` с fail-open).
+  `parseRewriteResponse`, `rewriteQuery` с fail-open). Опциональный второй аргумент `history`
+  (`RewriteTurn[]`) передаёт контекст диалога, чтобы rewrite раскрывал местоимения и отсылки
+  («она», «его», «из этих городов»); вызывающий без истории работает как раньше.
 - **Совместимость моделей**: и эмбеддер, и реранкер грузятся `@huggingface/transformers` v4 напрямую,
   поэтому подходит только модель с непустым `model_type` (поддержанная архитектура) и с ONNX-весами в
   самом репозитории. `Xenova/multilingual-e5-base` и `onnx-community/bge-reranker-v2-m3-ONNX` —
@@ -196,6 +198,16 @@ char_start, char_end, n_tokens, crosses_section, text`.
   не меняется.
 - **Проверка.** Табличка «Контроль» считает «с источниками и подтверждёнными цитатами: N / 10»; отдельная
   кнопка прогоняет `data/abstain-questions.ts` (3 вопроса вне корпуса) и считает abstain по режимам.
+
+## Потребитель: способность агента (Day 25)
+
+RAG отдаётся агенту, но сама фича остаётся автономной: `features/rag` **не импортирует**
+`features/agent`. Адаптер живёт вне обеих фич — `src/lib/agent-rag.server.ts`: он вызывает
+`retrieve`/`createEmbedder`/`createReranker`, мапит `ScoredChunk` в `RetrievedSource`, фильтрует
+ниже порога `RAG_RERANK_THRESHOLD` и регистрирует `AgentCapability` в реестре агента (бутстрап —
+`src/server.ts`). Агент при `ragEnabled` делает always-on retrieval каждый Ход и добавляет
+read-only `rag_search` (стратегия — `structural`, `k = 6`). ONNX/`node:sqlite` остаются внутри
+`features/rag/server`.
 
 ## Env
 

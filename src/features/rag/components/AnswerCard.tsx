@@ -22,6 +22,20 @@ function usageLabel(result: AnswerResult): string {
   return `${result.usage.prompt_tokens} + ${result.usage.completion_tokens} токенов · ${result.latencyMs} мс`
 }
 
+function verdictBadge(result: AnswerResult) {
+  if (result.verdict) {
+    return (
+      <Badge variant={VERDICT_VARIANT[result.verdict] ?? 'default'}>
+        {VERDICT_LABELS[result.verdict]}
+      </Badge>
+    )
+  }
+  if (result.abstained) {
+    return <Badge variant="warn">{VERDICT_LABELS.abstained}</Badge>
+  }
+  return null
+}
+
 export default function AnswerCard({
   title,
   result,
@@ -48,13 +62,7 @@ export default function AnswerCard({
       <CardHeader className="flex flex-row items-center justify-between gap-2">
         <CardTitle>{title ?? heading}</CardTitle>
         <div className="flex flex-wrap items-center gap-2">
-          {result.verdict ? (
-            <Badge variant={VERDICT_VARIANT[result.verdict] ?? 'default'}>
-              {VERDICT_LABELS[result.verdict]}
-            </Badge>
-          ) : result.abstained ? (
-            <Badge variant="warn">{VERDICT_LABELS.abstained}</Badge>
-          ) : null}
+          {verdictBadge(result)}
           <Button
             size="xs"
             variant="ghost"

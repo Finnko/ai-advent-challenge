@@ -7,13 +7,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/Tabs'
 
 export default function RagPage() {
   return (
-    <div className="mx-auto flex max-w-[1200px] flex-col gap-4 px-4 pb-6 pt-6">
+    <div className="page-wrap flex flex-col gap-4 px-4 pb-8 pt-6">
       <header className="mb-1">
         <p className="island-kicker mb-2">
           RAG · индексация, реранкинг, rewrite
         </p>
         <h1 className="demo-title mb-2">Индекс документов</h1>
-        <p className="demo-muted m-0 max-w-4xl text-sm">
+        <p className="demo-muted m-0 max-w-[70ch] text-sm">
           15 статей Википедии о городах России разбиваются на чанки двумя
           стратегиями, считаются эмбеддинги, всё складывается в локальный
           SQLite. Второй этап после поиска — cross-encoder реранкер с порогом

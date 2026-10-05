@@ -162,6 +162,16 @@ export async function resolveTaskState(
     }
   }
 
+  if (analysis.requiresTask === false) {
+    return {
+      taskState: current,
+      taskEvent: null,
+      changed: false,
+      usage,
+      rejection: null,
+    }
+  }
+
   if (!current) {
     const created = createTaskState(analysis, input.at)
     return {

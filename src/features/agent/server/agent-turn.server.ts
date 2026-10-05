@@ -1,4 +1,12 @@
-import type { AgentCapabilities } from '../domain/agent'
+import type { AgentCapabilities, AgentTool, SystemBlock } from '../domain/agent'
+import type {
+  AgentCapability,
+  RetrievedSource,
+} from '../domain/capabilities/types'
+import {
+  AGENT_RAG_CAPABILITY_ID,
+  getAgentCapabilities,
+} from './capability-registry.server'
 import type { CompressionMessage } from '../domain/compression'
 import { resolveStrategy } from '../domain/context/registry'
 import type { ContextStrategyId } from '../domain/context/types'
@@ -56,6 +64,7 @@ export type TurnSession = {
   memoryEnabled: boolean
   profileId: number | null
   taskStateEnabled: boolean
+  ragEnabled: boolean
   invariantSetId: number | null
 }
 
@@ -103,11 +112,14 @@ export type AgentTurnInput = {
   user: string
 }
 
+const CAPABILITY_HISTORY_TURNS = 6
+
 export type TurnDeps = {
   resolveCapabilities(token: string): Promise<AgentCapabilities>
   store: TurnStore
   runtime: AgentRuntime
   now(): Date
+  capabilities?(): AgentCapability[]
 }
 
 const defaultTurnStore: TurnStore = {
@@ -144,6 +156,20 @@ function toCompressionMessage(row: {
   content: string
 }): CompressionMessage {
   return { id: row.id, role: row.role, content: row.content }
+}
+
+function resolveRagCapability(
+  deps: TurnDeps,
+  config: { ragEnabled: boolean },
+): AgentCapability | null {
+  if (!config.ragEnabled) {
+    return null
+  }
+  const available = (deps.capabilities ?? getAgentCapabilities)()
+  return (
+    available.find((capability) => capability.id === AGENT_RAG_CAPABILITY_ID) ??
+    null
+  )
 }
 
 export async function runAgentTurn(
@@ -238,6 +264,26 @@ export async function runAgentTurn(
   const sessionTitle = (taskOutcome.taskState?.title ?? input.user).trim()
   await deps.store.updateSessionTitleIfDefault(sessionId, sessionTitle)
 
+  const ragCapability = resolveRagCapability(deps, config)
+  const extraBlocks: SystemBlock[] = []
+  const extraTools: AgentTool[] = []
+  let ragSources: RetrievedSource[] = []
+  if (ragCapability) {
+    const contribution = await ragCapability.prepare({
+      query: input.user,
+      token,
+      history: history.slice(-CAPABILITY_HISTORY_TURNS).map((row) => ({
+        role: row.role,
+        content: row.content,
+      })),
+    })
+    if (contribution.block) {
+      extraBlocks.push(contribution.block)
+    }
+    extraTools.push(...contribution.tools)
+    ragSources = contribution.sources
+  }
+
   const execution = await executeAgent(
     {
       capabilities,
@@ -268,6 +314,8 @@ export async function runAgentTurn(
       invariants: deps.store.getInvariants
         ? await deps.store.getInvariants(token)
         : [],
+      extraBlocks,
+      extraTools,
     },
     deps.runtime,
   )
@@ -290,7 +338,20 @@ export async function runAgentTurn(
   )
 
   const finalTaskState = completion.state
-  const run = { ...execution.run, taskState: finalTaskState }
+  const ragOutcome = ragCapability
+    ? ragCapability.classify(execution.run.answer, ragSources)
+    : null
+  const run = {
+    ...execution.run,
+    taskState: finalTaskState,
+    ...(ragCapability
+      ? {
+          sources: ragSources,
+          grounding: ragOutcome?.grounding,
+          citations: ragOutcome?.citations ?? [],
+        }
+      : {}),
+  }
 
   await deps.store.appendMessage(sessionId, 'user', input.user)
   for (const event of completion.events) {

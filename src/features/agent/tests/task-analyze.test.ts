@@ -74,6 +74,21 @@ describe('parseTaskAnalysis', () => {
     )
     expect(parsed?.expectedAction.actor).toBe('agent')
   })
+
+  it('читает requiresTask и по умолчанию считает задачу нужной', () => {
+    const answerOnly = parseTaskAnalysis(
+      '{"requiresTask":false,"stage":"planning","step":"x","expectedAction":{"actor":"user","description":"y"}}',
+    )
+    expect(answerOnly?.requiresTask).toBe(false)
+    const explicitTask = parseTaskAnalysis(
+      '{"requiresTask":true,"stage":"planning","step":"x","expectedAction":{"actor":"user","description":"y"}}',
+    )
+    expect(explicitTask?.requiresTask).toBe(true)
+    const missing = parseTaskAnalysis(
+      '{"stage":"planning","step":"x","expectedAction":{"actor":"user","description":"y"}}',
+    )
+    expect(missing?.requiresTask).toBe(true)
+  })
 })
 
 describe('buildTaskStateMessages', () => {

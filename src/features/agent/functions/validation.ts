@@ -240,6 +240,7 @@ export function parseSessionConfigInput(value: unknown): SessionConfigInput {
     memoryEnabled: optionalBoolean(data.memoryEnabled),
     profileId: optionalProfileId(data.profileId),
     taskStateEnabled: optionalBoolean(data.taskStateEnabled, true),
+    ragEnabled: optionalBoolean(data.ragEnabled, false),
     invariantSetId: optionalInvariantSetId(data.invariantSetId),
   }
 }
