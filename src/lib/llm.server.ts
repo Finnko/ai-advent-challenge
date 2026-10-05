@@ -88,6 +88,7 @@ export type CallCompletionsOptions = {
   attempts?: number
   baseDelayMs?: number
   fetchImpl?: typeof fetch
+  extraBody?: Record<string, unknown>
 }
 
 function causeCode(error: unknown): string | null {
@@ -134,6 +135,7 @@ export async function callCompletions(
     messages,
     ...(endpoint.withThinking ? { thinking: { type: 'disabled' } } : {}),
     ...params,
+    ...options.extraBody,
   })
 
   for (let attempt = 0; attempt < attempts; attempt += 1) {

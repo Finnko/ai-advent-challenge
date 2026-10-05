@@ -1,12 +1,15 @@
 # Project: AI Advent Challenge
 
-Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 25 (`feature/day25`).
+Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 26 (`feature/day26`).
 Days 13–20 extend the unified `/agent` workspace with task state, invariants and MCP; Day 21 adds the
 `/rag` document-index feature; Day 22 adds RAG answers with/without retrieval and a control set; Day 23
 adds a second retrieval stage (cross-encoder reranking + relevance threshold) and query rewrite; Day 24
 makes the answer contract structured (mandatory sources + verified quotes) and adds threshold abstention;
 Day 25 makes RAG a capability of the unified `/agent` — always-on retrieval with sources, a `rag_search`
-tool and a dialogue task memory in `MemoryEntry`, composed at the app level (no `agent → rag` import).
+tool and a dialogue task memory in `MemoryEntry`, composed at the app level (no `agent → rag` import);
+Day 26 adds a standalone `/local-llm` feature that runs Qwen3-8B-4bit locally on Apple Silicon via MLX
+and proxies it through the shared `callCompletions` (three difficulty presets + freeform, latency/tokens
+metrics, graceful degrade when the local server is down).
 
 ## Where to read more
 
@@ -36,12 +39,14 @@ tool and a dialogue task memory in `MemoryEntry`, composed at the app level (no 
   (above) carries its module map. They do **not** import each other: the app-level composition module
   `src/lib/agent-rag.server.ts` wires `features/rag` into the agent's capability registry, bootstrapped
   by the server entry `src/server.ts`.
+- `src/features/local-llm/` — standalone `/local-llm` tab: local MLX model proxied through
+  `callCompletions`; dev/local-only, independent of the agent (module map below in Hard rules).
 - `src/lib/` — shared: `llm.ts`/`llm.server.ts` (transport), `agent-rag.server.ts` (app composition),
   `functions/*.functions.ts` (Days 1–5 server fns + shared `validation.ts`), `day2.ts`…`day5.ts`,
   `days.ts` (sidebar), `utils.ts` (`cn`).
 - `src/components/` — app shell (`Header`, `Sidebar`, `Chat`) and shared `ui/Tabs.tsx`.
-- `src/routes/` — thin route wrappers; `/agent` → `AgentPage`, `/rag` → `RagPage`, old `/agent-*` routes
-  redirect to `/agent`.
+- `src/routes/` — thin route wrappers; `/agent` → `AgentPage`, `/rag` → `RagPage`, `/local-llm` →
+  `LocalLlmPage`, old `/agent-*` routes redirect to `/agent`.
 
 ## Hard rules
 
@@ -70,6 +75,12 @@ tool and a dialogue task memory in `MemoryEntry`, composed at the app level (no 
 - **Invariants are global per token** and enforced deterministically before mutating tools and after
   finalize; the opt-in `invariantGuard` is a fallback, never a replacement. Pinned `slug`/`check` are
   immutable.
+- **Local LLM (Day 26)** lives in `features/local-llm/` and is **dev/local-only** (the Mac running MLX),
+  unrelated to the agent. It reuses `callCompletions` against an OpenAI-compatible endpoint from
+  `LOCAL_LLM_BASE_URL`/`LOCAL_LLM_MODEL` (no key). Qwen3 needs `chat_template_kwargs: { enable_thinking:
+  false }`, passed via the transport's generic `CallCompletionsOptions.extraBody`. The client sends a
+  `presetId` (resolved server-side from `data/presets.ts`) or freeform `prompt`; a down server degrades
+  softly via a `/models` health check.
 - **MCP tools**: `agent-mcp-demo` is read-only; `agent-mcp-jobs` writes its own `jobs.sqlite`. Tool
   metadata travels over the protocol: each spawned server sets `annotations: { readOnlyHint }`, the host
   derives `descriptor.mutating` (`readOnlyHint !== true` → mutating, fail-closed) and mutating MCP tools
