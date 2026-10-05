@@ -7,7 +7,7 @@ export type ButtonSize = 'default' | 'sm' | 'xs' | 'icon'
 
 const variantClasses: Record<ButtonVariant, string> = {
   default:
-    'border-[var(--accent)] bg-[var(--accent)] text-white shadow-sm hover:border-[var(--accent-strong)] hover:bg-[var(--accent-strong)]',
+    'border-[var(--accent)] bg-[var(--accent)] text-white shadow-e1 hover:border-[var(--accent-strong)] hover:bg-[var(--accent-strong)]',
   secondary:
     'border-[var(--line-strong)] bg-[var(--surface)] text-[var(--ink-soft)] hover:border-[var(--accent)] hover:bg-[var(--accent-soft)] hover:text-[var(--accent-strong)]',
   danger:
@@ -44,7 +44,8 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       type={type}
       className={cn(
         'inline-flex shrink-0 items-center justify-center rounded-lg border font-semibold leading-none transition-colors',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color-mix(in_oklab,var(--accent)_30%,transparent)]',
+        'active:enabled:translate-y-px',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]',
         'disabled:cursor-not-allowed disabled:opacity-55',
         variantClasses[variant],
         sizeClasses[size],

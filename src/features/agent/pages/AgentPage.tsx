@@ -19,8 +19,10 @@ import FactsPanel from '../components/FactsPanel'
 import BranchPanel from '../components/BranchPanel'
 import MemoryInspector from '../components/MemoryInspector'
 import MemoryPanel from '../components/MemoryPanel'
+import DialogueMemoryPanel from '../components/DialogueMemoryPanel'
 import InvariantsPanel from '../components/InvariantsPanel'
 import McpPanel from '../components/McpPanel'
+import ScenarioPanel from '../components/ScenarioPanel'
 
 import ProfileList from '../components/ProfileList'
 import ProfileEditor from '../components/ProfileEditor'
@@ -150,11 +152,11 @@ export default function AgentPage() {
   )
 
   return (
-    <div className="mx-auto flex max-w-[1440px] flex-col gap-4 px-4 pb-6 pt-6">
-      <header className="mb-1">
+    <div className="page-wrap flex flex-col gap-4 px-4 pb-8 pt-6">
+      <header className="mb-2">
         <p className="island-kicker mb-2">Agent · единый рабочий экран</p>
         <h1 className="demo-title mb-2">Корпоративный агент</h1>
-        <p className="demo-muted m-0 max-w-4xl text-sm">
+        <p className="demo-muted m-0 max-w-[70ch] text-sm">
           Все доработки в одном месте: стратегии контекста (скользящее окно —
           краткосрочная память), слои памяти, профиль пользователя и состояние
           задачи. Настрой конфиг во вкладке «Настройки», создай сессию и работай
@@ -206,11 +208,14 @@ export default function AgentPage() {
           </aside>
 
           <section className="demo-panel flex min-w-0 flex-1 flex-col gap-3 p-5">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="demo-section-title m-0">
-                Работа · {activePerson.name}
-              </h2>
-              <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-baseline gap-2">
+                <h2 className="demo-section-title m-0">Работа</h2>
+                <span className="text-sm font-semibold text-ink-muted">
+                  {activePerson.name}
+                </span>
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
                 <Badge>{strategyLabel(activeStrategy)}</Badge>
                 {activeStrategy === 'window' && (
                   <Badge>окно {activeWindowSize}</Badge>
@@ -219,8 +224,9 @@ export default function AgentPage() {
                 <Badge>
                   {active.taskStateEnabled ? 'задача вкл.' : 'задача выкл.'}
                 </Badge>
+                {active.ragEnabled && <Badge variant="accent">RAG вкл.</Badge>}
                 {activeProfileName && <Badge>{activeProfileName}</Badge>}
-                <span className="demo-muted text-xs">
+                <span className="ml-1 text-xs text-ink-muted tabular-nums">
                   {sessionId ? `сессия #${sessionId}` : 'новая сессия'}
                 </span>
               </div>
@@ -231,6 +237,7 @@ export default function AgentPage() {
                 <TabsTrigger value="dialog">Диалог</TabsTrigger>
                 <TabsTrigger value="invariants">Инварианты</TabsTrigger>
                 <TabsTrigger value="mcp">MCP</TabsTrigger>
+                <TabsTrigger value="scenarios">Сценарии</TabsTrigger>
                 <TabsTrigger value="settings">Настройки</TabsTrigger>
               </TabsList>
 
@@ -248,6 +255,10 @@ export default function AgentPage() {
                 <McpPanel />
               </TabsContent>
 
+              <TabsContent value="scenarios">
+                <ScenarioPanel token={activePerson.token} />
+              </TabsContent>
+
               <TabsContent value="dialog">
                 {sessionId === null ? (
                   <EmptySessionPanel
@@ -256,106 +267,120 @@ export default function AgentPage() {
                     onCreate={actions.newSession}
                   />
                 ) : (
-                  <div className="flex flex-col gap-3">
-                    <SessionAccounting totals={accounting} />
+                  <div className="flex items-stretch gap-4">
+                    <div className="flex min-w-0 flex-1 flex-col gap-3">
+                      <SessionAccounting totals={accounting} />
 
-                    <TokenReport
-                      requestTokens={accounting.requestTokens}
-                      historyTokens={accounting.historyTokens}
-                      historyTokensSent={
-                        lastRun ? lastRun.tokens.historyTokensSent : null
-                      }
-                      responseTokens={
-                        lastRun ? lastRun.tokens.responseTokens : null
-                      }
-                      contextTokens={
-                        lastRun ? lastRun.tokens.contextTokens : null
-                      }
-                    />
-
-                    {noteState && <ContextPanel note={noteState} />}
-
-                    <TokenMeter
-                      historyTokens={accounting.historyTokens}
-                      requestTokens={accounting.requestTokens}
-                      budget={CONTEXT_BUDGET_TOKENS}
-                      modelContext={MODEL_CONTEXT_TOKENS}
-                    />
-
-                    {activeStrategy === 'facts' && <FactsPanel facts={facts} />}
-
-                    {activeStrategy === 'branch' && (
-                      <BranchPanel
-                        branches={branches}
-                        disabled={busy}
-                        onSwitch={actions.switchBranch}
-                        onForkCheckpoint={actions.forkCheckpoint}
-                      />
-                    )}
-
-                    <ChatThread
-                      messages={messages}
-                      running={sending}
-                      onFork={
-                        activeStrategy === 'branch' ? actions.fork : undefined
-                      }
-                      forkDisabled={busy}
-                    />
-
-                    {sendError && (
-                      <Alert variant="destructive">{sendError}</Alert>
-                    )}
-                    {branchError && (
-                      <Alert variant="destructive">{branchError}</Alert>
-                    )}
-
-                    <TaskStateBar
-                      state={taskState}
-                      enabled={active.taskStateEnabled}
-                      hasSession={sessionLocked}
-                      busy={taskBusy}
-                      onPause={actions.pauseTask}
-                      onResume={actions.resumeTask}
-                      onCancel={actions.cancelTask}
-                      onApprove={actions.approveTask}
-                    />
-                    {taskError && (
-                      <Alert variant="destructive">{taskError}</Alert>
-                    )}
-
-                    {taskState?.stage === 'paused' && (
-                      <p className="demo-muted m-0 text-xs">Задача на паузе</p>
-                    )}
-
-                    <form
-                      onSubmit={(event) => {
-                        event.preventDefault()
-                        actions.send()
-                      }}
-                      className="flex flex-col gap-3"
-                    >
-                      <Textarea
-                        value={draft}
-                        onChange={(event) =>
-                          actions.setDraft(event.target.value)
+                      <TokenReport
+                        requestTokens={accounting.requestTokens}
+                        historyTokens={accounting.historyTokens}
+                        historyTokensSent={
+                          lastRun ? lastRun.tokens.historyTokensSent : null
                         }
-                        placeholder="Например: забронируй переговорку на завтра на 15:00 на 6 человек…"
-                        className="min-h-0"
-                        rows={6}
-                        disabled={busy}
+                        responseTokens={
+                          lastRun ? lastRun.tokens.responseTokens : null
+                        }
+                        contextTokens={
+                          lastRun ? lastRun.tokens.contextTokens : null
+                        }
                       />
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="demo-muted text-xs">
-                          {sessionHint}
-                        </span>
-                        <Button
-                          type="submit"
-                          disabled={busy || draft.trim().length === 0}
-                        >
-                          {busy ? 'Агент работает…' : 'Отправить агенту'}
-                        </Button>
-                      </div>
-                    </form>
+
+                      {noteState && <ContextPanel note={noteState} />}
+
+                      <TokenMeter
+                        historyTokens={accounting.historyTokens}
+                        requestTokens={accounting.requestTokens}
+                        budget={CONTEXT_BUDGET_TOKENS}
+                        modelContext={MODEL_CONTEXT_TOKENS}
+                      />
+
+                      {activeStrategy === 'facts' && (
+                        <FactsPanel facts={facts} />
+                      )}
+
+                      {activeStrategy === 'branch' && (
+                        <BranchPanel
+                          branches={branches}
+                          disabled={busy}
+                          onSwitch={actions.switchBranch}
+                          onForkCheckpoint={actions.forkCheckpoint}
+                        />
+                      )}
+
+                      <ChatThread
+                        messages={messages}
+                        running={sending}
+                        onFork={
+                          activeStrategy === 'branch' ? actions.fork : undefined
+                        }
+                        forkDisabled={busy}
+                      />
+
+                      {sendError && (
+                        <Alert variant="destructive">{sendError}</Alert>
+                      )}
+                      {branchError && (
+                        <Alert variant="destructive">{branchError}</Alert>
+                      )}
+
+                      <TaskStateBar
+                        state={taskState}
+                        enabled={active.taskStateEnabled}
+                        hasSession={sessionLocked}
+                        busy={taskBusy}
+                        onPause={actions.pauseTask}
+                        onResume={actions.resumeTask}
+                        onCancel={actions.cancelTask}
+                        onApprove={actions.approveTask}
+                      />
+                      {taskError && (
+                        <Alert variant="destructive">{taskError}</Alert>
+                      )}
+
+                      {taskState?.stage === 'paused' && (
+                        <p className="demo-muted m-0 text-xs">
+                          Задача на паузе
+                        </p>
+                      )}
+
+                      <form
+                        onSubmit={(event) => {
+                          event.preventDefault()
+                          actions.send()
+                        }}
+                        className="flex flex-col gap-3"
+                      >
+                        <Textarea
+                          value={draft}
+                          onChange={(event) =>
+                            actions.setDraft(event.target.value)
+                          }
+                          placeholder="Например: забронируй переговорку на завтра на 15:00 на 6 человек…"
+                          className="min-h-0"
+                          rows={6}
+                          disabled={busy}
+                        />
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="demo-muted text-xs">
+                            {sessionHint}
+                          </span>
+                          <Button
+                            type="submit"
+                            disabled={busy || draft.trim().length === 0}
+                          >
+                            {busy ? 'Агент работает…' : 'Отправить агенту'}
+                          </Button>
+                        </div>
+                      </form>
+                    </div>
+                    <aside className="w-[300px] shrink-0">
+                      <DialogueMemoryPanel
+                        working={memoryView.working}
+                        disabled={busy}
+                        onSave={actions.saveMemory}
+                        onForget={actions.forgetMemory}
+                      />
+                    </aside>
                   </div>
                 )}
               </TabsContent>
@@ -369,6 +394,7 @@ export default function AgentPage() {
                       windowSize={activeWindowSize}
                       memory={activeMemory}
                       taskState={config.taskStateEnabled}
+                      rag={active.ragEnabled}
                       activeTaskState={active.taskStateEnabled}
                       profileName={activeProfileName}
                       profiles={profiles}
@@ -384,6 +410,9 @@ export default function AgentPage() {
                       onTaskState={(value) =>
                         actions.patchConfig({ taskStateEnabled: value })
                       }
+                      onRag={(value) =>
+                        actions.patchConfig({ ragEnabled: value })
+                      }
                       onProfile={(id) => actions.patchConfig({ profileId: id })}
                     />
                   )}
@@ -393,6 +422,7 @@ export default function AgentPage() {
                     windowSize={config.windowSize}
                     memory={config.memoryEnabled}
                     taskState={config.taskStateEnabled}
+                    rag={config.ragEnabled}
                     activeTaskState={active.taskStateEnabled}
                     profileName={activeProfileName}
                     profiles={profiles}
@@ -407,6 +437,9 @@ export default function AgentPage() {
                     }
                     onTaskState={(value) =>
                       actions.patchConfig({ taskStateEnabled: value })
+                    }
+                    onRag={(value) =>
+                      actions.patchConfig({ ragEnabled: value })
                     }
                     onProfile={(id) => actions.patchConfig({ profileId: id })}
                   />

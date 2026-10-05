@@ -48,7 +48,7 @@ export default function ChunkBrowser() {
         {chunks.data?.map((chunk) => (
           <div
             key={chunk.chunkId}
-            className="demo-panel flex flex-col gap-1 rounded-lg border border-[var(--line)] p-3"
+            className="flex flex-col gap-1 rounded-lg border border-[var(--line)] bg-[var(--surface)] p-3"
           >
             <div className="flex flex-wrap items-center gap-2 text-xs">
               <Badge variant="outline">#{chunk.position}</Badge>

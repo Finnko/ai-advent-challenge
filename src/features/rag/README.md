@@ -197,6 +197,16 @@ char_start, char_end, n_tokens, crosses_section, text`.
 - **Проверка.** Табличка «Контроль» считает «с источниками и подтверждёнными цитатами: N / 10»; отдельная
   кнопка прогоняет `data/abstain-questions.ts` (3 вопроса вне корпуса) и считает abstain по режимам.
 
+## Потребитель: способность агента (Day 25)
+
+RAG отдаётся агенту, но сама фича остаётся автономной: `features/rag` **не импортирует**
+`features/agent`. Адаптер живёт вне обеих фич — `src/lib/agent-rag.server.ts`: он вызывает
+`retrieve`/`createEmbedder`/`createReranker`, мапит `ScoredChunk` в `RetrievedSource`, фильтрует
+ниже порога `RAG_RERANK_THRESHOLD` и регистрирует `AgentCapability` в реестре агента (бутстрап —
+`src/server.ts`). Агент при `ragEnabled` делает always-on retrieval каждый Ход и добавляет
+read-only `rag_search` (стратегия — `structural`, `k = 6`). ONNX/`node:sqlite` остаются внутри
+`features/rag/server`.
+
 ## Env
 
 | Переменная | По умолчанию | Смысл |

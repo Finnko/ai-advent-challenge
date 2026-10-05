@@ -12,6 +12,7 @@ export type SessionConfig = {
   memoryEnabled: boolean
   profileId: number | null
   taskStateEnabled: boolean
+  ragEnabled: boolean
   invariantSetId: number | null
 }
 
@@ -22,6 +23,7 @@ export type SessionConfigInput = {
   memoryEnabled: boolean
   profileId: number | null | undefined
   taskStateEnabled: boolean
+  ragEnabled: boolean
   invariantSetId: number | null | undefined
 }
 
@@ -31,6 +33,7 @@ export type SessionConfigDraft = {
   memoryEnabled: boolean
   profileId: number | null
   taskStateEnabled: boolean
+  ragEnabled: boolean
 }
 
 export type ResolvedSessionConfig = {
@@ -39,6 +42,7 @@ export type ResolvedSessionConfig = {
   memoryEnabled: boolean
   profileId: number | null
   taskStateEnabled: boolean
+  ragEnabled: boolean
 }
 
 export const DEFAULT_SESSION_CONFIG_DRAFT: SessionConfigDraft = {
@@ -47,6 +51,7 @@ export const DEFAULT_SESSION_CONFIG_DRAFT: SessionConfigDraft = {
   memoryEnabled: true,
   profileId: null,
   taskStateEnabled: true,
+  ragEnabled: false,
 }
 
 export function sessionConfigInput(
@@ -59,6 +64,7 @@ export function sessionConfigInput(
     memoryEnabled: false,
     profileId: undefined,
     taskStateEnabled: true,
+    ragEnabled: false,
     invariantSetId: undefined,
     ...overrides,
   }
@@ -76,6 +82,7 @@ export function resolveSessionConfig(
     profileId:
       input.profileId === undefined ? defaultProfileId : input.profileId,
     taskStateEnabled: input.taskStateEnabled,
+    ragEnabled: input.ragEnabled,
     invariantSetId: input.invariantSetId ?? null,
   }
 }
@@ -89,6 +96,7 @@ export function sessionConfigDraftToInput(
     memoryEnabled: draft.memoryEnabled,
     profileId: draft.profileId ?? undefined,
     taskStateEnabled: draft.taskStateEnabled,
+    ragEnabled: draft.ragEnabled,
   })
 }
 
@@ -103,6 +111,7 @@ export function resolveActiveSessionConfig(
       memoryEnabled: session.memoryEnabled,
       profileId: session.profileId,
       taskStateEnabled: session.taskStateEnabled,
+      ragEnabled: session.ragEnabled,
     }
   }
   return {
@@ -111,6 +120,7 @@ export function resolveActiveSessionConfig(
     memoryEnabled: draft.memoryEnabled,
     profileId: draft.profileId,
     taskStateEnabled: draft.taskStateEnabled,
+    ragEnabled: draft.ragEnabled,
   }
 }
 

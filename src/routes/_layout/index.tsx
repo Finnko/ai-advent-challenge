@@ -17,18 +17,21 @@ export const Route = createFileRoute('/_layout/')({ component: Hub })
 const STATUS: Record<string, string> = Object.fromEntries(
   DAYS.map((day) => [
     day.path,
-    day.path.startsWith('/agent') ? 'Демо' : 'Доступно',
+    day.path.startsWith('/agent') || day.path.startsWith('/rag')
+      ? 'Демо'
+      : 'Доступно',
   ]),
 )
 
 function Hub() {
   return (
-    <div className="page-wrap px-4 py-8 sm:py-12">
-      <header className="mb-7">
-        <p className="island-kicker mb-1.5">AI Advent Challenge</p>
+    <div className="page-wrap px-4 py-8 sm:py-10">
+      <header className="mb-8">
+        <p className="island-kicker mb-2">AI Advent Challenge</p>
         <h1 className="demo-title">Обзор курса</h1>
-        <p className="m-0 mt-1 text-sm text-[var(--ink-muted)] sm:text-base">
-          Восемь практических шагов: от сырого LLM API до агента с памятью.
+        <p className="m-0 mt-2 max-w-[65ch] text-sm text-ink-muted sm:text-base">
+          Семь практических шагов: от сырого вызова LLM API до агента с памятью
+          и RAG с реранкингом.
         </p>
       </header>
 
@@ -41,8 +44,8 @@ function Hub() {
         ))}
       </section>
 
-      <section className="demo-panel mt-6 rounded-2xl p-5 sm:p-6">
-        <div className="mb-4 flex items-center justify-between gap-3">
+      <section className="mt-10" aria-label="Программа курса">
+        <div className="mb-3 flex items-center justify-between gap-3">
           <h2 className="demo-section-title">Программа курса</h2>
           <Badge>{DAYS.length} модулей</Badge>
         </div>
@@ -51,27 +54,27 @@ function Hub() {
             <TableRow>
               <TableHead className="w-16 whitespace-nowrap">№</TableHead>
               <TableHead>Модуль</TableHead>
-              <TableHead>Задача</TableHead>
               <TableHead className="hidden sm:table-cell">Маршрут</TableHead>
               <TableHead className="w-28 whitespace-nowrap">Статус</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {DAYS.map((day, i) => {
-              const isAgent = day.path.startsWith('/agent')
+              const isDemo =
+                day.path.startsWith('/agent') || day.path.startsWith('/rag')
               return (
                 <TableRow key={day.path}>
-                  <TableCell className="whitespace-nowrap tabular-nums text-[var(--ink-muted)]">
+                  <TableCell className="whitespace-nowrap tabular-nums text-ink-muted">
                     {String(i + 1).padStart(2, '0')}
                   </TableCell>
-                  <TableCell className="whitespace-nowrap text-sm font-bold text-[var(--ink)]">
-                    {day.label}
-                  </TableCell>
                   <TableCell>
-                    <span className="block text-sm font-semibold text-[var(--ink-soft)]">
+                    <Link
+                      to={day.path}
+                      className="block text-sm font-bold text-ink no-underline hover:text-accent-strong"
+                    >
                       {day.title}
-                    </span>
-                    <span className="block text-xs text-[var(--ink-muted)]">
+                    </Link>
+                    <span className="block text-xs text-ink-muted">
                       {day.description}
                     </span>
                   </TableCell>
@@ -79,7 +82,7 @@ function Hub() {
                     <code className="text-xs">{day.path}</code>
                   </TableCell>
                   <TableCell className="whitespace-nowrap">
-                    <Badge variant={isAgent ? 'accent' : 'default'}>
+                    <Badge variant={isDemo ? 'accent' : 'default'}>
                       {STATUS[day.path]}
                     </Badge>
                   </TableCell>
@@ -88,29 +91,9 @@ function Hub() {
             })}
           </TableBody>
         </Table>
-        <p className="demo-muted mt-4 text-xs">
+        <p className="demo-muted mt-3 text-xs">
           Начни с первого модуля — каждый следующий опирается на предыдущий.
         </p>
-      </section>
-
-      <section className="mt-6">
-        <div className="grid gap-4 sm:grid-cols-2">
-          {DAYS.map((day) => (
-            <Link
-              key={day.path}
-              to={day.path}
-              className="island-shell group block rounded-xl p-5 no-underline transition-colors hover:border-[color-mix(in_oklab,var(--accent-strong)_35%,var(--line))]"
-            >
-              <p className="island-kicker mb-2">{day.label}</p>
-              <h2 className="mb-1 text-lg font-bold text-[var(--ink)] group-hover:text-[var(--accent-strong)]">
-                {day.title}
-              </h2>
-              <p className="m-0 text-sm text-[var(--ink-muted)]">
-                {day.description}
-              </p>
-            </Link>
-          ))}
-        </div>
       </section>
     </div>
   )

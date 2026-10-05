@@ -33,6 +33,7 @@ type SessionConfigProps = {
   windowSize: number
   memory: boolean
   taskState: boolean
+  rag: boolean
   activeTaskState: boolean
   profileName: string | null
   profiles: ProfileItem[]
@@ -42,6 +43,7 @@ type SessionConfigProps = {
   onWindowSize: (size: number) => void
   onMemory: (value: boolean) => void
   onTaskState: (value: boolean) => void
+  onRag: (value: boolean) => void
   onProfile: (id: number | null) => void
 }
 
@@ -51,6 +53,7 @@ export default function SessionConfig({
   windowSize,
   memory,
   taskState,
+  rag,
   activeTaskState,
   profileName,
   profiles,
@@ -60,6 +63,7 @@ export default function SessionConfig({
   onWindowSize,
   onMemory,
   onTaskState,
+  onRag,
   onProfile,
 }: SessionConfigProps) {
   const list = profiles ?? []
@@ -76,6 +80,7 @@ export default function SessionConfig({
           {strategy === 'window' && <Badge>окно {windowSize}</Badge>}
           <Badge>{memory ? 'память вкл.' : 'память выкл.'}</Badge>
           <Badge>{activeTaskState ? 'задача вкл.' : 'задача выкл.'}</Badge>
+          <Badge>{rag ? 'RAG вкл.' : 'RAG выкл.'}</Badge>
           <Badge>{profileName ?? 'профиль по умолчанию'}</Badge>
         </div>
       </section>
@@ -170,6 +175,15 @@ export default function SessionConfig({
             disabled={busy}
           />
           состояние задачи (этап, шаг, ожидаемое действие)
+        </label>
+
+        <label className="demo-muted flex items-center gap-2 self-end text-xs">
+          <Checkbox
+            checked={rag}
+            onCheckedChange={(checked) => onRag(checked === true)}
+            disabled={busy}
+          />
+          RAG по документам (поиск и источники на каждый ход)
         </label>
       </div>
 

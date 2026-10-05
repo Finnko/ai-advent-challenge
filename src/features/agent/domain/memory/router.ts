@@ -59,7 +59,12 @@ function hintLayer(text: string): MemoryLayer {
   return 'working'
 }
 
+export const DIALOGUE_MEMORY_PREFIX = 'dialogue:'
+
 function resolveLayer(candidate: MemoryCandidate): MemoryLayer | null {
+  if (normalizeKey(candidate.key).startsWith(DIALOGUE_MEMORY_PREFIX)) {
+    return 'working'
+  }
   if (candidate.layer === null || candidate.layer === undefined) {
     return hintLayer(`${candidate.key} ${candidate.value}`)
   }

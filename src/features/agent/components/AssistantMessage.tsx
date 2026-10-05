@@ -5,6 +5,7 @@ import TraceAccordion from './TraceAccordion'
 import TokenChip from './TokenChip'
 import VerdictPill from './VerdictPill'
 import SourcePill from './SourcePill'
+import RagSources from './RagSources'
 import { Badge } from '@/components/ui/Badge'
 import { Alert } from '@/components/ui/Alert'
 
@@ -21,6 +22,13 @@ export default function AssistantMessage({ run }: { run: AgentRunResult }) {
         <div className="demo-code-block select-text whitespace-pre-wrap text-sm">
           {run.answer}
         </div>
+      )}
+      {run.grounding && (
+        <RagSources
+          sources={run.sources ?? []}
+          grounding={run.grounding}
+          citations={run.citations ?? []}
+        />
       )}
       <div className="flex flex-wrap gap-1.5">
         {run.verdicts.map((verdict) => (

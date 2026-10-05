@@ -23,6 +23,7 @@ export type SessionSummary = {
   profileName: string | null
   windowSize: number
   taskStateEnabled: boolean
+  ragEnabled: boolean
   invariantSetId: number | null
   createdAt: string
   lastMessage: string

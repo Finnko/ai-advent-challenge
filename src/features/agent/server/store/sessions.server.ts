@@ -18,6 +18,7 @@ export type SessionRow = {
   profileId: number | null
   windowSize: number
   taskStateEnabled: boolean
+  ragEnabled: boolean
   invariantSetId: number | null
   created_at: string
 }
@@ -32,6 +33,7 @@ export type SessionListItem = {
   profileName: string | null
   windowSize: number
   taskStateEnabled: boolean
+  ragEnabled: boolean
   invariantSetId: number | null
   createdAt: string
   lastMessage: string
@@ -50,7 +52,7 @@ export async function createSession(
   const config = resolveSessionConfig(full, defaultProfileId)
   const result = db
     .prepare(
-      'INSERT INTO sessions (token, title, strategy, scenario, memory_enabled, profile_id, window_size, task_state_enabled, invariant_set_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO sessions (token, title, strategy, scenario, memory_enabled, profile_id, window_size, task_state_enabled, rag_enabled, invariant_set_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     )
     .run(
       token,
@@ -61,6 +63,7 @@ export async function createSession(
       config.profileId,
       config.windowSize,
       config.taskStateEnabled ? 1 : 0,
+      config.ragEnabled ? 1 : 0,
       config.invariantSetId,
       nowIso(),
     )
@@ -97,7 +100,7 @@ export async function getSession(
   const db = await getDb()
   const row = db
     .prepare(
-      'SELECT id, token, title, strategy, scenario, active_branch_id, memory_enabled, profile_id, window_size, task_state_enabled, invariant_set_id, created_at FROM sessions WHERE id = ?',
+      'SELECT id, token, title, strategy, scenario, active_branch_id, memory_enabled, profile_id, window_size, task_state_enabled, rag_enabled, invariant_set_id, created_at FROM sessions WHERE id = ?',
     )
     .get(sessionId) as
     | {
@@ -111,6 +114,7 @@ export async function getSession(
         profile_id: number | null
         window_size: number
         task_state_enabled: number
+        rag_enabled: number
         invariant_set_id: number | null
         created_at: string
       }
@@ -130,6 +134,7 @@ export async function getSession(
     profileId: row.profile_id === null ? null : Number(row.profile_id),
     windowSize: Number(row.window_size),
     taskStateEnabled: Number(row.task_state_enabled) === 1,
+    ragEnabled: Number(row.rag_enabled) === 1,
     invariantSetId:
       row.invariant_set_id === null ? null : Number(row.invariant_set_id),
     created_at: row.created_at,
@@ -170,6 +175,7 @@ export async function listSessions(token: string): Promise<SessionListItem[]> {
         p.name AS profile_name,
         s.window_size AS window_size,
         s.task_state_enabled AS task_state_enabled,
+        s.rag_enabled AS rag_enabled,
         s.invariant_set_id AS invariant_set_id,
         s.created_at AS created_at,
         (SELECT m.content FROM messages m WHERE m.session_id = s.id AND m.branch_id = s.active_branch_id AND m.role != 'task' ORDER BY m.id DESC LIMIT 1) AS last_message,
@@ -189,6 +195,7 @@ export async function listSessions(token: string): Promise<SessionListItem[]> {
     profile_name: string | null
     window_size: number
     task_state_enabled: number
+    rag_enabled: number
     invariant_set_id: number | null
     created_at: string
     last_message: string | null
@@ -204,6 +211,7 @@ export async function listSessions(token: string): Promise<SessionListItem[]> {
     profileName: row.profile_name,
     windowSize: Number(row.window_size),
     taskStateEnabled: Number(row.task_state_enabled) === 1,
+    ragEnabled: Number(row.rag_enabled) === 1,
     invariantSetId:
       row.invariant_set_id === null ? null : Number(row.invariant_set_id),
     createdAt: row.created_at,

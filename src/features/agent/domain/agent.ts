@@ -19,6 +19,7 @@ import {
 } from './invariants/checks'
 import type { InvariantRecord } from './invariants/types'
 import type { InvariantGuard, InvariantGuardVerdict } from './invariants/guard'
+import type { Grounding, RetrievedSource } from './capabilities/types'
 
 export type AgentRole = 'employee' | 'manager'
 
@@ -90,6 +91,7 @@ export type SystemBlock = {
     | 'profile'
     | 'task-state'
     | 'invariants'
+    | 'rag'
   content: string
 }
 
@@ -308,6 +310,9 @@ export type AgentRunResult = {
   contextNote: ContextNote | null
   invariantHits: InvariantCode[]
   taskState?: TaskState | null
+  sources?: RetrievedSource[]
+  grounding?: Grounding
+  citations?: number[]
 }
 
 export type AgentConfig = {

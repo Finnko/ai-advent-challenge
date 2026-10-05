@@ -7,7 +7,32 @@ export type ToolInfo = {
   roles: PersonaKind[]
 }
 
+export const GROUNDING_LABELS: Record<
+  'grounded' | 'ungrounded' | 'no-data',
+  string
+> = {
+  grounded: 'со ссылками',
+  ungrounded: 'без опоры',
+  'no-data': 'нет данных',
+}
+
+export const GROUNDING_TONES: Record<
+  'grounded' | 'ungrounded' | 'no-data',
+  'success' | 'danger' | 'default'
+> = {
+  grounded: 'success',
+  ungrounded: 'danger',
+  'no-data': 'default',
+}
+
 export const TOOL_INFO: ToolInfo[] = [
+  {
+    name: 'rag_search',
+    label: 'rag_search',
+    description:
+      'Поиск по базе документов RAG: уточняет запрос по ходу диалога, возвращает фрагменты с источниками и URL.',
+    roles: ['employee', 'manager'],
+  },
   {
     name: 'bookMeetingRoom',
     label: 'bookMeetingRoom',

@@ -20,6 +20,7 @@ export const listSessions = createServerFn({ method: 'POST' })
       profileName: row.profileName,
       windowSize: row.windowSize,
       taskStateEnabled: row.taskStateEnabled,
+      ragEnabled: row.ragEnabled,
       invariantSetId: row.invariantSetId,
       createdAt: row.createdAt,
       lastMessage: row.lastMessage,

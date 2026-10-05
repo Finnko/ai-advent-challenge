@@ -3,11 +3,13 @@
 Корпоративный LLM-агент: инструменты по ролям, персистентность в SQLite, управление контекстом
 стратегиями (`summary` / `none` / `window` / `facts` / `branch`), явная модель памяти
 (краткосрочная = скользящее окно, рабочая, долговременная), профиль пользователя (Day 12),
-состояние задачи как конечный автомат (Day 13, ужесточено в Day 15), инварианты (Day 14)
-и MCP-инструменты (Day 16–17).
+состояние задачи как конечный автомат (Day 13, ужесточено в Day 15), инварианты (Day 14),
+MCP-инструменты (Day 16–17) и **RAG как способность** (Day 25: always-on retrieval, инструмент
+`rag_search`, источники/опора в `AgentRunResult`, память задачи диалога в `MemoryEntry`).
 
-Всё собрано в **один рабочий экран** `/agent` с табами. Фича спроектирована так, чтобы её можно
-было перенести в другой TanStack Start проект.
+Всё собрано в **один рабочий экран** `/agent` с табами (`Диалог | Инварианты | MCP | Сценарии |
+Настройки`). Фича спроектирована так, чтобы её можно было перенести в другой TanStack Start проект;
+она **не импортирует `features/rag`** — RAG подключается снаружи через `AgentCapability`.
 
 ## Структура
 
@@ -20,7 +22,7 @@ src/features/agent/
   server/        # *.server.ts — глубокие server-only модули (agent-turn, agent-service, task-turn, task-state, mcp, mcp-tools)
   server/store/  # модули хранилища по концептам (db, sessions, branches, messages, facts, memory, people, tasks, invariants, profiles, agent-records)
   shared/        # нейтральные node-утилиты для server и mcp (разрешение пути sqlite)
-  domain/        # изоморфная логика без env/fetch (agent, agent-tools, context, memory, profile, task, invariants, session, mcp, jobs, tokens)
+  domain/        # изоморфная логика без env/fetch (agent, agent-tools, context, memory, profile, task, invariants, session, mcp, jobs, tokens, capabilities, rag)
   mcp/           # автономный stdio MCP-сервер (спавнится, не импортируется/не бандлится): server, tools, db, shared
   data/          # клиентские данные без env (примеры, подписи инструментов)
   components/    # UI фичи
@@ -75,6 +77,9 @@ runtime = defaultAgentRuntime)` не собирает их сам. Сбой API 
   допустимо 2–50, валидатор `requireWindowSize`);
 - `memoryEnabled` — включает авто-извлечение и блоки памяти;
 - `taskStateEnabled` — ведёт ли агент состояние задачи (default `true`, тумблер в «Настройках»);
+- `ragEnabled` — включает RAG-способность (default `false`): always-on retrieval каждый Ход,
+  инструмент `rag_search`, блок `kind: 'rag'`, `sources`/`grounding`/`citations` в `AgentRunResult`.
+  Стратегия чанкинга — константа `structural`, `k = 6` (в адаптере `src/lib/agent-rag.server.ts`);
 - `profileId` — профиль пользователя: `undefined` (в draft это `null`) → дефолт токена, id → явный.
   Режим «без профиля» UI не предлагает.
 
@@ -111,6 +116,37 @@ runtime = defaultAgentRuntime)` не собирает их сам. Сбой API 
 `'working' | 'long-term'`. Дедуп — last-write-wins, ручная запись (`source='manual'`) не перетирается
 авто, долговременная память ограничена `LONG_TERM_LIMIT`. Строка приоритета
 (`MEMORY_PRECEDENCE_LINE`) добавляется в последнее user-сообщение: память авторитетнее ранней истории.
+
+**Память задачи диалога (Day 25).** Диалоговые поля (цель, ограничения, термины, что уточнено,
+открытые вопросы) живут в рабочей памяти под ключами `dialogue:*` (`dialogue:goal`,
+`dialogue:constraint:*`, `dialogue:term:*`, `dialogue:clarified:*`, `dialogue:open:*`).
+`MemoryRouter` детерминированно отправляет такие ключи в `working`; экстрактор
+(`domain/memory/extract.ts`) дополнен их словарём. Отдельной памяти/таблицы нет — UI-панель
+`DialogueMemoryPanel` фильтрует `working` по префиксу, ручные правки защищены (`source='manual'`).
+FSM `TaskState` к диалоговой памяти не привязан: он остаётся только про задачи с действиями.
+
+## RAG как способность (Day 25)
+
+Фича агента **не знает о `features/rag`**. Точка расширения — `domain/capabilities/types.ts`
+(`AgentCapability { id, prepare, classify }`) и реестр `server/capability-registry.server.ts`
+(`registerAgentCapability`/`getAgentCapabilities`). `executeAgent` принимает только generic
+`extraBlocks`/`extraTools`; сам Ход (`runAgentTurn`) берёт из `TurnDeps.capabilities` (по умолчанию —
+реестр) способность с `id='rag'`, если `config.ragEnabled`.
+
+- **Адаптер — вне фичи**: `src/lib/agent-rag.server.ts` импортирует `retrieve`/`createEmbedder`/
+  `createReranker`, строит `AgentCapability` и регистрирует её. Бутстрап — `src/server.ts`
+  (side-effect import). Перенос агента без RAG: реестр пуст → `ragEnabled` ничего не делает.
+- **`prepare`**: retrieval по сообщению пользователя (`k = 6`, `threshold = RAG_RERANK_THRESHOLD`),
+  фильтр lower-than-threshold убирает единственный min-1 чанк → off-topic даёт `sources: []`.
+  Возвращает system-блок `kind: 'rag'` (дополняющая инструкция: есть ответ — цитируй `[n]`; нет —
+  скажи «в документах нет данных» и продолжай инструментами) и read-only инструмент `rag_search`
+  (доступен во всех Этапах, полный текст в `refText` под `$ref`).
+- **`classify`**: `parseCitations` + `groundingFor` → `grounded | ungrounded | no-data`.
+- **Результат**: `runAgentTurn` кладёт `sources`/`grounding`/`citations` в `AgentRunResult`, который
+  целиком сохраняется в `messages.run`; UI (`RagSources`) рендерит источники **всегда**, включая
+  `no-data`. Пустой индекс — мягкая деградация (`sources: []`, подсказка собрать индекс в `/rag`).
+- Связь `agent → rag` отсутствует; `features/rag` не импортирует `features/agent`. ONNX и `node:sqlite`
+  остаются внутри `features/rag/server`.
 
 ## Профиль пользователя (Day 12)
 
@@ -303,6 +339,13 @@ runtime = defaultAgentRuntime)` не собирает их сам. Сбой API 
   `tests/mcp-agent.test.ts` (адаптер + `executeAgent`). Сетевые тесты Open-Meteo/Wikipedia/Frankfurter —
   только под `RUN_NETWORK_TESTS=1`.
 
+## Сценарии проверки (Day 25)
+
+Вкладка «Сценарии» (`ScenarioPanel` + `api/use-scenario-run.ts`) прогоняет два длинных диалога
+(`data/scenarios.ts`, по 13 реплик) через реальный Ход агента: создаёт временную сессию с `ragEnabled`,
+шлёт реплики, скорит источники/опору/факты (`domain/scenario-score.ts`), проверяет удержание цели по
+памяти диалога (`dialogue:goal`) и удаляет сессию. Офлайн-тесты — подменой модели/способности.
+
 ## Персистентность
 
 - `server/store/db.server.ts` — singleton `node:sqlite` (схема, сиды, миграции). `node:sqlite`
@@ -346,11 +389,14 @@ Env: `DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL`, `HUGGING_FACE_TOKEN`; путь БД �
 2. Скопировать внешние зависимости из списка выше.
 3. Завести роут `/agent`, рендерящий `pages/AgentPage` (и, при желании, редиректы со старых путей).
 4. Прописать env и поднять `QueryClientProvider`.
-5. Для MCP: Node ≥22; собрать бандлы (`npm run build:mcp`) и/или задать
+5. RAG — опционально: скопировать `features/rag` и `src/lib/agent-rag.server.ts`, добавить
+   side-effect import в server entry (`src/server.ts`). Без этого реестр способностей пуст и RAG
+   выключен, а агент остаётся самодостаточным.
+6. Для MCP: Node ≥22; собрать бандлы (`npm run build:mcp`) и/или задать
    `AGENT_MCP_DEMO_ENTRY`/`AGENT_MCP_JOBS_ENTRY`/`AGENT_MCP_RESEARCH_ENTRY`/`AGENT_MCP_MARKET_ENTRY`;
    форвардить `AGENT_DB_PATH`/`JOBS_DB_PATH`/`REPORTS_DIR` в дочерние процессы; поднять `GET /jobs/tick`
    по таймеру. Деплой — `deploy/` (systemd + timer, Tailscale-only).
-6. Прогнать `npm run test` — тесты фичи офлайн (мокают LLM через `tests/agent-testkit.ts`).
+7. Прогнать `npm run test` — тесты фичи офлайн (мокают LLM через `tests/agent-testkit.ts`).
 
 Правила, за которые лучше не выходить: серверные ключи никогда не уходят в браузер; `node:sqlite`
 импортируется только динамически внутри `.server.ts`; MCP SDK не доходит ни до LLM-транспорта, ни до

@@ -1,16 +1,18 @@
 # Project: AI Advent Challenge
 
-Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 24 (`feature/day24`).
+Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 25 (`feature/day25`).
 Days 13–20 extend the unified `/agent` workspace with task state, invariants and MCP; Day 21 adds the
 `/rag` document-index feature; Day 22 adds RAG answers with/without retrieval and a control set; Day 23
 adds a second retrieval stage (cross-encoder reranking + relevance threshold) and query rewrite; Day 24
-makes the answer contract structured (mandatory sources + verified quotes) and adds threshold abstention.
+makes the answer contract structured (mandatory sources + verified quotes) and adds threshold abstention;
+Day 25 makes RAG a capability of the unified `/agent` — always-on retrieval with sources, a `rag_search`
+tool and a dialogue task memory in `MemoryEntry`, composed at the app level (no `agent → rag` import).
 
 ## Where to read more
 
 - `src/features/agent/README.md` — mechanics of the agent feature: turn execution, tools, task state
-  machine, invariants, context strategies, memory, profile, persistence and MCP, plus porting notes.
-  Read it before editing any of those.
+  machine, invariants, context strategies, memory, profile, persistence, MCP and the RAG capability,
+  plus porting notes. Read it before editing any of those.
 - `src/features/rag/README.md` — document indexing: corpus source, chunking strategies, embeddings,
   SQLite index, retrieval, reranking/threshold + query rewrite, and the mode comparison. Read it
   before editing any of those.
@@ -30,10 +32,13 @@ makes the answer contract structured (mandatory sources + verified quotes) and a
 
 ## Layout
 
-- `src/features/agent/`, `src/features/rag/` — two self-contained features built for porting; each
-  README (above) carries its module map.
-- `src/lib/` — shared: `llm.ts`/`llm.server.ts` (transport), `functions/*.functions.ts` (Days 1–5 server
-  fns + shared `validation.ts`), `day2.ts`…`day5.ts`, `days.ts` (sidebar), `utils.ts` (`cn`).
+- `src/features/agent/`, `src/features/rag/` — self-contained features built for porting; each README
+  (above) carries its module map. They do **not** import each other: the app-level composition module
+  `src/lib/agent-rag.server.ts` wires `features/rag` into the agent's capability registry, bootstrapped
+  by the server entry `src/server.ts`.
+- `src/lib/` — shared: `llm.ts`/`llm.server.ts` (transport), `agent-rag.server.ts` (app composition),
+  `functions/*.functions.ts` (Days 1–5 server fns + shared `validation.ts`), `day2.ts`…`day5.ts`,
+  `days.ts` (sidebar), `utils.ts` (`cn`).
 - `src/components/` — app shell (`Header`, `Sidebar`, `Chat`) and shared `ui/Tabs.tsx`.
 - `src/routes/` — thin route wrappers; `/agent` → `AgentPage`, `/rag` → `RagPage`, old `/agent-*` routes
   redirect to `/agent`.
@@ -52,8 +57,16 @@ makes the answer contract structured (mandatory sources + verified quotes) and a
   `store/` folder splits storage by concept (`sessions`, `branches`, `messages`, `facts`, `memory`,
   `people`, `tasks`, `invariants`, `profiles`, `agent-records`) and imports them directly — there is no
   `store.server.ts` barrel. Import `node:sqlite` dynamically (`await import`) inside a `.server.ts`.
-- **Session config is immutable**: strategy, memory, profile, window size and task state are fixed by
-  `createSession` and read by `runAgentTurn`; a different config means a new session.
+- **Session config is immutable**: strategy, memory, profile, window size, task state and `ragEnabled`
+  are fixed by `createSession` and read by `runAgentTurn`; a different config means a new session.
+- **RAG is an agent capability, composed at the app level**: the agent owns a RAG-agnostic capability
+  seam (`domain/capabilities/`, `server/capability-registry.server.ts`) and `executeAgent` only accepts
+  generic `extraBlocks`/`extraTools`. `src/lib/agent-rag.server.ts` adapts `features/rag` and registers
+  the capability; `src/server.ts` bootstraps it. `features/agent` never imports `features/rag`, and
+  `features/rag` never imports `features/agent` (same rule for `@huggingface/transformers`/`node:sqlite`:
+  stay inside `features/rag/server`). When `ragEnabled`, retrieval runs every turn, the `rag_search`
+  read-only tool joins the loop, and `sources`/`grounding`/`citations` land in `AgentRunResult`;
+  off-topic/no-index degrades softly to `no-data`.
 - **Invariants are global per token** and enforced deterministically before mutating tools and after
   finalize; the opt-in `invariantGuard` is a fallback, never a replacement. Pinned `slug`/`check` are
   immutable.
@@ -69,7 +82,8 @@ makes the answer contract structured (mandatory sources + verified quotes) and a
   early returns instead of nested ternaries or long `if/else if` ladders. Respond one chunk at a time
   (no streaming yet; the UI shows a 3-dots animation). Tests live in `src/**/*.test.ts` (Vitest, node
   env; the agent testkit is an in-memory `AgentStore`, the RAG testkit is an in-memory corpus + a
-  deterministic hash embedder). Prefer offline tests through injection (e.g. `WeatherSource`,
+  deterministic hash embedder; agent tests inject a fake `AgentCapability` for RAG). Prefer offline
+  tests through injection (e.g. `WeatherSource`,
   `CorpusSource`, temp sqlite); real-network tests run under `RUN_NETWORK_TESTS=1` and real local-model
   tests under `RUN_MODEL_TESTS=1`. Out of scope: streaming, a real auth/backend for `people` (a seeded
   mock today). Work on `feature/dayN` branches; commit only when asked. Deployment lives in `deploy/`
