@@ -32,6 +32,11 @@ export default function ScenarioRow({
         <Badge variant={row.verdict.factsOk ? 'success' : 'danger'}>
           факты
         </Badge>
+        {row.step.expectEarlier && (
+          <Badge variant={row.verdict.orderOk ? 'success' : 'danger'}>
+            порядок
+          </Badge>
+        )}
         {grounding && (
           <Badge variant={GROUNDING_TONES[grounding]}>
             {GROUNDING_LABELS[grounding]}

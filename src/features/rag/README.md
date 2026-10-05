@@ -117,7 +117,9 @@ char_start, char_end, n_tokens, crosses_section, text`.
 - `server/rewrite.server.ts`: LLM-переформулировка через шов `AnswerLlm` (deepseek-flash, JSON
   `{"rewritten": "..."}`). Эмбеддинг считается по переформулированному запросу, а реранк — по
   исходному. Промпт и разбор — в `domain/rewrite-prompt.ts` (`buildRewriteMessages`,
-  `parseRewriteResponse`, `rewriteQuery` с fail-open).
+  `parseRewriteResponse`, `rewriteQuery` с fail-open). Опциональный второй аргумент `history`
+  (`RewriteTurn[]`) передаёт контекст диалога, чтобы rewrite раскрывал местоимения и отсылки
+  («она», «его», «из этих городов»); вызывающий без истории работает как раньше.
 - **Совместимость моделей**: и эмбеддер, и реранкер грузятся `@huggingface/transformers` v4 напрямую,
   поэтому подходит только модель с непустым `model_type` (поддержанная архитектура) и с ONNX-весами в
   самом репозитории. `Xenova/multilingual-e5-base` и `onnx-community/bge-reranker-v2-m3-ONNX` —

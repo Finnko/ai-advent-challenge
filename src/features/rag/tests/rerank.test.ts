@@ -8,7 +8,11 @@ import {
   sigmoid,
   type Reranker,
 } from '../domain/reranker'
-import { parseRewriteResponse, rewriteQuery } from '../domain/rewrite-prompt'
+import {
+  buildRewriteMessages,
+  parseRewriteResponse,
+  rewriteQuery,
+} from '../domain/rewrite-prompt'
 import { optionalThreshold } from '../functions/validation'
 import { buildIndex } from '../server/indexing.server'
 import {
@@ -279,6 +283,35 @@ describe('query rewrite', () => {
       }),
     ).toBeNull()
     expect(await rewriteQuery('вопрос', async () => 'новый')).toBe('новый')
+  })
+
+  it('includes dialogue history in the prompt', () => {
+    const withHistory = buildRewriteMessages('Кто основал?', [
+      { role: 'user', content: 'Сравни Москву и Санкт-Петербург.' },
+      { role: 'assistant', content: 'Санкт-Петербург основан в 1703 году.' },
+    ])
+    expect(withHistory[1].content).toContain('Сравни Москву и Санкт-Петербург.')
+    expect(withHistory[1].content).toContain('Кто основал?')
+
+    const withoutHistory = buildRewriteMessages('Кто основал?')
+    expect(withoutHistory[1].content).not.toContain('Контекст диалога')
+  })
+
+  it('passes history through rewriteQuery to the rewriter', async () => {
+    const history = [
+      { role: 'user' as const, content: 'Сравни Москву и Санкт-Петербург.' },
+    ]
+    let received: unknown
+    const rewritten = await rewriteQuery(
+      'Кто основал?',
+      async (_question, turns) => {
+        received = turns
+        return 'Кто основал Санкт-Петербург?'
+      },
+      history,
+    )
+    expect(received).toEqual(history)
+    expect(rewritten).toBe('Кто основал Санкт-Петербург?')
   })
 })
 

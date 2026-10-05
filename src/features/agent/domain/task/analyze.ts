@@ -33,6 +33,7 @@ const STAGE_TAXONOMY = [
 
 const ANALYSIS_RULES = [
   'Правила:',
+  '- Определи, нужна ли для запроса задача с действиями: поле "requiresTask". Ставь false, если это вопрос из общих знаний, приветствие, светская беседа, благодарность или уточнение уже известного — на такое ответь сразу, без плана и согласования. Ставь true, если запрос требует работы с корпоративными данными или инструментами (в том числе справочными list*). Если "requiresTask" = false, поле "stage" значения не имеет.',
   '- Определи этап, текущий шаг (кратко, что делаем сейчас) и ожидаемое действие.',
   '- Верни упорядоченный план шагов ТЕКУЩЕГО этапа в поле "steps" (от 1 до 6 пунктов); текущий шаг продублируй в "step".',
   '- Не объединяй независимые шаги в один и не перескакивай через шаги; при смене этапа задай новый план для нового этапа.',
@@ -57,7 +58,7 @@ const ANALYSIS_RULES = [
   '- Если текущий этап "paused" и пользователь просит продолжить — верни этап, с которого стояли на паузе (поле previousStage), либо "planning", если он неизвестен.',
   '- Если задача завершена (done/cancelled) и пользователь начал новый несвязанный запрос — верни "planning" и новое title.',
   '- Сохраняй текущий title, пока задача та же; меняй только при новой задаче.',
-  'Верни ТОЛЬКО JSON-объект вида {"title": "...", "stage": "planning" | "execution" | "validation" | "done" | "paused" | "cancelled", "step": "...", "steps": ["...", "..."], "expectedAction": {"actor": "user" | "agent", "description": "..."}, "reason": "..."}. Без текста до "{" и после "}".',
+  'Верни ТОЛЬКО JSON-объект вида {"title": "...", "requiresTask": true | false, "stage": "planning" | "execution" | "validation" | "done" | "paused" | "cancelled", "step": "...", "steps": ["...", "..."], "expectedAction": {"actor": "user" | "agent", "description": "..."}, "reason": "..."}. Без текста до "{" и после "}".',
 ].join('\n')
 
 export function buildTaskStateMessages(
@@ -141,6 +142,7 @@ export function parseTaskAnalysis(content: string): TaskAnalysis | null {
     stage: record.stage,
     step: typeof record.step === 'string' ? record.step : '',
     steps: steps.length > 0 ? steps : undefined,
+    requiresTask: record.requiresTask !== false,
     expectedAction: {
       actor: isTaskActor(expected.actor) ? expected.actor : 'agent',
       description:

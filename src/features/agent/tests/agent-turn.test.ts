@@ -1276,6 +1276,50 @@ describe('runAgentTurn', () => {
     expect(act && act.stage === 'act' ? act.outcome.ok : false).toBe(true)
   })
 
+  it('не заводит задачу на знаниевый вопрос без действий', async () => {
+    const { store, getTask, appended } = createTurnStore(
+      turnSession({ taskStateEnabled: true }),
+    )
+    const { runtime, captured } = makeRuntime({
+      analyzeTaskState: async () => ({
+        analysis: {
+          stage: 'planning',
+          step: 'Уточнить башню',
+          steps: ['Уточнить башню', 'Найти данные', 'Сообщить высоту'],
+          expectedAction: { actor: 'user', description: 'Уточнить башню' },
+          requiresTask: false,
+          reason: null,
+        },
+        usage: null,
+      }),
+      callLLM: async ({ response_format }) => ({
+        content: response_format
+          ? JSON.stringify({ tool: null, args: {} })
+          : 'Водонапорная башня в Урюпинске — около 30 метров.',
+        usage: { prompt_tokens: 3, completion_tokens: 2 },
+        latencyMs: 0,
+      }),
+    })
+
+    const result = await runAgentTurn(
+      {
+        token: 'tok-test',
+        sessionId: 7,
+        user: 'Какая высота башни в Урюпинске?',
+      },
+      deps(store, runtime),
+    )
+
+    expect(result.taskState).toBeNull()
+    expect(getTask()).toBeNull()
+    expect(appended.some((message) => message.role === 'task')).toBe(false)
+    const prompt = captured
+      .flat()
+      .map((message) => message.content)
+      .join('\n')
+    expect(prompt).not.toContain('СОСТОЯНИЕ ЗАДАЧИ')
+  })
+
   it('не пускает execution, пока в плане есть незакрытые пункты и нет согласия', async () => {
     const { store, getTask, appended } = createTurnStore(
       turnSession({ taskStateEnabled: true }),
@@ -1669,5 +1713,46 @@ describe('runAgentTurn · RAG capability', () => {
     )
 
     expect(result.run.sources).toBeUndefined()
+  })
+
+  it('передаёт историю диалога в prepare способности', async () => {
+    const { store } = createTurnStore(turnSession({ ragEnabled: true }))
+    const withHistory: TurnStore = {
+      ...store,
+      loadMessages: async () => [
+        { id: 1, role: 'user', content: 'Сравни Москву и Санкт-Петербург.' },
+        {
+          id: 2,
+          role: 'assistant',
+          content: 'Санкт-Петербург основан в 1703 году.',
+        },
+      ],
+    }
+    let received: unknown
+    const capability: AgentCapability = {
+      id: 'rag',
+      async prepare(input) {
+        received = input.history
+        return { block: null, sources: [], tools: [] }
+      },
+      classify() {
+        return { grounding: 'no-data', citations: [] }
+      },
+    }
+    const { runtime } = makeRuntime()
+
+    await runAgentTurn(
+      {
+        token: 'tok-test',
+        sessionId: 7,
+        user: 'Кто основал более молодой из этих городов?',
+      },
+      { ...deps(withHistory, runtime), capabilities: () => [capability] },
+    )
+
+    expect(received).toEqual([
+      { role: 'user', content: 'Сравни Москву и Санкт-Петербург.' },
+      { role: 'assistant', content: 'Санкт-Петербург основан в 1703 году.' },
+    ])
   })
 })

@@ -3,6 +3,8 @@ export type ScenarioStep = {
   expectSources?: string[]
   expectFacts?: string[]
   expectNoData?: boolean
+  expectGrounding?: boolean
+  expectEarlier?: { earlier: string; later: string }
 }
 
 export type Scenario = {
@@ -22,7 +24,10 @@ export const SCENARIOS: Scenario[] = [
     goalKeyword: 'москв',
     steps: [
       { question: 'Сравни Москву и Санкт-Петербург в целом.' },
-      { question: 'Какой из этих двух городов основан раньше?' },
+      {
+        question: 'Какой из этих двух городов основан раньше?',
+        expectEarlier: { earlier: 'Москва', later: 'Санкт-Петербург' },
+      },
       {
         question: 'В каком году основан каждый из них?',
         expectFacts: ['1147', '1703'],
@@ -39,9 +44,15 @@ export const SCENARIOS: Scenario[] = [
         expectSources: ['Санкт-Петербург'],
       },
       { question: 'Есть ли в обоих метро?' },
-      { question: 'Напомни, какие два города мы сравниваем.' },
-      { question: 'Сформулируй короткий итог сравнения.' },
-      { question: 'Что общего между ними?' },
+      {
+        question: 'Напомни, какие два города мы сравниваем.',
+        expectGrounding: false,
+      },
+      {
+        question: 'Сформулируй короткий итог сравнения.',
+        expectGrounding: false,
+      },
+      { question: 'Что общего между ними?', expectGrounding: false },
     ],
   },
   {
@@ -78,9 +89,10 @@ export const SCENARIOS: Scenario[] = [
       {
         question:
           'Вернись к теме: перечисли три главных факта о Казани, которые мы обсудили.',
+        expectGrounding: false,
       },
       { question: 'Чем Казань известна в культуре?' },
-      { question: 'Сформулируй итог по Казани.' },
+      { question: 'Сформулируй итог по Казани.', expectGrounding: false },
     ],
   },
 ]

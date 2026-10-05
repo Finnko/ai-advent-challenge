@@ -24,11 +24,17 @@ export type CapabilityOutcome = {
   citations: number[]
 }
 
+export type CapabilityTurn = {
+  role: 'user' | 'assistant'
+  content: string
+}
+
 export type AgentCapability = {
   id: string
   prepare(input: {
     query: string
     token: string
+    history?: CapabilityTurn[]
   }): Promise<CapabilityContribution>
   classify(answer: string, sources: RetrievedSource[]): CapabilityOutcome
 }

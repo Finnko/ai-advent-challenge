@@ -151,9 +151,6 @@ export async function callCompletions(
         body,
       })
     } catch (error) {
-      console.error(
-        `[DEBUG-llm] fetch failed attempt=${attempt + 1}/${attempts} model=${endpoint.model} messages=${messages.length} bytes=${body.length} after=${Date.now() - startedAt}ms cause=${describeCause(error)}`,
-      )
       if (!isLast && isRetryableError(error)) {
         await sleep(retryDelayMs(baseDelayMs, attempt))
         continue
@@ -163,9 +160,6 @@ export async function callCompletions(
 
     if (!res.ok) {
       const errorBody = await res.text()
-      console.error(
-        `[DEBUG-llm] http error attempt=${attempt + 1}/${attempts} status=${res.status} model=${endpoint.model} after=${Date.now() - startedAt}ms`,
-      )
       if (!isLast && isRetryableStatus(res.status)) {
         await sleep(retryDelayMs(baseDelayMs, attempt))
         continue

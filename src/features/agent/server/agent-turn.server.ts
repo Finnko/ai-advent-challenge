@@ -112,6 +112,8 @@ export type AgentTurnInput = {
   user: string
 }
 
+const CAPABILITY_HISTORY_TURNS = 6
+
 export type TurnDeps = {
   resolveCapabilities(token: string): Promise<AgentCapabilities>
   store: TurnStore
@@ -270,6 +272,10 @@ export async function runAgentTurn(
     const contribution = await ragCapability.prepare({
       query: input.user,
       token,
+      history: history.slice(-CAPABILITY_HISTORY_TURNS).map((row) => ({
+        role: row.role,
+        content: row.content,
+      })),
     })
     if (contribution.block) {
       extraBlocks.push(contribution.block)

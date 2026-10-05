@@ -336,6 +336,7 @@ export type AgentConfig = {
 
 const DECIDE_TEMPERATURE = 0.2
 const FINALIZE_TEMPERATURE = 0.7
+const RAG_FINALIZE_TEMPERATURE = 0
 const MAX_INPUT_CHARS = 30_000
 const DECIDE_MAX_TOKENS = 800
 const FINALIZE_MAX_TOKENS = 700
@@ -743,6 +744,7 @@ function buildFinalizeUser(
   hasInvariantBlocks: boolean,
   availableCatalog: string | null,
   capabilityCatalog: string | null,
+  hasRagBlock: boolean,
 ): string {
   return [
     `Запрос пользователя:\n${request}`,
@@ -756,6 +758,12 @@ function buildFinalizeUser(
     ...(hasInvariantBlocks
       ? [
           'Если решение нарушает инвариант — откажись, укажи INV-<id> и предложи совместимый вариант.',
+          '',
+        ]
+      : []),
+    ...(hasRagBlock
+      ? [
+          'Если вопрос — сравнение («какой раньше / старше / больше / ближе»), сначала выпиши значения объектов с номерами фрагментов RAG, затем сравни числа (для дат меньшее значение = раньше/старше) и только потом сформулируй вывод. Не давай ответ до сравнения; вывод должен следовать из чисел.',
           '',
         ]
       : []),
@@ -1037,6 +1045,7 @@ export class Agent {
     )
     const hasMemoryBlocks = memoryBlocks.length > 0
     const hasProfileBlocks = profileBlocks.length > 0
+    const hasRagBlock = contextBlocks.some((block) => block.kind === 'rag')
     const hasInvariantBlocks =
       invariantBlocks.length > 0 || (this.config.invariants?.length ?? 0) > 0
     const precedenceLine = buildPrecedenceLine(
@@ -1400,6 +1409,7 @@ export class Agent {
         hasInvariantBlocks,
         availableCatalog,
         capabilityCatalog,
+        hasRagBlock,
       )
       const finalizeReply = await callLLM({
         messages: [
@@ -1412,7 +1422,9 @@ export class Agent {
           ...taskStateBlocks.map(asSystemMessage),
           { role: 'user', content: finalizeUser },
         ],
-        temperature: FINALIZE_TEMPERATURE,
+        temperature: hasRagBlock
+          ? RAG_FINALIZE_TEMPERATURE
+          : FINALIZE_TEMPERATURE,
         max_tokens: FINALIZE_MAX_TOKENS,
       })
       answer = finalizeReply.content

@@ -1,16 +1,41 @@
 import type { PromptMessage } from './answer-prompt'
 
-export type Rewriter = (question: string) => Promise<string>
+export type RewriteTurn = {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+export type Rewriter = (
+  question: string,
+  history?: RewriteTurn[],
+) => Promise<string>
 
 const REWRITE_SYSTEM =
-  'Ты переформулируешь поисковый запрос, чтобы поиск по документам о городах России находил больше релевантных фрагментов. Сохрани смысл и все факты вопроса. Верни ТОЛЬКО JSON вида {"rewritten": "..."} без пояснений.'
+  'Ты переформулируешь поисковый запрос, чтобы поиск по документам о городах России находил больше релевантных фрагментов. Если дан контекст диалога, раскрой местоимения и отсылки («она», «его», «там», «из этих городов») в самостоятельный запрос. Сохрани смысл и все факты вопроса. Верни ТОЛЬКО JSON вида {"rewritten": "..."} без пояснений.'
 
-export function buildRewriteMessages(question: string): PromptMessage[] {
+function formatHistory(history: RewriteTurn[]): string {
+  return history
+    .map((turn) =>
+      turn.role === 'user'
+        ? `Пользователь: ${turn.content}`
+        : `Ассистент: ${turn.content}`,
+    )
+    .join('\n')
+}
+
+export function buildRewriteMessages(
+  question: string,
+  history?: RewriteTurn[],
+): PromptMessage[] {
+  const context =
+    history && history.length > 0
+      ? `Контекст диалога:\n${formatHistory(history)}\n\n`
+      : ''
   return [
     { role: 'system', content: REWRITE_SYSTEM },
     {
       role: 'user',
-      content: `Вопрос: ${question}\n\nПереформулируй его для поиска.`,
+      content: `${context}Вопрос: ${question}\n\nПереформулируй его для поиска.`,
     },
   ]
 }
@@ -53,12 +78,13 @@ export function parseRewriteResponse(content: string): string | null {
 export async function rewriteQuery(
   question: string,
   rewriter: Rewriter | null | undefined,
+  history?: RewriteTurn[],
 ): Promise<string | null> {
   if (!rewriter) {
     return null
   }
   try {
-    const rewritten = (await rewriter(question)).trim()
+    const rewritten = (await rewriter(question, history)).trim()
     return rewritten.length > 0 && rewritten !== question.trim()
       ? rewritten
       : null

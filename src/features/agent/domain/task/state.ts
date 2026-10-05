@@ -23,6 +23,7 @@ export type TaskAnalysis = {
   steps?: string[]
   expectedAction: { actor: TaskActor; description: string }
   reason?: string | null
+  requiresTask?: boolean
 }
 
 export type TaskRejection = {
