@@ -14,13 +14,16 @@ import { STATS } from './-index/stats'
 
 export const Route = createFileRoute('/_layout/')({ component: Hub })
 
+function isDemoPath(path: string): boolean {
+  return (
+    path.startsWith('/agent') ||
+    path.startsWith('/rag') ||
+    path.startsWith('/local-llm')
+  )
+}
+
 const STATUS: Record<string, string> = Object.fromEntries(
-  DAYS.map((day) => [
-    day.path,
-    day.path.startsWith('/agent') || day.path.startsWith('/rag')
-      ? 'Демо'
-      : 'Доступно',
-  ]),
+  DAYS.map((day) => [day.path, isDemoPath(day.path) ? 'Демо' : 'Доступно']),
 )
 
 function Hub() {
@@ -60,8 +63,7 @@ function Hub() {
           </TableHeader>
           <TableBody>
             {DAYS.map((day, i) => {
-              const isDemo =
-                day.path.startsWith('/agent') || day.path.startsWith('/rag')
+              const isDemo = isDemoPath(day.path)
               return (
                 <TableRow key={day.path}>
                   <TableCell className="whitespace-nowrap tabular-nums text-ink-muted">
