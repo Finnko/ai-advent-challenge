@@ -1,6 +1,6 @@
 # Project: AI Advent Challenge
 
-Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 26 (`feature/day26`).
+Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 27 (`feature/day27`).
 Days 13–20 extend the unified `/agent` workspace with task state, invariants and MCP; Day 21 adds the
 `/rag` document-index feature; Day 22 adds RAG answers with/without retrieval and a control set; Day 23
 adds a second retrieval stage (cross-encoder reranking + relevance threshold) and query rewrite; Day 24
@@ -9,7 +9,9 @@ Day 25 makes RAG a capability of the unified `/agent` — always-on retrieval wi
 tool and a dialogue task memory in `MemoryEntry`, composed at the app level (no `agent → rag` import);
 Day 26 adds a standalone `/local-llm` feature that runs Qwen3-8B-4bit locally on Apple Silicon via MLX
 and proxies it through the shared `callCompletions` (three difficulty presets + freeform, latency/tokens
-metrics, graceful degrade when the local server is down).
+metrics, graceful degrade when the local server is down). Day 27 adds a separate Telegram quiz bot
+(`features/telegram-quiz`, grammY + long polling, esbuild bundle) that generates MC questions with that
+local model — no cloud models, only `api.telegram.org` outbound.
 
 ## Where to read more
 
@@ -19,7 +21,10 @@ metrics, graceful degrade when the local server is down).
 - `src/features/rag/README.md` — document indexing: corpus source, chunking strategies, embeddings,
   SQLite index, retrieval, reranking/threshold + query rewrite, and the mode comparison. Read it
   before editing any of those.
-- `CONTEXT.md` — domain vocabulary (Ход, Задача, Этап, Инвариант, …).
+- `src/features/telegram-quiz/README.md` — the Telegram quiz bot: module map, round flow, run and
+  porting notes. Read it before editing the bot.
+- `CODING_STANDARDS.md` — style, test and product-scope rules to apply when writing or reviewing code.
+- `GLOSSARY.md` — domain vocabulary (Ход, Задача, Этап, Инвариант, …).
 - `README.md` — day-by-day log of the challenge.
 
 ## Stack
@@ -31,7 +36,8 @@ metrics, graceful degrade when the local server is down).
 - **SDKs**: keep the LLM transport on raw `fetch`; `@modelcontextprotocol/sdk` + `zod` live only in the
   MCP server/client modules; `@huggingface/transformers` (local ONNX) lives only in the RAG feature's
   `server/embedder.server.ts` (bi-encoder embeddings) and `server/reranker.server.ts` (cross-encoder
-  reranker, deliberate Day-23 decision). No other non-LLM SDKs without a deliberate decision.
+  reranker, deliberate Day-23 decision); `grammy` lives only in `features/telegram-quiz` (deliberate
+  Day-27 decision). No other non-LLM SDKs without a deliberate decision.
 
 ## Layout
 
@@ -41,6 +47,8 @@ metrics, graceful degrade when the local server is down).
   by the server entry `src/server.ts`.
 - `src/features/local-llm/` — standalone `/local-llm` tab: local MLX model proxied through
   `callCompletions`; dev/local-only, independent of the agent (module map below in Hard rules).
+- `src/features/telegram-quiz/` — standalone Telegram quiz bot on the same local model (grammY + long
+  polling, esbuild bundle); dev/local-only, with its own module map in the feature README.
 - `src/lib/` — shared: `llm.ts`/`llm.server.ts` (transport), `agent-rag.server.ts` (app composition),
   `functions/*.functions.ts` (Days 1–5 server fns + shared `validation.ts`), `day2.ts`…`day5.ts`,
   `days.ts` (sidebar), `utils.ts` (`cn`).
@@ -81,6 +89,20 @@ metrics, graceful degrade when the local server is down).
   false }`, passed via the transport's generic `CallCompletionsOptions.extraBody`. The client sends a
   `presetId` (resolved server-side from `data/presets.ts`) or freeform `prompt`; a down server degrades
   softly via a `/models` health check.
+- **Telegram quiz (Day 27)** lives in `features/telegram-quiz/` and is **dev/local-only**, independent
+  of the agent and the web app. It uses `grammy` (deliberate non-LLM SDK) with long polling
+  (`bot.start()`), an in-memory `RoundStore` (no `@grammyjs/sessions`; `ctx` stays out of the domain) and
+  no streaming — a question is JSON, rendered only when complete. It reaches the local model through the
+  shared `@lib/local-llm.server` (`runLocalChat`, `getLocalLlmStatus`), never via `features/local-llm`
+  or the agent. Questions are generated with a strict-JSON prompt (which deliberately omits the
+  already-asked list — at low temperature it makes the model echo the forbidden question); the parser
+  extracts the first balanced `{…}` and the generator regenerates on invalid JSON, a repeated question,
+  identical options (a degenerate MC) **or non-Cyrillic/Latin characters** (CJK leakage), at
+  `GENERATOR_TEMPERATURE`. The quiz model comes from
+  `QUIZ_LLM_MODEL` (falls back to `LOCAL_LLM_MODEL`), so it can differ from `/local-llm`. State is per
+  chat/round, gated by a round id and
+  the round phase. The bot ships as a compiled `.mjs` (`npm run build:bot` → `dist/server/bot/`), run via
+  `npm run bot`; both it and `features/local-llm` stay out of `vite build`.
 - **MCP tools**: `agent-mcp-demo` is read-only; `agent-mcp-jobs` writes its own `jobs.sqlite`. Tool
   metadata travels over the protocol: each spawned server sets `annotations: { readOnlyHint }`, the host
   derives `descriptor.mutating` (`readOnlyHint !== true` → mutating, fail-closed) and mutating MCP tools
@@ -89,15 +111,7 @@ metrics, graceful degrade when the local server is down).
   server (a dead server removes only its tools). The MCP SDK reaches neither the LLM transport nor the
   browser. MCP servers ship as compiled `.mjs` (`npm run build:mcp`), resolved by
   `server/mcp-registry.server.ts` via `AGENT_MCP_DEMO_ENTRY`/`AGENT_MCP_JOBS_ENTRY` → `dist` → dev source.
-- **Conventions**: write no comments unless asked. Extract a decision into a small named function with
-  early returns instead of nested ternaries or long `if/else if` ladders. Respond one chunk at a time
-  (no streaming yet; the UI shows a 3-dots animation). Tests live in `src/**/*.test.ts` (Vitest, node
-  env; the agent testkit is an in-memory `AgentStore`, the RAG testkit is an in-memory corpus + a
-  deterministic hash embedder; agent tests inject a fake `AgentCapability` for RAG). Prefer offline
-  tests through injection (e.g. `WeatherSource`,
-  `CorpusSource`, temp sqlite); real-network tests run under `RUN_NETWORK_TESTS=1` and real local-model
-  tests under `RUN_MODEL_TESTS=1`. Out of scope: streaming, a real auth/backend for `people` (a seeded
-  mock today). Work on `feature/dayN` branches; commit only when asked. Deployment lives in `deploy/`
+- **Workflow**: work on `feature/dayN` branches; commit only when asked. Deployment lives in `deploy/`
   (systemd + timer, Tailscale-only). Tracked docs live in `docs/` (decisions in `docs/adr/`); working
   plans go in gitignored `md/`.
 
@@ -108,5 +122,6 @@ All scripts live in `package.json`. The non-obvious ones:
 ```bash
 npm run typecheck       # tsc --noEmit
 npm run generate-routes # regenerate src/routeTree.gen.ts after adding/renaming routes
+npm run bot             # build + run the Telegram quiz bot (needs TELEGRAM_BOT_TOKEN + local MLX)
 RUN_NETWORK_TESTS=1 RUN_MODEL_TESTS=1 npm run test  # unlock gated network/model tests
 ```
