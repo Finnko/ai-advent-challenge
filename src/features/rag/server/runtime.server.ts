@@ -2,7 +2,9 @@ import type { CorpusSource } from '../domain/corpus'
 import type { Embedder } from '../domain/embedder'
 import type { Reranker } from '../domain/reranker'
 import type { Rewriter } from '../domain/rewrite-prompt'
+import type { AnswerGenerator } from '../domain/types'
 import { createDeepSeekAnswerLlm, type AnswerLlm } from './answer-llm.server'
+import { createLocalAnswerLlm } from './local-llm.server'
 import { createWikiCorpusSource, resolveCorpusDir } from './corpus.server'
 import { createEmbedder } from './embedder.server'
 import { getRagStore, type RagIndexStore } from './index-store.server'
@@ -54,7 +56,11 @@ export async function resolveRuntime(
 
 export async function resolveAnswerRuntime(
   overrides: AnswerRuntimeOverrides = {},
+  generator: AnswerGenerator = 'cloud',
 ): Promise<AnswerRuntime> {
   const base = await resolveRuntime(overrides)
-  return { ...base, llm: overrides.llm ?? createDeepSeekAnswerLlm() }
+  const llm =
+    overrides.llm ??
+    (generator === 'local' ? createLocalAnswerLlm() : createDeepSeekAnswerLlm())
+  return { ...base, llm }
 }

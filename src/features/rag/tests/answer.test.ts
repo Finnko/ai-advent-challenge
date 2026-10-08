@@ -48,6 +48,7 @@ function createFakeLlm(content: string) {
       content,
       usage: { prompt_tokens: 10, completion_tokens: 5 },
       latencyMs: 2,
+      model: 'test',
     }
   }
   return { llm, calls }
@@ -170,6 +171,46 @@ describe('answerQuestion', () => {
 
     expect(result.quotes[0].verified).toBe(false)
     expect(result.verdict).toBe('ungrounded')
+    store.close()
+  })
+
+  it('plumbs the selected generator and model into the result', async () => {
+    const store = await makeStore()
+    const { llm } = createFakeLlm('{"answer":"Казань [1].","quotes":[]}')
+    const deps = await makeDeps(store, llm)
+
+    const result = await answerQuestion(
+      {
+        mode: 'rag',
+        strategy: 'fixed',
+        query: 'столица Татарстана кремль Кул-Шариф',
+        k: 3,
+        generator: 'local',
+      },
+      deps,
+    )
+
+    expect(result.generator).toBe('local')
+    expect(result.model).toBe('test')
+    store.close()
+  })
+
+  it('defaults to the cloud generator', async () => {
+    const store = await makeStore()
+    const { llm } = createFakeLlm('{"answer":"Казань [1].","quotes":[]}')
+    const deps = await makeDeps(store, llm)
+
+    const result = await answerQuestion(
+      {
+        mode: 'rag',
+        strategy: 'fixed',
+        query: 'столица Татарстана кремль Кул-Шариф',
+        k: 3,
+      },
+      deps,
+    )
+
+    expect(result.generator).toBe('cloud')
     store.close()
   })
 

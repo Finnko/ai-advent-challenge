@@ -1,7 +1,12 @@
 import { useState } from 'react'
 import { buildAnswerMessages } from '../domain/answer-prompt'
 import { parseCitations } from '../domain/answer-eval'
-import { MODE_LABELS, PIPELINE_LABELS, VERDICT_LABELS } from '../data/rag-ui'
+import {
+  GENERATOR_SHORT_LABELS,
+  MODE_LABELS,
+  PIPELINE_LABELS,
+  VERDICT_LABELS,
+} from '../data/rag-ui'
 import type { AnswerResult } from '../types'
 import { Badge, type BadgeVariant } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
@@ -15,11 +20,21 @@ const VERDICT_VARIANT: Record<string, BadgeVariant> = {
   abstained: 'warn',
 }
 
+function tokensPerSecond(result: AnswerResult): number | null {
+  const completion = result.usage?.completion_tokens
+  if (!completion || result.latencyMs <= 0) {
+    return null
+  }
+  return Math.round((completion / (result.latencyMs / 1000)) * 10) / 10
+}
+
 function usageLabel(result: AnswerResult): string {
   if (!result.usage) {
     return `${result.latencyMs} мс`
   }
-  return `${result.usage.prompt_tokens} + ${result.usage.completion_tokens} токенов · ${result.latencyMs} мс`
+  const speed = tokensPerSecond(result)
+  const base = `${result.usage.prompt_tokens} + ${result.usage.completion_tokens} токенов · ${result.latencyMs} мс`
+  return speed === null ? base : `${base} · ${speed} ток/с`
 }
 
 function verdictBadge(result: AnswerResult) {
@@ -78,7 +93,13 @@ export default function AnswerCard({
         </p>
 
         <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="outline">
+            {GENERATOR_SHORT_LABELS[result.generator]}
+          </Badge>
           <span className="demo-muted text-xs">{usageLabel(result)}</span>
+          {result.model && (
+            <span className="demo-muted font-mono text-xs">{result.model}</span>
+          )}
           {citations.length > 0 && (
             <span className="demo-muted text-xs">
               ссылки: {citations.map((n) => `[${n}]`).join(' ')}

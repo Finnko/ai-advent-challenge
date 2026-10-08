@@ -10,6 +10,7 @@ export type AnswerLlmResult = {
   content: string
   usage: ChatUsage | null
   latencyMs: number
+  model: string | null
 }
 
 export type AnswerLlmOptions = {
@@ -36,6 +37,7 @@ export function createDeepSeekLlm(params: DeepSeekParams): AnswerLlm {
       content: reply.content,
       usage: reply.usage,
       latencyMs: reply.latencyMs ?? 0,
+      model: reply.model ?? TIER_ENDPOINTS.medium.model,
     }
   }
 }

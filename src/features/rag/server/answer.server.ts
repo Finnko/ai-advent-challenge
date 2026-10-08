@@ -10,6 +10,7 @@ import {
 } from '../domain/pipelines'
 import { cosineOf, relevanceOf } from '../domain/scoring'
 import type {
+  AnswerGenerator,
   AnswerMode,
   ChunkingStrategyId,
   ScoredChunk,
@@ -41,6 +42,7 @@ export type AnswerInput = {
   strategy: ChunkingStrategyId
   query: string
   k: number
+  generator?: AnswerGenerator
   pipeline?: RagPipelineId
   stitch?: boolean
   expected?: string[]
@@ -49,6 +51,8 @@ export type AnswerInput = {
 
 export type AnswerResponse = {
   mode: AnswerMode
+  generator: AnswerGenerator
+  model: string | null
   pipeline: RagPipelineId | null
   query: string
   embeddingQuery: string
@@ -142,11 +146,13 @@ export async function answerQuestion(
   input: AnswerInput,
   overrides: AnswerRuntimeOverrides = {},
 ): Promise<AnswerResponse> {
-  const deps = await resolveAnswerRuntime(overrides)
+  const generator = input.generator ?? 'cloud'
+  const deps = await resolveAnswerRuntime(overrides, generator)
   const config = pipelineConfig(input)
   const { retrieval, rewrittenQuery } = await runRetrieval(input, deps, config)
   const base = {
     mode: input.mode,
+    generator,
     pipeline: config ? (input.pipeline ?? 'rag') : null,
     query: input.query,
     embeddingQuery: retrieval.embeddingQuery,
@@ -156,6 +162,7 @@ export async function answerQuestion(
   if (shouldAbstain(config, retrieval, deps)) {
     return {
       ...base,
+      model: null,
       answer: abstainAnswer(input.query),
       format: 'text',
       sources: [],
@@ -191,6 +198,7 @@ export async function answerQuestion(
     : null
   return {
     ...base,
+    model: reply.model,
     answer: parsed.answer,
     format: parsed.format,
     sources,

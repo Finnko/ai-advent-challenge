@@ -1,7 +1,11 @@
 import { asObject, requireText } from '@lib/functions/validation'
 import { isChunkingStrategyId } from '../domain/chunking/registry'
 import { isRagPipelineId, type RagPipelineId } from '../domain/pipelines'
-import type { AnswerMode, ChunkingStrategyId } from '../domain/types'
+import type {
+  AnswerGenerator,
+  AnswerMode,
+  ChunkingStrategyId,
+} from '../domain/types'
 
 export function requireChunkingStrategy(value: unknown): ChunkingStrategyId {
   if (!isChunkingStrategyId(value)) {
@@ -13,6 +17,19 @@ export function requireChunkingStrategy(value: unknown): ChunkingStrategyId {
 export function requireAnswerMode(value: unknown): AnswerMode {
   if (value !== 'rag' && value !== 'baseline') {
     throw new Error('Неизвестный режим ответа')
+  }
+  return value
+}
+
+export function optionalGenerator(
+  value: unknown,
+  fallback: AnswerGenerator = 'cloud',
+): AnswerGenerator {
+  if (value === undefined || value === null) {
+    return fallback
+  }
+  if (value !== 'cloud' && value !== 'local') {
+    throw new Error('Неизвестный генератор ответа')
   }
   return value
 }

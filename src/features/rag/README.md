@@ -13,18 +13,20 @@
 src/features/rag/
   pages/         # RagPage — табы Индекс / Поиск / Ответ / Контроль / Сравнение
   api/           # react-query: use-rag-index, use-rag-search, use-rag-corpus, use-rag-chunks,
-                 # use-rag-answer, use-control-run, use-abstain-run
+                 # use-rag-answer, use-control-run, use-abstain-run,
+                 # use-rag-local-status + use-generator-run (Day 28)
   functions/     # createServerFn-адаптеры: build-index, search, answer, get-index-stats, get-comparison,
-                 # list-corpus, list-chunks + validation.ts
+                 # local-status, list-corpus, list-chunks + validation.ts
   server/        # *.server.ts: corpus, embedder, index-store, indexing, retrieval, pipeline-run, reranker,
-                 # rewrite, answer-llm, comparison, answer, runtime, rag
+                 # rewrite, answer-llm, local-llm, comparison, answer, runtime, rag
   domain/        # изоморфно, без env/fetch: chunking/{fixed,structural,registry,windows,types}, corpus,
                  # embedder (шов + hash-эмбеддер), reranker (шов + lexical), pipelines, rewrite-prompt,
                  # scoring (доступ к скорам), wikipedia (парсер заголовков), metrics, answer-prompt,
                  # answer-format, answer-eval, types
   data/          # cities (15 городов), corpus (снапшот 15 статей), eval-queries (16 вопросов),
                  # control-questions (10 контрольных), abstain-questions (3 вне корпуса), rag-ui (подписи)
-  components/    # IndexPanel, SearchPanel, AnswerPanel, ControlPanel, AnswerCard, ComparisonPanel, ChunkBrowser
+  components/    # IndexPanel, SearchPanel, AnswerPanel, ControlPanel, AnswerCard, ComparisonPanel,
+                 # ChunkBrowser, LocalVsCloudPanel (Day 28)
   tests/         # офлайн-тесты + gated интеграционные
   types.ts       # wire-типы ответов API
   shared/        # resolveStorePath (пути к БД)
@@ -209,6 +211,29 @@ RAG отдаётся агенту, но сама фича остаётся ав�
 read-only `rag_search` (стратегия — `structural`, `k = 6`). ONNX/`node:sqlite` остаются внутри
 `features/rag/server`.
 
+## Локальная генерация (Day 28)
+
+Ответ RAG умеет генерироваться локальной моделью: корпус, эмбеддер, реранкер и индекс и так
+локальные — облачным оставался только вызов генератора.
+
+- Генератор — выбираемый id `generator: 'cloud' | 'local'` на `AnswerInput` (по умолчанию `cloud`),
+  валидатор `optionalGenerator` в `functions/validation.ts`. `server/runtime.server.ts`
+  (`resolveAnswerRuntime`) резолвит id в адаптер `AnswerLlm`.
+- Локальный адаптер `server/local-llm.server.ts` (`createLocalAnswerLlm`) ходит в модель через общий
+  `@lib/local-llm.server` (`runLocalChat`/`getLocalLlmStatus`) и отдельную переменную `RAG_LLM_MODEL`
+  (по умолчанию `mlx-community/Qwen3-14B-4bit`) — `/rag` может отличаться моделью от `/local-llm` (8B)
+  и Telegram-квиза. `generator` и `model` возвращаются в `AnswerResult`.
+- Промпт, JSON-контракт, `verifyQuotes` и abstain — те же, что у облачного пути: сравнение честное, а
+  сбой JSON-контракта на локальной модели виден как `format: 'text'` и считается метрикой стабильности.
+- Статус сервера — `ragLlmStatusFn` (GET) → `getLocalLlmStatus` по RAG-эндпоинту; сервер лежит → мягкая
+  деградация (баннер), без молчаливого фолбэка в облако.
+- **Сравнение.** Вкладка «Ответ» даёт переключатель генератора и режим «Облако vs локально» (бок о бок).
+  Вкладка «Контроль» прогоняет контрольный набор в режиме RAG обоими генераторами и сводит качество
+  (верно, с подтверждёнными цитатами), скорость (средняя latency, ток/с) и стабильность (JSON-сбои,
+  ошибки, abstain).
+- **Запуск.** `mlx_lm.server` обслуживает одну модель: для локального `/rag` поднимите сервер с
+  `RAG_LLM_MODEL` (14B). Локальный путь — dev/local-only.
+
 ## Env
 
 | Переменная | По умолчанию | Смысл |
@@ -224,6 +249,7 @@ read-only `rag_search` (стратегия — `structural`, `k = 6`). ONNX/`nod
 | `RAG_DB_PATH` | `~/.ai-advent-challenge/rag.sqlite` | файл индекса |
 | `RAG_CORPUS_DIR` | `~/.ai-advent-challenge/rag-corpus` | кеш статей |
 | `RAG_WIKI_CONTACT` | URL репозитория проекта | контакт в User-Agent для MediaWiki API |
+| `RAG_LLM_MODEL` | `mlx-community/Qwen3-14B-4bit` | локальная модель генерации ответа (`generator: 'local'`); база URL — `LOCAL_LLM_BASE_URL` |
 | `HUGGING_FACE_TOKEN` | — | только для `RAG_EMBED_PROVIDER=hf` |
 
 ## Тесты
@@ -234,8 +260,9 @@ read-only `rag_search` (стратегия — `structural`, `k = 6`). ONNX/`nod
   LLM, неверная цитата, реранк/rewrite пайплайны, ошибка на пустом индексе), `answer-format.test.ts`
   (разбор JSON/фенсов/битых цитат/фолбэк), `answer-contract.test.ts` (синтетический факт: отвечает
   только grounded-RAG; stitch соседних чанков), `rerank.test.ts` (вторая стадия: реордер, порог,
-  минимум 1, margin-guard, fail-open, `candidateK`; lexical-реранкер, sigmoid, разбор rewrite) и оценка
-  `answer-eval.test.ts` (факты, цитаты, заверение цитат, вердикты).
+  минимум 1, margin-guard, fail-open, `candidateK`; lexical-реранкер, sigmoid, разбор rewrite), оценка
+  `answer-eval.test.ts` (факты, цитаты, заверение цитат, вердикты) и `local-llm.test.ts` (Day 28:
+  резолв `RAG_LLM_MODEL`/дефолт, локальный адаптер с мок-fetch, JSON-режим, статус сервера).
 - Gated: `embedder-integration.test.ts` и `reranker-integration.test.ts` (реальная модель) —
   `RUN_MODEL_TESTS=1`; `pipeline-integration.test.ts` (реальная статья + реальная модель) —
   `RUN_MODEL_TESTS=1` и `RUN_NETWORK_TESTS=1`.
