@@ -1,5 +1,7 @@
 import type { ChatUsage } from '@lib/llm'
 
+export type { LocalLlmStatus } from '@lib/llm'
+
 export type LocalLlmDifficulty = 'simple' | 'medium' | 'complex'
 
 export type LocalLlmPreset = {
@@ -17,14 +19,6 @@ export type LocalLlmAnswer = {
   usage: ChatUsage | null
   latencyMs: number
   tokensPerSecond: number | null
-}
-
-export type LocalLlmStatus = {
-  available: boolean
-  baseUrl: string
-  model: string
-  servedModels: string[]
-  error: string | null
 }
 
 export type LocalLlmInput = {

@@ -31,6 +31,19 @@ export type CompletionEndpoint = {
   withThinking: boolean
 }
 
+export type LocalLlmStatus = {
+  available: boolean
+  baseUrl: string
+  model: string
+  servedModels: string[]
+  error: string | null
+}
+
+export type ChatMessage = {
+  role: 'system' | 'user' | 'assistant'
+  content: string
+}
+
 const DEEPSEEK_BASE = 'https://api.deepseek.com'
 const HF_BASE = 'https://router.huggingface.co/v1'
 
