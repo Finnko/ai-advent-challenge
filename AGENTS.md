@@ -1,6 +1,6 @@
 # Project: AI Advent Challenge
 
-Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 27 (`feature/day27`).
+Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 28 (`feature/day28`).
 Days 13–20 extend the unified `/agent` workspace with task state, invariants and MCP; Day 21 adds the
 `/rag` document-index feature; Day 22 adds RAG answers with/without retrieval and a control set; Day 23
 adds a second retrieval stage (cross-encoder reranking + relevance threshold) and query rewrite; Day 24
@@ -11,7 +11,9 @@ Day 26 adds a standalone `/local-llm` feature that runs Qwen3-8B-4bit locally on
 and proxies it through the shared `callCompletions` (three difficulty presets + freeform, latency/tokens
 metrics, graceful degrade when the local server is down). Day 27 adds a separate Telegram quiz bot
 (`features/telegram-quiz`, grammY + long polling, esbuild bundle) that generates MC questions with that
-local model — no cloud models, only `api.telegram.org` outbound.
+local model — no cloud models, only `api.telegram.org` outbound. Day 28 plugs a local generator (Qwen3-14B
+via MLX) into the `/rag` answer pipeline as a selectable generator next to the cloud one, and adds a
+local-vs-cloud comparison over the control set (quality, latency, stability).
 
 ## Where to read more
 
@@ -19,13 +21,19 @@ local model — no cloud models, only `api.telegram.org` outbound.
   machine, invariants, context strategies, memory, profile, persistence, MCP and the RAG capability,
   plus porting notes. Read it before editing any of those.
 - `src/features/rag/README.md` — document indexing: corpus source, chunking strategies, embeddings,
-  SQLite index, retrieval, reranking/threshold + query rewrite, and the mode comparison. Read it
-  before editing any of those.
+  SQLite index, retrieval, reranking/threshold + query rewrite, the mode comparison, and local
+  generation (Day 28). Read it before editing any of those.
 - `src/features/telegram-quiz/README.md` — the Telegram quiz bot: module map, round flow, run and
   porting notes. Read it before editing the bot.
 - `CODING_STANDARDS.md` — style, test and product-scope rules to apply when writing or reviewing code.
 - `GLOSSARY.md` — domain vocabulary (Ход, Задача, Этап, Инвариант, …).
 - `README.md` — day-by-day log of the challenge.
+
+## Language
+
+- **Always answer the user in Russian.** All chat replies, plans, summaries and commit messages the user
+  reads must be in Russian. Code, identifiers, file paths and code comments stay in English (comments are
+  only added when asked).
 
 ## Stack
 
@@ -103,6 +111,15 @@ local model — no cloud models, only `api.telegram.org` outbound.
   chat/round, gated by a round id and
   the round phase. The bot ships as a compiled `.mjs` (`npm run build:bot` → `dist/server/bot/`), run via
   `npm run bot`; both it and `features/local-llm` stay out of `vite build`.
+- **Local RAG generation (Day 28)** lives inside `features/rag`: the answer generator is a selectable id
+  (`generator: 'cloud' | 'local'` on `AnswerInput`, default `cloud`), resolved into an `AnswerLlm` adapter
+  by `server/runtime.server.ts`. The local adapter (`server/local-llm.server.ts`) reaches the model through
+  the shared `@lib/local-llm.server` (`runLocalChat`, `getLocalLlmStatus`) — never `features/local-llm` —
+  and uses a **separate** `RAG_LLM_MODEL` (default `mlx-community/Qwen3-14B-4bit`) so `/rag` can differ from
+  `/local-llm` (8B) and the quiz. Prompt, JSON contract, `verifyQuotes`, and abstention are **identical** to
+  the cloud path (`generator` and `model` are returned on `AnswerResult` for the comparison). Latency/tokens
+  come from `ChatResult`; a down local server degrades via a `ragLlmStatus` health check, never a silent
+  fallback. `features/rag` still never imports `features/agent`.
 - **MCP tools**: `agent-mcp-demo` is read-only; `agent-mcp-jobs` writes its own `jobs.sqlite`. Tool
   metadata travels over the protocol: each spawned server sets `annotations: { readOnlyHint }`, the host
   derives `descriptor.mutating` (`readOnlyHint !== true` → mutating, fail-closed) and mutating MCP tools

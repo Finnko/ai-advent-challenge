@@ -3,6 +3,7 @@ import type { AnswerQuote, AnswerVerdict } from './domain/answer-eval'
 import type { RetrievalStats, StructuralStats } from './domain/metrics'
 import type { RagPipelineId } from './domain/pipelines'
 import type {
+  AnswerGenerator,
   AnswerMode,
   Chunk,
   ChunkingStrategyId,
@@ -10,6 +11,7 @@ import type {
 } from './domain/types'
 
 export type {
+  AnswerGenerator,
   AnswerMode,
   AnswerQuote,
   AnswerVerdict,
@@ -93,6 +95,8 @@ export type RagSearchResult = {
 
 export type AnswerResult = {
   mode: AnswerMode
+  generator: AnswerGenerator
+  model: string | null
   pipeline: RagPipelineId | null
   query: string
   embeddingQuery: string
@@ -113,6 +117,7 @@ export type AnswerInput = {
   strategy: ChunkingStrategyId
   query: string
   k?: number
+  generator?: AnswerGenerator
   pipeline?: RagPipelineId
   stitch?: boolean
   expected?: string[]

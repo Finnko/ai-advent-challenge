@@ -8,6 +8,7 @@ import {
 import { resolveEmbedModelId } from './embedder.server'
 import { getRagStore, type RagIndexStore } from './index-store.server'
 import { buildIndex, type BuildIndexResult } from './indexing.server'
+import { getRagLlmStatus } from './local-llm.server'
 import { runPipeline } from './pipeline-run.server'
 import {
   resolveRuntime,
@@ -133,6 +134,7 @@ export async function getCorpus(): Promise<CorpusDocStatus[]> {
 }
 
 export type { AnswerInput, AnswerResponse }
+export { getRagLlmStatus }
 
 export async function answer(
   input: AnswerInput,

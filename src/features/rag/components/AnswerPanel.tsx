@@ -1,12 +1,22 @@
 import { useState } from 'react'
 import { useRagAnswer } from '../api/use-rag-answer'
+import { useRagLocalStatus } from '../api/use-rag-local-status'
 import {
+  GENERATOR_IDS,
+  GENERATOR_LABELS,
+  GENERATOR_SHORT_LABELS,
+  MODE_LABELS,
   PIPELINE_IDS,
   PIPELINE_LABELS,
   STRATEGY_IDS,
   STRATEGY_LABELS,
 } from '../data/rag-ui'
-import type { AnswerResult, ChunkingStrategyId, RagPipelineId } from '../types'
+import type {
+  AnswerGenerator,
+  AnswerResult,
+  ChunkingStrategyId,
+  RagPipelineId,
+} from '../types'
 import AnswerCard from './AnswerCard'
 import { Alert } from '@/components/ui/Alert'
 import { Button } from '@/components/ui/Button'
@@ -15,17 +25,30 @@ import { Input } from '@/components/ui/Input'
 
 const K_OPTIONS = [3, 5, 10]
 
+type CompareMode = 'mode' | 'generator'
+
+type PanelResults = {
+  left: { title: string; result: AnswerResult }
+  right: { title: string; result: AnswerResult }
+}
+
 export default function AnswerPanel() {
   const [strategy, setStrategy] = useState<ChunkingStrategyId>('fixed')
   const [k, setK] = useState(5)
   const [pipeline, setPipeline] = useState<RagPipelineId>('rag+rerank')
   const [stitch, setStitch] = useState(true)
+  const [generator, setGenerator] = useState<AnswerGenerator>('cloud')
+  const [compare, setCompare] = useState<CompareMode>('mode')
   const [query, setQuery] = useState('')
-  const [results, setResults] = useState<{
-    selected: AnswerResult
-    baseline: AnswerResult
-  } | null>(null)
+  const [results, setResults] = useState<PanelResults | null>(null)
   const answer = useRagAnswer()
+  const localStatus = useRagLocalStatus()
+
+  const generatorLabel = GENERATOR_SHORT_LABELS[generator]
+  const pipelineLabel = PIPELINE_LABELS[pipeline]
+  const localUnavailable =
+    (generator === 'local' || compare === 'generator') &&
+    localStatus.data?.available === false
 
   const submit = async () => {
     if (query.trim().length === 0) {
@@ -33,7 +56,34 @@ export default function AnswerPanel() {
     }
     setResults(null)
     try {
-      const [selected, baseline] = await Promise.all([
+      if (compare === 'generator') {
+        const [cloud, local] = await Promise.all([
+          answer.mutateAsync({
+            mode: 'rag',
+            strategy,
+            query,
+            k,
+            pipeline,
+            stitch,
+            generator: 'cloud',
+          }),
+          answer.mutateAsync({
+            mode: 'rag',
+            strategy,
+            query,
+            k,
+            pipeline,
+            stitch,
+            generator: 'local',
+          }),
+        ])
+        setResults({
+          left: { title: `${pipelineLabel} · облако`, result: cloud },
+          right: { title: `${pipelineLabel} · локально`, result: local },
+        })
+        return
+      }
+      const [rag, baseline] = await Promise.all([
         answer.mutateAsync({
           mode: 'rag',
           strategy,
@@ -41,10 +91,23 @@ export default function AnswerPanel() {
           k,
           pipeline,
           stitch,
+          generator,
         }),
-        answer.mutateAsync({ mode: 'baseline', strategy, query, k }),
+        answer.mutateAsync({
+          mode: 'baseline',
+          strategy,
+          query,
+          k,
+          generator,
+        }),
       ])
-      setResults({ selected, baseline })
+      setResults({
+        left: { title: `${pipelineLabel} · ${generatorLabel}`, result: rag },
+        right: {
+          title: `${MODE_LABELS.baseline} · ${generatorLabel}`,
+          result: baseline,
+        },
+      })
     } catch {
       setResults(null)
     }
@@ -98,6 +161,39 @@ export default function AnswerPanel() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            <span className="demo-muted text-xs">генератор</span>
+            {GENERATOR_IDS.map((id) => (
+              <Button
+                key={id}
+                size="xs"
+                variant={generator === id ? 'default' : 'secondary'}
+                onClick={() => setGenerator(id)}
+                disabled={compare === 'generator'}
+              >
+                {GENERATOR_LABELS[id]}
+              </Button>
+            ))}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="demo-muted text-xs">сравнить</span>
+            <Button
+              size="xs"
+              variant={compare === 'mode' ? 'default' : 'secondary'}
+              onClick={() => setCompare('mode')}
+            >
+              RAG vs без RAG
+            </Button>
+            <Button
+              size="xs"
+              variant={compare === 'generator' ? 'default' : 'secondary'}
+              onClick={() => setCompare('generator')}
+            >
+              Облако vs локально
+            </Button>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
             <span className="demo-muted text-xs">контекст</span>
             <Button
               size="xs"
@@ -123,6 +219,14 @@ export default function AnswerPanel() {
               {answer.isPending ? 'Отвечаю…' : 'Сравнить'}
             </Button>
           </div>
+          {localUnavailable && (
+            <Alert variant="destructive">
+              Локальный сервер недоступен
+              {localStatus.data?.error ? `: ${localStatus.data.error}` : ''} —
+              запустите mlx_lm.server с моделью{' '}
+              {localStatus.data?.model ?? 'Qwen3-14B-4bit'}.
+            </Alert>
+          )}
           {answer.error && (
             <Alert variant="destructive">
               {answer.error instanceof Error
@@ -135,8 +239,11 @@ export default function AnswerPanel() {
 
       {results && (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <AnswerCard result={results.selected} />
-          <AnswerCard result={results.baseline} />
+          <AnswerCard title={results.left.title} result={results.left.result} />
+          <AnswerCard
+            title={results.right.title}
+            result={results.right.result}
+          />
         </div>
       )}
     </div>

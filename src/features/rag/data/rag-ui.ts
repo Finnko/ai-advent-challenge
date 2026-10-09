@@ -1,6 +1,10 @@
 import type { AnswerVerdict } from '../domain/answer-eval'
 import { RAG_PIPELINE_IDS, type RagPipelineId } from '../domain/pipelines'
-import type { AnswerMode, ChunkingStrategyId } from '../domain/types'
+import type {
+  AnswerGenerator,
+  AnswerMode,
+  ChunkingStrategyId,
+} from '../domain/types'
 
 export const STRATEGY_IDS: ChunkingStrategyId[] = ['fixed', 'structural']
 
@@ -22,6 +26,18 @@ export const STRATEGY_DETAILS: Record<ChunkingStrategyId, string> = {
 export const MODE_LABELS: Record<AnswerMode, string> = {
   rag: 'С RAG',
   baseline: 'Без RAG',
+}
+
+export const GENERATOR_IDS: AnswerGenerator[] = ['cloud', 'local']
+
+export const GENERATOR_LABELS: Record<AnswerGenerator, string> = {
+  cloud: 'Облако (DeepSeek)',
+  local: 'Локальная (Qwen3-14B)',
+}
+
+export const GENERATOR_SHORT_LABELS: Record<AnswerGenerator, string> = {
+  cloud: 'облако',
+  local: 'локально',
 }
 
 export const PIPELINE_IDS: RagPipelineId[] = RAG_PIPELINE_IDS

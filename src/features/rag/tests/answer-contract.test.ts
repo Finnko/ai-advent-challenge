@@ -36,13 +36,14 @@ function contextGroundedLlm(): AnswerLlm {
   return async (messages: PromptMessage[]) => {
     const context = messages.map((message) => message.content).join('\n')
     if (!context.includes('Фрагменты документов')) {
-      return { content: 'Не знаю.', usage: null, latencyMs: 0 }
+      return { content: 'Не знаю.', usage: null, latencyMs: 0, model: 'test' }
     }
     return {
       content:
         '{"answer":"Тестоград основан в 2087 году [1].","quotes":[{"n":1,"text":"основан в 2087 году"}]}',
       usage: null,
       latencyMs: 0,
+      model: 'test',
     }
   }
 }

@@ -12,6 +12,7 @@ import {
 } from '../data/rag-ui'
 import type { AnswerVerdict, ChunkingStrategyId, RagPipelineId } from '../types'
 import AnswerCard from './AnswerCard'
+import LocalVsCloudPanel from './LocalVsCloudPanel'
 import { Alert } from '@/components/ui/Alert'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
@@ -277,6 +278,8 @@ export default function ControlPanel() {
           </div>
         </div>
       ))}
+
+      <LocalVsCloudPanel />
     </div>
   )
 }

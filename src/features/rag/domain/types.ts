@@ -2,6 +2,8 @@ export type ChunkingStrategyId = 'fixed' | 'structural'
 
 export type AnswerMode = 'rag' | 'baseline'
 
+export type AnswerGenerator = 'cloud' | 'local'
+
 export type RawDoc = {
   id: string
   title: string
