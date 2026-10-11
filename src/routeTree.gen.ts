@@ -20,6 +20,7 @@ import { Route as LayoutDay2RouteImport } from './routes/_layout/day2'
 import { Route as LayoutDay3RouteImport } from './routes/_layout/day3'
 import { Route as LayoutDay4RouteImport } from './routes/_layout/day4'
 import { Route as LayoutDay5RouteImport } from './routes/_layout/day5'
+import { Route as LayoutLlmOptRouteImport } from './routes/_layout/llm-opt'
 import { Route as LayoutLocalLlmRouteImport } from './routes/_layout/local-llm'
 import { Route as LayoutRagRouteImport } from './routes/_layout/rag'
 import { Route as JobsTickRouteImport } from './routes/jobs.tick'
@@ -78,6 +79,11 @@ const LayoutDay5Route = LayoutDay5RouteImport.update({
   path: '/day5',
   getParentRoute: () => LayoutRouteRoute,
 } as any)
+const LayoutLlmOptRoute = LayoutLlmOptRouteImport.update({
+  id: '/llm-opt',
+  path: '/llm-opt',
+  getParentRoute: () => LayoutRouteRoute,
+} as any)
 const LayoutLocalLlmRoute = LayoutLocalLlmRouteImport.update({
   id: '/local-llm',
   path: '/local-llm',
@@ -105,6 +111,7 @@ export interface FileRoutesByFullPath {
   '/day3': typeof LayoutDay3Route
   '/day4': typeof LayoutDay4Route
   '/day5': typeof LayoutDay5Route
+  '/llm-opt': typeof LayoutLlmOptRoute
   '/local-llm': typeof LayoutLocalLlmRoute
   '/rag': typeof LayoutRagRoute
   '/jobs/tick': typeof JobsTickRoute
@@ -119,6 +126,7 @@ export interface FileRoutesByTo {
   '/day3': typeof LayoutDay3Route
   '/day4': typeof LayoutDay4Route
   '/day5': typeof LayoutDay5Route
+  '/llm-opt': typeof LayoutLlmOptRoute
   '/local-llm': typeof LayoutLocalLlmRoute
   '/rag': typeof LayoutRagRoute
   '/jobs/tick': typeof JobsTickRoute
@@ -136,6 +144,7 @@ export interface FileRoutesById {
   '/_layout/day3': typeof LayoutDay3Route
   '/_layout/day4': typeof LayoutDay4Route
   '/_layout/day5': typeof LayoutDay5Route
+  '/_layout/llm-opt': typeof LayoutLlmOptRoute
   '/_layout/local-llm': typeof LayoutLocalLlmRoute
   '/_layout/rag': typeof LayoutRagRoute
   '/jobs/tick': typeof JobsTickRoute
@@ -154,6 +163,7 @@ export interface FileRouteTypes {
     | '/day3'
     | '/day4'
     | '/day5'
+    | '/llm-opt'
     | '/local-llm'
     | '/rag'
     | '/jobs/tick'
@@ -168,6 +178,7 @@ export interface FileRouteTypes {
     | '/day3'
     | '/day4'
     | '/day5'
+    | '/llm-opt'
     | '/local-llm'
     | '/rag'
     | '/jobs/tick'
@@ -184,6 +195,7 @@ export interface FileRouteTypes {
     | '/_layout/day3'
     | '/_layout/day4'
     | '/_layout/day5'
+    | '/_layout/llm-opt'
     | '/_layout/local-llm'
     | '/_layout/rag'
     | '/jobs/tick'
@@ -274,6 +286,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutDay5RouteImport
       parentRoute: typeof LayoutRouteRoute
     }
+    '/_layout/llm-opt': {
+      id: '/_layout/llm-opt'
+      path: '/llm-opt'
+      fullPath: '/llm-opt'
+      preLoaderRoute: typeof LayoutLlmOptRouteImport
+      parentRoute: typeof LayoutRouteRoute
+    }
     '/_layout/local-llm': {
       id: '/_layout/local-llm'
       path: '/local-llm'
@@ -308,6 +327,7 @@ interface LayoutRouteRouteChildren {
   LayoutDay3Route: typeof LayoutDay3Route
   LayoutDay4Route: typeof LayoutDay4Route
   LayoutDay5Route: typeof LayoutDay5Route
+  LayoutLlmOptRoute: typeof LayoutLlmOptRoute
   LayoutLocalLlmRoute: typeof LayoutLocalLlmRoute
   LayoutRagRoute: typeof LayoutRagRoute
   LayoutIndexRoute: typeof LayoutIndexRoute
@@ -323,6 +343,7 @@ const LayoutRouteRouteChildren: LayoutRouteRouteChildren = {
   LayoutDay3Route: LayoutDay3Route,
   LayoutDay4Route: LayoutDay4Route,
   LayoutDay5Route: LayoutDay5Route,
+  LayoutLlmOptRoute: LayoutLlmOptRoute,
   LayoutLocalLlmRoute: LayoutLocalLlmRoute,
   LayoutRagRoute: LayoutRagRoute,
   LayoutIndexRoute: LayoutIndexRoute,

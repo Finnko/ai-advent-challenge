@@ -1,6 +1,6 @@
 # Project: AI Advent Challenge
 
-Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 28 (`feature/day28`).
+Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 29 (`feature/day29`).
 Days 13–20 extend the unified `/agent` workspace with task state, invariants and MCP; Day 21 adds the
 `/rag` document-index feature; Day 22 adds RAG answers with/without retrieval and a control set; Day 23
 adds a second retrieval stage (cross-encoder reranking + relevance threshold) and query rewrite; Day 24
@@ -13,7 +13,9 @@ metrics, graceful degrade when the local server is down). Day 27 adds a separate
 (`features/telegram-quiz`, grammY + long polling, esbuild bundle) that generates MC questions with that
 local model — no cloud models, only `api.telegram.org` outbound. Day 28 plugs a local generator (Qwen3-14B
 via MLX) into the `/rag` answer pipeline as a selectable generator next to the cloud one, and adds a
-local-vs-cloud comparison over the control set (quality, latency, stability).
+local-vs-cloud comparison over the control set (quality, latency, stability). Day 29 adds a standalone
+`/llm-opt` lab that sweeps prompt/parameters/context on a fact-extraction task and compares local
+quantizations by quality, speed and memory.
 
 ## Where to read more
 
@@ -25,6 +27,8 @@ local-vs-cloud comparison over the control set (quality, latency, stability).
   generation (Day 28). Read it before editing any of those.
 - `src/features/telegram-quiz/README.md` — the Telegram quiz bot: module map, round flow, run and
   porting notes. Read it before editing the bot.
+- `src/features/llm-opt/README.md` — the local-LLM optimization lab: task profile, sweep configs, metric,
+  results persistence and the quantization procedure. Read it before editing the lab.
 - `CODING_STANDARDS.md` — style, test and product-scope rules to apply when writing or reviewing code.
 - `GLOSSARY.md` — domain vocabulary (Ход, Задача, Этап, Инвариант, …).
 - `README.md` — day-by-day log of the challenge.
@@ -57,12 +61,15 @@ local-vs-cloud comparison over the control set (quality, latency, stability).
   `callCompletions`; dev/local-only, independent of the agent (module map below in Hard rules).
 - `src/features/telegram-quiz/` — standalone Telegram quiz bot on the same local model (grammY + long
   polling, esbuild bundle); dev/local-only, with its own module map in the feature README.
+- `src/features/llm-opt/` — standalone `/llm-opt` optimization lab: OFAT sweep of prompt/params/context on
+  a fact-extraction task plus quantization comparison; dev/local-only, reaches the model through
+  `@lib/local-llm.server` (module map in the feature README).
 - `src/lib/` — shared: `llm.ts`/`llm.server.ts` (transport), `agent-rag.server.ts` (app composition),
   `functions/*.functions.ts` (Days 1–5 server fns + shared `validation.ts`), `day2.ts`…`day5.ts`,
   `days.ts` (sidebar), `utils.ts` (`cn`).
 - `src/components/` — app shell (`Header`, `Sidebar`, `Chat`) and shared `ui/Tabs.tsx`.
 - `src/routes/` — thin route wrappers; `/agent` → `AgentPage`, `/rag` → `RagPage`, `/local-llm` →
-  `LocalLlmPage`, old `/agent-*` routes redirect to `/agent`.
+  `LocalLlmPage`, `/llm-opt` → `LlmOptPage`, old `/agent-*` routes redirect to `/agent`.
 
 ## Hard rules
 
@@ -120,6 +127,16 @@ local-vs-cloud comparison over the control set (quality, latency, stability).
   the cloud path (`generator` and `model` are returned on `AnswerResult` for the comparison). Latency/tokens
   come from `ChatResult`; a down local server degrades via a `ragLlmStatus` health check, never a silent
   fallback. `features/rag` still never imports `features/agent`.
+- **Local LLM optimization lab (Day 29)** lives in `features/llm-opt/` and is **dev/local-only**,
+  independent of the agent, RAG and `/local-llm`; it reaches the model only through
+  `@lib/local-llm.server`. The task is data (`data/profile.ts` profile seam: fields + docs + prompts +
+  `contextFor`); the runner, metric and memory sampling are task-agnostic. Configs are OFAT around a
+  baseline (`data/configs.ts`); the client sends **config ids** and the server resolves them
+  (`resolveConfig`) — never prompt text. Runs are graded deterministically (normalized per-field equality)
+  and accumulated in `~/.ai-advent-challenge/llm-opt/results.json`, keyed by `{model, config, doc, repeat}`
+  so quantization sessions merge; quantization is a **server** property (restart `mlx_lm.server` with the
+  variant built via `mlx_lm.convert`). Memory is sampled with `footprint <pid>` (MLX/Metal is invisible to
+  `ps` RSS) with a `ps` fallback.
 - **MCP tools**: `agent-mcp-demo` is read-only; `agent-mcp-jobs` writes its own `jobs.sqlite`. Tool
   metadata travels over the protocol: each spawned server sets `annotations: { readOnlyHint }`, the host
   derives `descriptor.mutating` (`readOnlyHint !== true` → mutating, fail-closed) and mutating MCP tools

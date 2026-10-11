@@ -52,4 +52,11 @@ export const DAYS = [
     description:
       'Модель Qwen3-8B-4bit на MLX отвечает локально по OpenAI-совместимому API: три пресета разной сложности и свой вопрос.',
   },
+  {
+    path: '/llm-opt',
+    label: 'LLM Ops',
+    title: 'Оптимизация локальной LLM',
+    description:
+      'Sweep prompt-шаблона, temperature, max_tokens и размера контекста на задаче извлечения фактов: качество, скорость и память до/после, плюс сравнение квантизаций.',
+  },
 ] as const

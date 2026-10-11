@@ -19,3 +19,4 @@ md/
 /data/
 task.md
 .local-llm-venv/
+.impeccable/
