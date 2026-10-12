@@ -1,21 +1,9 @@
 # Project: AI Advent Challenge
 
-Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 29 (`feature/day29`).
-Days 13–20 extend the unified `/agent` workspace with task state, invariants and MCP; Day 21 adds the
-`/rag` document-index feature; Day 22 adds RAG answers with/without retrieval and a control set; Day 23
-adds a second retrieval stage (cross-encoder reranking + relevance threshold) and query rewrite; Day 24
-makes the answer contract structured (mandatory sources + verified quotes) and adds threshold abstention;
-Day 25 makes RAG a capability of the unified `/agent` — always-on retrieval with sources, a `rag_search`
-tool and a dialogue task memory in `MemoryEntry`, composed at the app level (no `agent → rag` import);
-Day 26 adds a standalone `/local-llm` feature that runs Qwen3-8B-4bit locally on Apple Silicon via MLX
-and proxies it through the shared `callCompletions` (three difficulty presets + freeform, latency/tokens
-metrics, graceful degrade when the local server is down). Day 27 adds a separate Telegram quiz bot
-(`features/telegram-quiz`, grammY + long polling, esbuild bundle) that generates MC questions with that
-local model — no cloud models, only `api.telegram.org` outbound. Day 28 plugs a local generator (Qwen3-14B
-via MLX) into the `/rag` answer pipeline as a selectable generator next to the cloud one, and adds a
-local-vs-cloud comparison over the control set (quality, latency, stability). Day 29 adds a standalone
-`/llm-opt` lab that sweeps prompt/parameters/context on a fact-extraction task and compares local
-quantizations by quality, speed and memory.
+Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 30 (`feature/day30`).
+Days 13–20 extend the unified `/agent` (task state, invariants, MCP); Days 21–25 build `/rag` and make it an
+agent capability. Days 26–30 add local-MLX features: the `/local-llm` tab, a Telegram quiz bot, a local RAG
+generator, the `/llm-opt` lab, and the private `llm-service` gateway published over Tailscale Funnel.
 
 ## Where to read more
 
@@ -29,6 +17,8 @@ quantizations by quality, speed and memory.
   porting notes. Read it before editing the bot.
 - `src/features/llm-opt/README.md` — the local-LLM optimization lab: task profile, sweep configs, metric,
   results persistence and the quantization procedure. Read it before editing the lab.
+- `src/features/llm-service/README.md` — the private LLM service: gateway module map, API/limits, run and
+  publish (Tailscale Funnel) instructions, and the stability probe. Read it before editing the service.
 - `CODING_STANDARDS.md` — style, test and product-scope rules to apply when writing or reviewing code.
 - `GLOSSARY.md` — domain vocabulary (Ход, Задача, Этап, Инвариант, …).
 - `README.md` — day-by-day log of the challenge.
@@ -64,6 +54,9 @@ quantizations by quality, speed and memory.
 - `src/features/llm-opt/` — standalone `/llm-opt` optimization lab: OFAT sweep of prompt/params/context on
   a fact-extraction task plus quantization comparison; dev/local-only, reaches the model through
   `@lib/local-llm.server` (module map in the feature README).
+- `src/features/llm-service/` — standalone private LLM service (Day 30): a Node HTTP gateway in front of
+  the local MLX model with an OpenAI-compatible API, a chat page and limits; published via Tailscale
+  Funnel. Bundled with esbuild, outside `vite build` (module map in the feature README).
 - `src/lib/` — shared: `llm.ts`/`llm.server.ts` (transport), `agent-rag.server.ts` (app composition),
   `functions/*.functions.ts` (Days 1–5 server fns + shared `validation.ts`), `day2.ts`…`day5.ts`,
   `days.ts` (sidebar), `utils.ts` (`cn`).
@@ -74,7 +67,8 @@ quantizations by quality, speed and memory.
 ## Hard rules
 
 - **Server & LLM**: keep the LLM transport on raw `fetch`, wrapped by the generic
-  `callCompletions(endpoint, apiKey, messages, params)`. Read secrets server-side from `process.env`
+  `callCompletions(endpoint, apiKey, messages, params)` (with a streaming `streamCompletions` sibling in
+  the same module for SSE). Read secrets server-side from `process.env`
   (`DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL`, `HUGGING_FACE_TOKEN`) and keep them out of the browser bundle
   (ids only, no `VITE_` keys, no `import.meta.env`). Each `createServerFn` is a thin adapter:
   `validator → delegate` to a deep module. Server-only modules use the `.server.ts` suffix; client-safe
@@ -98,45 +92,23 @@ quantizations by quality, speed and memory.
 - **Invariants are global per token** and enforced deterministically before mutating tools and after
   finalize; the opt-in `invariantGuard` is a fallback, never a replacement. Pinned `slug`/`check` are
   immutable.
-- **Local LLM (Day 26)** lives in `features/local-llm/` and is **dev/local-only** (the Mac running MLX),
-  unrelated to the agent. It reuses `callCompletions` against an OpenAI-compatible endpoint from
-  `LOCAL_LLM_BASE_URL`/`LOCAL_LLM_MODEL` (no key). Qwen3 needs `chat_template_kwargs: { enable_thinking:
-  false }`, passed via the transport's generic `CallCompletionsOptions.extraBody`. The client sends a
-  `presetId` (resolved server-side from `data/presets.ts`) or freeform `prompt`; a down server degrades
-  softly via a `/models` health check.
-- **Telegram quiz (Day 27)** lives in `features/telegram-quiz/` and is **dev/local-only**, independent
-  of the agent and the web app. It uses `grammy` (deliberate non-LLM SDK) with long polling
-  (`bot.start()`), an in-memory `RoundStore` (no `@grammyjs/sessions`; `ctx` stays out of the domain) and
-  no streaming — a question is JSON, rendered only when complete. It reaches the local model through the
-  shared `@lib/local-llm.server` (`runLocalChat`, `getLocalLlmStatus`), never via `features/local-llm`
-  or the agent. Questions are generated with a strict-JSON prompt (which deliberately omits the
-  already-asked list — at low temperature it makes the model echo the forbidden question); the parser
-  extracts the first balanced `{…}` and the generator regenerates on invalid JSON, a repeated question,
-  identical options (a degenerate MC) **or non-Cyrillic/Latin characters** (CJK leakage), at
-  `GENERATOR_TEMPERATURE`. The quiz model comes from
-  `QUIZ_LLM_MODEL` (falls back to `LOCAL_LLM_MODEL`), so it can differ from `/local-llm`. State is per
-  chat/round, gated by a round id and
-  the round phase. The bot ships as a compiled `.mjs` (`npm run build:bot` → `dist/server/bot/`), run via
-  `npm run bot`; both it and `features/local-llm` stay out of `vite build`.
-- **Local RAG generation (Day 28)** lives inside `features/rag`: the answer generator is a selectable id
-  (`generator: 'cloud' | 'local'` on `AnswerInput`, default `cloud`), resolved into an `AnswerLlm` adapter
-  by `server/runtime.server.ts`. The local adapter (`server/local-llm.server.ts`) reaches the model through
-  the shared `@lib/local-llm.server` (`runLocalChat`, `getLocalLlmStatus`) — never `features/local-llm` —
-  and uses a **separate** `RAG_LLM_MODEL` (default `mlx-community/Qwen3-14B-4bit`) so `/rag` can differ from
-  `/local-llm` (8B) and the quiz. Prompt, JSON contract, `verifyQuotes`, and abstention are **identical** to
-  the cloud path (`generator` and `model` are returned on `AnswerResult` for the comparison). Latency/tokens
-  come from `ChatResult`; a down local server degrades via a `ragLlmStatus` health check, never a silent
-  fallback. `features/rag` still never imports `features/agent`.
-- **Local LLM optimization lab (Day 29)** lives in `features/llm-opt/` and is **dev/local-only**,
-  independent of the agent, RAG and `/local-llm`; it reaches the model only through
-  `@lib/local-llm.server`. The task is data (`data/profile.ts` profile seam: fields + docs + prompts +
-  `contextFor`); the runner, metric and memory sampling are task-agnostic. Configs are OFAT around a
-  baseline (`data/configs.ts`); the client sends **config ids** and the server resolves them
-  (`resolveConfig`) — never prompt text. Runs are graded deterministically (normalized per-field equality)
-  and accumulated in `~/.ai-advent-challenge/llm-opt/results.json`, keyed by `{model, config, doc, repeat}`
-  so quantization sessions merge; quantization is a **server** property (restart `mlx_lm.server` with the
-  variant built via `mlx_lm.convert`). Memory is sampled with `footprint <pid>` (MLX/Metal is invisible to
-  `ps` RSS) with a `ps` fallback.
+- **Local LLM (Day 26)**: `features/local-llm/` is a dev/local-only `/local-llm` tab over the MLX endpoint
+  (`LOCAL_LLM_BASE_URL`/`LOCAL_LLM_MODEL`, no key), reached through `callCompletions` (Qwen3 needs
+  `chat_template_kwargs.enable_thinking=false` via `extraBody`); a down server degrades via `/models`.
+- **Telegram quiz (Day 27)**: `features/telegram-quiz/` is a dev/local-only grammY bot (long polling,
+  esbuild `.mjs`, `npm run bot`) that never goes through `features/local-llm` or the agent; the quiz model
+  is `QUIZ_LLM_MODEL` (fallback `LOCAL_LLM_MODEL`). Module map and generation rules: feature README.
+- **Local RAG generation (Day 28)**: inside `features/rag`, the answer `generator` is selectable
+  (`cloud` | `local`, default `cloud`); the local adapter uses `RAG_LLM_MODEL` and reaches the model only
+  through `@lib/local-llm.server`, with contract/abstention identical to the cloud path. See the RAG README.
+- **Local LLM optimization lab (Day 29)**: `features/llm-opt/` is a dev/local-only OFAT lab over a
+  fact-extraction task, reaching the model only through `@lib/local-llm.server`; the client sends config
+  ids and results accumulate on disk. See the feature README.
+- **Private LLM service (Day 30)**: `features/llm-service/` is a standalone Node HTTP gateway over the
+  local MLX model (OpenAI-compatible API + chat page), bundled with esbuild outside `vite build` and
+  published via Tailscale Funnel; it reaches the model only through `@lib/local-llm.server`, gates with
+  `LLM_SERVICE_KEYS`, and enforces rate limit / max context / a single-flight queue in-process. Relaxes the
+  local-llm dev-only and no-streaming rules — see the feature README and ADR-0008.
 - **MCP tools**: `agent-mcp-demo` is read-only; `agent-mcp-jobs` writes its own `jobs.sqlite`. Tool
   metadata travels over the protocol: each spawned server sets `annotations: { readOnlyHint }`, the host
   derives `descriptor.mutating` (`readOnlyHint !== true` → mutating, fail-closed) and mutating MCP tools
@@ -146,7 +118,8 @@ quantizations by quality, speed and memory.
   browser. MCP servers ship as compiled `.mjs` (`npm run build:mcp`), resolved by
   `server/mcp-registry.server.ts` via `AGENT_MCP_DEMO_ENTRY`/`AGENT_MCP_JOBS_ENTRY` → `dist` → dev source.
 - **Workflow**: work on `feature/dayN` branches; commit only when asked. Deployment lives in `deploy/`
-  (systemd + timer, Tailscale-only). Tracked docs live in `docs/` (decisions in `docs/adr/`); working
+  (systemd + timer, Tailscale-only; the Day-30 private service adds a `launchd` example and is published
+  through Tailscale Funnel). Tracked docs live in `docs/` (decisions in `docs/adr/`); working
   plans go in gitignored `md/`.
 
 ## Commands
@@ -157,5 +130,8 @@ All scripts live in `package.json`. The non-obvious ones:
 npm run typecheck       # tsc --noEmit
 npm run generate-routes # regenerate src/routeTree.gen.ts after adding/renaming routes
 npm run bot             # build + run the Telegram quiz bot (needs TELEGRAM_BOT_TOKEN + local MLX)
+npm run build:llm-service   # bundle the private LLM service (esbuild → dist/server/llm-service/)
+npm run llm-service         # build + run the private LLM service (needs local MLX + LLM_SERVICE_KEYS)
+npm run llm-service:load    # stability probe against a running service
 RUN_NETWORK_TESTS=1 RUN_MODEL_TESTS=1 npm run test  # unlock gated network/model tests
 ```

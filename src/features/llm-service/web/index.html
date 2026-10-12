@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="color-scheme" content="dark light" />
+    <title>Приватный AI-сервис</title>
+    <style>
+      :root {
+        --bg: #0b1020;
+        --panel: #131a2e;
+        --panel-2: #1b2340;
+        --text: #e6ebff;
+        --muted: #8b96b8;
+        --accent: #6d8cff;
+        --danger: #ff6b6b;
+        --ok: #4ade80;
+        --radius: 14px;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100dvh;
+        display: flex;
+        flex-direction: column;
+        background: var(--bg);
+        color: var(--text);
+        font:
+          16px/1.5 -apple-system,
+          BlinkMacSystemFont,
+          'Segoe UI',
+          Roboto,
+          sans-serif;
+      }
+      header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 16px;
+        padding-top: max(12px, env(safe-area-inset-top));
+        background: var(--panel);
+        border-bottom: 1px solid #222c4d;
+      }
+      header h1 {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 600;
+      }
+      header .model {
+        color: var(--muted);
+        font-size: 12px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: var(--muted);
+        flex: none;
+      }
+      .dot.ok {
+        background: var(--ok);
+      }
+      .dot.bad {
+        background: var(--danger);
+      }
+      #gate {
+        margin: 12px 16px;
+        padding: 14px;
+        background: var(--panel);
+        border-radius: var(--radius);
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      #gate.hidden {
+        display: none;
+      }
+      #gate input {
+        flex: 1 1 180px;
+        min-width: 0;
+      }
+      #gate p {
+        margin: 0 0 10px;
+        color: var(--muted);
+        font-size: 13px;
+        flex: 0 0 100%;
+      }
+      input,
+      textarea,
+      button {
+        font: inherit;
+        color: var(--text);
+        background: var(--panel-2);
+        border: 1px solid #2b3560;
+        border-radius: 10px;
+        padding: 10px 12px;
+        outline: none;
+      }
+      input:focus,
+      textarea:focus {
+        border-color: var(--accent);
+      }
+      button {
+        cursor: pointer;
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #08102a;
+        font-weight: 600;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      button.ghost {
+        background: var(--panel-2);
+        border-color: #2b3560;
+        color: var(--text);
+        font-weight: 500;
+      }
+      #log {
+        flex: 1;
+        overflow-y: auto;
+        padding: 8px 16px 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .msg {
+        max-width: 88%;
+        padding: 10px 12px;
+        border-radius: var(--radius);
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      .msg.user {
+        align-self: flex-end;
+        background: var(--accent);
+        color: #08102a;
+      }
+      .msg.assistant {
+        align-self: flex-start;
+        background: var(--panel);
+      }
+      .msg.error {
+        align-self: stretch;
+        background: #3a1622;
+        color: #ffc2c2;
+        border: 1px solid #6b2233;
+        font-size: 14px;
+      }
+      .meta {
+        color: var(--muted);
+        font-size: 12px;
+        align-self: center;
+      }
+      form {
+        display: flex;
+        gap: 8px;
+        padding: 10px 16px;
+        padding-bottom: max(10px, env(safe-area-inset-bottom));
+        background: var(--panel);
+        border-top: 1px solid #222c4d;
+      }
+      form textarea {
+        flex: 1;
+        resize: none;
+        max-height: 140px;
+      }
+      footer {
+        padding: 4px 16px 10px;
+        color: var(--muted);
+        font-size: 11px;
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <span class="dot" id="status-dot"></span>
+      <div style="min-width: 0">
+        <h1>Приватный AI-сервис</h1>
+        <div class="model" id="status-text">проверяю модель…</div>
+      </div>
+    </header>
+
+    <div id="gate" class="hidden">
+      <p>Вставь свой ключ доступа. Он сохранится в этом браузере.</p>
+      <input
+        id="key-input"
+        type="password"
+        placeholder="ключ доступа"
+        autocomplete="off"
+      />
+      <button id="key-save" type="button">Сохранить</button>
+    </div>
+
+    <div id="log"></div>
+
+    <form id="composer">
+      <textarea id="prompt" rows="1" placeholder="Сообщение…"></textarea>
+      <button type="submit" id="send">Отправить</button>
+    </form>
+    <footer id="footer"></footer>
+
+    <script>
+      const KEY_STORAGE = 'llm-service-key'
+      const params = new URLSearchParams(location.search)
+      const hash = new URLSearchParams(location.hash.replace(/^#/, ''))
+      const urlKey = params.get('key') || hash.get('key')
+      if (urlKey) {
+        localStorage.setItem(KEY_STORAGE, urlKey)
+        history.replaceState(null, '', location.pathname)
+      }
+
+      const state = {
+        key: localStorage.getItem(KEY_STORAGE) || '',
+        history: [],
+        busy: false,
+      }
+      const gate = document.getElementById('gate')
+      const keyInput = document.getElementById('key-input')
+      const keySave = document.getElementById('key-save')
+      const log = document.getElementById('log')
+      const form = document.getElementById('composer')
+      const prompt = document.getElementById('prompt')
+      const send = document.getElementById('send')
+      const dot = document.getElementById('status-dot')
+      const statusText = document.getElementById('status-text')
+      const footer = document.getElementById('footer')
+
+      function setStatus(kind, text) {
+        dot.className = 'dot' + (kind ? ' ' + kind : '')
+        statusText.textContent = text
+      }
+
+      function addMessage(role, text) {
+        const el = document.createElement('div')
+        el.className = 'msg ' + role
+        el.textContent = text
+        if (role === 'assistant') {
+          el.dataset.streaming = 'true'
+        }
+        log.appendChild(el)
+        log.scrollTop = log.scrollHeight
+        return el
+      }
+
+      function addMeta(text) {
+        const el = document.createElement('div')
+        el.className = 'meta'
+        el.textContent = text
+        log.appendChild(el)
+        log.scrollTop = log.scrollHeight
+      }
+
+      function showGate(show) {
+        gate.classList.toggle('hidden', !show)
+      }
+
+      async function checkHealth() {
+        try {
+          const res = await fetch('/health')
+          const data = await res.json()
+          const up = data.upstream && data.upstream.available
+          setStatus(
+            up ? 'ok' : 'bad',
+            (data.upstream && data.upstream.model) || 'модель неизвестна',
+          )
+          const limits = data.limits || {}
+          footer.textContent =
+            'лимиты: ' +
+            (limits.rpm || '?') +
+            ' req/мин · ' +
+            (limits.maxInputTokens || '?') +
+            ' токенов входа · ' +
+            (limits.maxOutputTokens || '?') +
+            ' выхода'
+        } catch (error) {
+          setStatus('bad', 'сервис недоступен: ' + error.message)
+        }
+      }
+
+      function friendlyError(status, message) {
+        if (status === 401) return 'Ключ не принят. Проверь и сохрани заново.'
+        if (status === 413) return 'Слишком длинный ввод. ' + message
+        if (status === 429) return 'Слишком часто. ' + message
+        if (status === 503) return 'Модель перегружена. ' + message
+        return message || 'Ошибка ' + status
+      }
+
+      async function streamReply(messages, target) {
+        const res = await fetch('/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: 'Bearer ' + state.key,
+          },
+          body: JSON.stringify({ messages, stream: true }),
+        })
+        if (!res.ok || !res.body) {
+          const data = await res.json().catch(() => ({}))
+          const message = data.error ? data.error.message : ''
+          throw new Error(friendlyError(res.status, message))
+        }
+        const reader = res.body.getReader()
+        const decoder = new TextDecoder()
+        let buffer = ''
+        let text = ''
+        while (true) {
+          const { value, done } = await reader.read()
+          if (done) break
+          buffer += decoder.decode(value, { stream: true })
+          const events = buffer.split('\n\n')
+          buffer = events.pop() || ''
+          for (const event of events) {
+            const line = event.trim()
+            if (!line.startsWith('data:')) continue
+            const payload = line.slice(5).trim()
+            if (payload === '[DONE]') continue
+            let json
+            try {
+              json = JSON.parse(payload)
+            } catch {
+              continue
+            }
+            if (json.error) throw new Error(json.error.message)
+            const choice = json.choices && json.choices[0]
+            const delta = choice && choice.delta && choice.delta.content
+            if (delta) {
+              text += delta
+              target.textContent = text
+              log.scrollTop = log.scrollHeight
+            }
+          }
+        }
+        delete target.dataset.streaming
+        return text
+      }
+
+      async function submit() {
+        const value = prompt.value.trim()
+        if (!value || state.busy) return
+        if (!state.key) {
+          showGate(true)
+          return
+        }
+        state.busy = true
+        send.disabled = true
+        prompt.value = ''
+        state.history.push({ role: 'user', content: value })
+        addMessage('user', value)
+        const target = addMessage('assistant', '')
+        try {
+          const answer = await streamReply(state.history, target)
+          state.history.push({ role: 'assistant', content: answer })
+        } catch (error) {
+          target.remove()
+          addMessage('error', error.message)
+          if (error.message.indexOf('Ключ') === 0) {
+            state.key = ''
+            localStorage.removeItem(KEY_STORAGE)
+            showGate(true)
+          }
+        } finally {
+          state.busy = false
+          send.disabled = false
+          prompt.focus()
+        }
+      }
+
+      keySave.addEventListener('click', () => {
+        const value = keyInput.value.trim()
+        if (!value) return
+        state.key = value
+        localStorage.setItem(KEY_STORAGE, value)
+        keyInput.value = ''
+        showGate(false)
+        prompt.focus()
+      })
+
+      form.addEventListener('submit', (event) => {
+        event.preventDefault()
+        submit()
+      })
+
+      prompt.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' && !event.shiftKey) {
+          event.preventDefault()
+          submit()
+        }
+      })
+
+      showGate(!state.key)
+      if (!state.key) {
+        keyInput.focus()
+      }
+      checkHealth()
+      setInterval(checkHealth, 15000)
+    </script>
+  </body>
+</html>

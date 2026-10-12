@@ -22,5 +22,7 @@ architecture and navigation stay in `AGENTS.md`.
 
 ## Product scope
 
-- Respond one chunk at a time: no streaming. The UI shows a 3-dots animation while it waits.
+- In the app UI, respond one chunk at a time: no streaming. The UI shows a 3-dots animation while it
+  waits. The exception is the standalone `features/llm-service` gateway, which streams SSE by design
+  (ADR-0008).
 - `people` has no real auth/backend yet — it is a seeded mock.
