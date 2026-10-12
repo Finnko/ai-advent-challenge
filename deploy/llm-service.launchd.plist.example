@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  launchd-агент для приватного LLM-сервиса (Day 30). Аналог systemd-юнитов на VPS.
+  Установка:
+    cp deploy/llm-service.launchd.plist.example ~/Library/LaunchAgents/com.ai-advent.llm-service.plist
+    # поправь путь репозитория ниже, затем:
+    launchctl load ~/Library/LaunchAgents/com.ai-advent.llm-service.plist
+  Секреты (LLM_SERVICE_KEYS и пр.) подхватываются из .env через --env-file-if-exists в npm-скрипте.
+-->
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>com.ai-advent.llm-service</string>
+    <key>ProgramArguments</key>
+    <array>
+      <string>/bin/bash</string>
+      <string>-lc</string>
+      <string>cd "$HOME/Desktop/work/ai-advent-challenge" &amp;&amp; exec npm run llm-service</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/tmp/ai-advent-llm-service.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/ai-advent-llm-service.err.log</string>
+  </dict>
+</plist>

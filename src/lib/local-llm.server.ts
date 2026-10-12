@@ -1,4 +1,5 @@
-import { callCompletions } from './llm.server'
+import { callCompletions, streamCompletions } from './llm.server'
+import type { ChatStreamChunk } from './llm.server'
 import type {
   ChatMessage,
   ChatResult,
@@ -41,6 +42,26 @@ export async function runLocalChat(
 ): Promise<ChatResult> {
   const endpoint = deps.endpoint ?? resolveLocalEndpoint()
   return callCompletions(
+    endpoint,
+    'local',
+    messages,
+    { max_tokens: LOCAL_MAX_TOKENS, temperature: LOCAL_TEMPERATURE, ...params },
+    {
+      fetchImpl: deps.fetchImpl,
+      attempts: 2,
+      baseDelayMs: 200,
+      extraBody: { chat_template_kwargs: { enable_thinking: false } },
+    },
+  )
+}
+
+export function streamLocalChat(
+  messages: ChatMessage[],
+  params: DeepSeekParams = {},
+  deps: LocalLlmDeps = {},
+): AsyncGenerator<ChatStreamChunk, void, void> {
+  const endpoint = deps.endpoint ?? resolveLocalEndpoint()
+  return streamCompletions(
     endpoint,
     'local',
     messages,
