@@ -6,7 +6,7 @@ import {
   SUMMARIZE_MAX_SENTENCES,
   SUMMARIZE_MIN_SENTENCES,
 } from '../../domain/research/types.ts'
-import { toResponse } from '../shared/response.ts'
+import { toResponse } from '@lib/mcp/response.ts'
 import type { ResearchToolkit } from './tools.ts'
 
 export function registerResearchTools(

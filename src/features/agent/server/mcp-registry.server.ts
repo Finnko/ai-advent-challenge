@@ -1,25 +1,12 @@
-import { accessSync } from 'node:fs'
-import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import {
+  createMcpRegistry,
+  type McpServerConfig,
+  type McpServerSpec,
+} from '@lib/mcp/registry.server'
+
+export type { McpServerConfig } from '@lib/mcp/registry.server'
 
 export type McpServerKind = 'demo' | 'jobs' | 'research' | 'market'
-
-export type McpServerConfig = {
-  kind: McpServerKind
-  name: string
-  entry: string
-  childEnv: () => Record<string, string> | undefined
-  hiddenTools: string[]
-}
-
-type McpServerSpec = {
-  name: string
-  envKey: string
-  compiledFile: string
-  sourcePath: string
-  hiddenTools: string[]
-  childEnvKey: string | null
-}
 
 const SPECS: Record<McpServerKind, McpServerSpec> = {
   demo: {
@@ -56,59 +43,12 @@ const SPECS: Record<McpServerKind, McpServerSpec> = {
   },
 }
 
-const KINDS = Object.keys(SPECS) as McpServerKind[]
+export const mcpRegistry = createMcpRegistry(SPECS, import.meta.url)
 
-function fileExists(path: string): boolean {
-  try {
-    accessSync(path)
-    return true
-  } catch {
-    return false
-  }
-}
-
-function compiledEntry(spec: McpServerSpec): string {
-  return join(process.cwd(), 'dist', 'server', 'mcp', spec.compiledFile)
-}
-
-function sourceEntry(spec: McpServerSpec): string {
-  return fileURLToPath(new URL(spec.sourcePath, import.meta.url))
+export function mcpServerConfigs(): McpServerConfig<McpServerKind>[] {
+  return mcpRegistry.configs()
 }
 
 export function resolveMcpEntry(kind: McpServerKind): string {
-  const spec = SPECS[kind]
-  const override = process.env[spec.envKey]?.trim()
-  if (override) {
-    return override
-  }
-  const compiled = compiledEntry(spec)
-  if (fileExists(compiled)) {
-    return compiled
-  }
-  return sourceEntry(spec)
-}
-
-function childEnvFor(
-  spec: McpServerSpec,
-): () => Record<string, string> | undefined {
-  return () => {
-    if (!spec.childEnvKey) {
-      return undefined
-    }
-    const value = process.env[spec.childEnvKey]
-    return value ? { [spec.childEnvKey]: value } : undefined
-  }
-}
-
-export function mcpServerConfigs(): McpServerConfig[] {
-  return KINDS.map((kind) => {
-    const spec = SPECS[kind]
-    return {
-      kind,
-      name: spec.name,
-      entry: resolveMcpEntry(kind),
-      childEnv: childEnvFor(spec),
-      hiddenTools: spec.hiddenTools,
-    }
-  })
+  return mcpRegistry.resolveEntry(kind)
 }

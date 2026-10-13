@@ -137,3 +137,7 @@ RAG становится способностью `/agent`: при `ragEnabled` 
 ## Day 30 — локальная LLM как приватный сервис
 
 `features/llm-service` — приватный сервис над локальной моделью: OpenAI-совместимый HTTP API и чат-страница, с ключами доступа, rate limit, ограничением контекста и стримингом SSE. Mac — «домашний сервер», шлюз публикуется через Tailscale Funnel и держится `launchd`. Запуск — `npm run llm-service`, проверка лимитов — `npm run llm-service:load`. Детали — в `src/features/llm-service/README.md` и `docs/adr/0008-local-llm-as-public-service.md`.
+
+## Day 31 — ассистент разработчика
+
+Страница `/dev-assistant`: обычный чат, который отвечает на вопросы **о самом проекте**. Корпус — README, `AGENTS.md`, `GLOSSARY.md`, `CODING_STANDARDS.md`, README всех фич, `docs/adr/*` и схемы данных, читаемые с диска и индексируемые отдельным SQLite своим markdown-чанкером. Живое состояние репозитория (ветка, статус, коммиты, изменённые файлы, дифф) приходит из собственного read-only git-MCP-сервера. Команда `/help` показывает карту проекта, `/help <вопрос>` отвечает. Общий RAG-движок вынесен в `src/lib/rag-engine.server.ts`, MCP-хост — в `src/lib/mcp/`. Детали — в `src/features/dev-assistant/README.md`, решения — в `docs/adr/0009-shared-rag-engine-and-dev-assistant.md` и `docs/adr/0010-mcp-host-in-lib.md`.

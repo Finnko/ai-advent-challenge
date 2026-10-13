@@ -31,7 +31,7 @@ import {
 } from '../../domain/jobs/types.ts'
 import type { JobsStore } from './db.ts'
 import { round1 } from '../../domain/jobs/round.ts'
-import { fail, ok, type ToolResult } from '../shared/response.ts'
+import { fail, ok, type ToolResult } from '@lib/mcp/response.ts'
 
 type Args = Record<string, unknown>
 

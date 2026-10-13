@@ -3,7 +3,7 @@ import {
   RATE_DEFAULT_QUOTE,
   type MarketSource,
 } from '../../domain/market/types.ts'
-import { errorMessage, fail, ok, type ToolResult } from '../shared/response.ts'
+import { errorMessage, fail, ok, type ToolResult } from '@lib/mcp/response.ts'
 
 type Args = Record<string, unknown>
 

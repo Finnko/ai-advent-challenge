@@ -4,6 +4,11 @@ import { fileURLToPath } from 'node:url'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
+const alias = {
+  '@lib': resolve(root, 'src/lib'),
+  '@': resolve(root, 'src'),
+}
+
 const ENTRIES = [
   ['src/features/agent/mcp/server.ts', 'dist/server/mcp/mcp-demo.mjs'],
   ['src/features/agent/mcp/jobs/server.ts', 'dist/server/mcp/mcp-jobs.mjs'],
@@ -12,6 +17,10 @@ const ENTRIES = [
     'dist/server/mcp/mcp-research.mjs',
   ],
   ['src/features/agent/mcp/market/server.ts', 'dist/server/mcp/mcp-market.mjs'],
+  [
+    'src/features/dev-assistant/mcp/git/server.ts',
+    'dist/server/mcp/mcp-git.mjs',
+  ],
 ]
 
 for (const [entry, outfile] of ENTRIES) {
@@ -23,6 +32,7 @@ for (const [entry, outfile] of ENTRIES) {
     format: 'esm',
     target: 'node22',
     packages: 'external',
+    alias,
     sourcemap: false,
     logLevel: 'info',
   })
