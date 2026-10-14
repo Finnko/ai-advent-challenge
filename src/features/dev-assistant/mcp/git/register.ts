@@ -11,6 +11,7 @@ export function registerGitTools(server: McpServer, toolkit: GitToolkit): void {
       description:
         'Возвращает имя текущей ветки репозитория проекта. Read-only.',
       inputSchema: {},
+      outputSchema: { branch: z.string() },
       annotations: { readOnlyHint: true },
     },
     async () => toResponse(await toolkit.branch({})),
@@ -23,6 +24,7 @@ export function registerGitTools(server: McpServer, toolkit: GitToolkit): void {
       description:
         'Показывает незакоммиченные изменения (git status --short --branch). Read-only.',
       inputSchema: {},
+      outputSchema: { clean: z.boolean() },
       annotations: { readOnlyHint: true },
     },
     async () => toResponse(await toolkit.status({})),
@@ -43,6 +45,16 @@ export function registerGitTools(server: McpServer, toolkit: GitToolkit): void {
           .optional()
           .describe('Сколько коммитов вернуть (по умолчанию 10)'),
       },
+      outputSchema: {
+        commits: z.array(
+          z.object({
+            hash: z.string(),
+            date: z.string(),
+            author: z.string(),
+            subject: z.string(),
+          }),
+        ),
+      },
       annotations: { readOnlyHint: true },
     },
     async (args) => toResponse(await toolkit.log(args)),
@@ -62,6 +74,10 @@ export function registerGitTools(server: McpServer, toolkit: GitToolkit): void {
           .describe(
             'База сравнения: имя ветки или sha. Без неё — изменения рабочего дерева.',
           ),
+      },
+      outputSchema: {
+        base: z.string().nullable(),
+        files: z.array(z.object({ status: z.string(), path: z.string() })),
       },
       annotations: { readOnlyHint: true },
     },
@@ -88,6 +104,13 @@ export function registerGitTools(server: McpServer, toolkit: GitToolkit): void {
           .max(1000)
           .optional()
           .describe('Максимум строк диффа (по умолчанию 200)'),
+      },
+      outputSchema: {
+        base: z.string().nullable(),
+        path: z.string().nullable(),
+        truncated: z.boolean(),
+        lines: z.number(),
+        text: z.string(),
       },
       annotations: { readOnlyHint: true },
     },

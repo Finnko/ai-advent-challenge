@@ -7,6 +7,7 @@ import type {
   AnswerMode,
   Chunk,
   ChunkingStrategyId,
+  RagChunkingStrategyId,
   ScoredChunk,
 } from './domain/types'
 
@@ -17,6 +18,7 @@ export type {
   AnswerVerdict,
   Chunk,
   ChunkingStrategyId,
+  RagChunkingStrategyId,
   RagPipelineId,
   ScoredChunk,
   RetrievalStats,

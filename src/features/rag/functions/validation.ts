@@ -4,10 +4,10 @@ import { isRagPipelineId, type RagPipelineId } from '../domain/pipelines'
 import type {
   AnswerGenerator,
   AnswerMode,
-  ChunkingStrategyId,
+  RagChunkingStrategyId,
 } from '../domain/types'
 
-export function requireChunkingStrategy(value: unknown): ChunkingStrategyId {
+export function requireChunkingStrategy(value: unknown): RagChunkingStrategyId {
   if (!isChunkingStrategyId(value)) {
     throw new Error('Неизвестная стратегия чанкинга')
   }
@@ -125,7 +125,7 @@ export function optionalRagPipeline(
   return value
 }
 
-export function parseBuildInput(value: unknown): ChunkingStrategyId | 'all' {
+export function parseBuildInput(value: unknown): RagChunkingStrategyId | 'all' {
   const data = asObject(value)
   if (data.strategy === 'all') {
     return 'all'

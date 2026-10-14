@@ -4,15 +4,10 @@ import type {
 } from '@/features/rag/domain/types'
 import { parseCitations } from '@/features/rag/domain/answer-eval'
 import { rewriteQuery } from '@/features/rag/domain/rewrite-prompt'
-import { createEmbedder } from '@/features/rag/server/embedder.server'
+import type { SearchScope } from '@/features/rag/domain/search-scope'
 import { getRagStore } from '@/features/rag/server/index-store.server'
-import {
-  createReranker,
-  resolveRerankMargin,
-  resolveRerankThreshold,
-} from '@/features/rag/server/reranker.server'
 import { createDefaultRewriter } from '@/features/rag/server/rewrite.server'
-import { retrieve } from '@/features/rag/server/retrieval.server'
+import { searchSources } from '@/features/rag/server/search.server'
 import type { AgentCapability } from '@/features/agent/domain/capabilities/types'
 import type { RetrievedSource } from '@/features/agent/domain/capabilities/types'
 import { groundingFor } from '@/features/agent/domain/rag/grounding'
@@ -26,6 +21,13 @@ import {
 
 export const AGENT_RAG_STRATEGY: ChunkingStrategyId = 'structural'
 export const AGENT_RAG_K = 6
+
+const AGENT_RAG_SCOPE: SearchScope = {
+  strategy: AGENT_RAG_STRATEGY,
+  k: AGENT_RAG_K,
+  rerank: true,
+  rewrite: false,
+}
 
 function toSource(scored: ScoredChunk): RetrievedSource {
   return {
@@ -42,25 +44,19 @@ function toSource(scored: ScoredChunk): RetrievedSource {
 
 async function retrieveSources(query: string): Promise<RetrievedSource[]> {
   const store = await getRagStore()
-  if (store.countChunks(AGENT_RAG_STRATEGY) === 0) {
+  if (store.countChunks(AGENT_RAG_SCOPE.strategy) === 0) {
     return []
   }
-  const threshold = resolveRerankThreshold()
-  const result = await retrieve({
-    strategy: AGENT_RAG_STRATEGY,
+  const outcome = await searchSources({
+    scope: AGENT_RAG_SCOPE,
     query,
-    k: AGENT_RAG_K,
-    embedder: createEmbedder(),
     store,
-    reranker: createReranker(),
-    threshold,
-    margin: resolveRerankMargin(),
   })
-  return result.results
+  return outcome.sources
     .map(toSource)
     .filter(
       (source) =>
-        source.relevance === undefined || source.relevance >= threshold,
+        source.relevance === undefined || source.relevance >= outcome.threshold,
     )
 }
 

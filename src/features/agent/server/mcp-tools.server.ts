@@ -1,7 +1,11 @@
+import { callToolOn, createMcpHost, listToolsFor } from '@lib/mcp/client.server'
 import type { AgentTool } from '../domain/agent'
 import { buildMcpAgentTools } from '../domain/mcp/agent-tools'
-import { callToolOn, listToolsFor } from './mcp.server'
-import { mcpServerConfigs } from './mcp-registry.server'
+import { mcpRegistry, mcpServerConfigs } from './mcp-registry.server'
+
+const host = createMcpHost(mcpRegistry)
+
+export const listMcpTools = host.listTools
 
 export async function loadMcpTools(): Promise<AgentTool[]> {
   const servers = mcpServerConfigs()

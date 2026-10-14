@@ -4,14 +4,14 @@ import type {
   AnswerQuote,
   ScoredChunk,
 } from '@lib/rag-engine.types'
-import type { GitContext } from '@lib/git-context.types'
+import type { GitContext } from './domain/git/context'
 
 export type {
   AnswerGenerator,
   AnswerQuote,
   ScoredChunk,
 } from '@lib/rag-engine.types'
-export type { GitContext, GitContextSection } from '@lib/git-context.types'
+export type { GitContext, GitContextSection } from './domain/git/context'
 export type { CorpusFile, CorpusGroup } from './data/corpus-manifest'
 
 export type DevAssistantAnswer = {

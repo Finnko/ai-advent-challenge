@@ -1,4 +1,6 @@
-export type ChunkingStrategyId = 'fixed' | 'structural'
+export type ChunkingStrategyId = string
+
+export type RagChunkingStrategyId = 'fixed' | 'structural'
 
 export type AnswerMode = 'rag' | 'baseline'
 

@@ -51,7 +51,7 @@ describe('markdown chunker', () => {
   it('produces structural chunks with section metadata', () => {
     const chunks = markdownChunker.chunk(DOC)
     expect(chunks.length).toBeGreaterThan(0)
-    expect(chunks.every((chunk) => chunk.strategy === 'structural')).toBe(true)
+    expect(chunks.every((chunk) => chunk.strategy === 'markdown')).toBe(true)
     expect(chunks.every((chunk) => chunk.docId === 'doc')).toBe(true)
     expect(chunks.every((chunk) => chunk.sectionPath.length > 0)).toBe(true)
     expect(chunks.every((chunk) => chunk.nTokens > 0)).toBe(true)

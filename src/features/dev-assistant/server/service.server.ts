@@ -1,5 +1,4 @@
-import type { GitContext } from '@lib/git-context.types'
-import { collectGitContext } from '@lib/git-context.server'
+import type { GitContext } from '../domain/git/context'
 import {
   buildIndex,
   createEmbedder,
@@ -7,18 +6,18 @@ import {
   type BuildIndexResult,
   type DocumentRecord,
 } from '@lib/rag-engine.server'
-import type {
-  AnswerGenerator,
-  ChunkingStrategyId,
-  CorpusDocStatus,
-} from '@lib/rag-engine.types'
-import { answerAboutProject, type ProjectAnswerResult } from './core.server'
+import type { AnswerGenerator, CorpusDocStatus } from '@lib/rag-engine.types'
+import {
+  answerAboutProject,
+  DEV_ASSISTANT_STRATEGY,
+  type ProjectAnswerResult,
+} from './core.server'
+import { collectGitContext } from './git-context.server'
 import { markdownChunker } from './markdown-chunker.server'
 import { createProjectCorpus, resolveRepoRoot } from './project-corpus.server'
 import { getDevAssistantStore } from './store.server'
 
-export const DEV_ASSISTANT_STRATEGY: ChunkingStrategyId = 'structural'
-export const DEV_ASSISTANT_K = 6
+export { DEV_ASSISTANT_STRATEGY }
 
 export type DevAssistantIndexStats = {
   documents: DocumentRecord[]
@@ -66,18 +65,11 @@ export async function askDevAssistant(input: {
   generator: AnswerGenerator
 }): Promise<DevAssistantAnswer> {
   const store = await getDevAssistantStore()
-  if (store.countChunks(DEV_ASSISTANT_STRATEGY) === 0) {
-    throw new Error(
-      'Индекс ассистента пуст — соберите его кнопкой «Переиндексировать».',
-    )
-  }
   const gitContext = await collectGitContext()
   const answer = await answerAboutProject({
     question: input.question,
-    strategy: DEV_ASSISTANT_STRATEGY,
     store,
     generator: input.generator,
-    k: DEV_ASSISTANT_K,
     contextBlocks: gitContext.block ? [gitContext.block] : [],
   })
   return { ...answer, gitContext }

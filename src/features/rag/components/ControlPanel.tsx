@@ -10,7 +10,11 @@ import {
   STRATEGY_LABELS,
   VERDICT_LABELS,
 } from '../data/rag-ui'
-import type { AnswerVerdict, ChunkingStrategyId, RagPipelineId } from '../types'
+import type {
+  AnswerVerdict,
+  RagChunkingStrategyId,
+  RagPipelineId,
+} from '../types'
 import AnswerCard from './AnswerCard'
 import LocalVsCloudPanel from './LocalVsCloudPanel'
 import { Alert } from '@/components/ui/Alert'
@@ -64,7 +68,7 @@ function countAbstained(
 }
 
 export default function ControlPanel() {
-  const [strategy, setStrategy] = useState<ChunkingStrategyId>('fixed')
+  const [strategy, setStrategy] = useState<RagChunkingStrategyId>('fixed')
   const [k, setK] = useState(5)
   const [pipelines, setPipelines] = useState<RagPipelineId[]>(DEFAULT_PIPELINES)
   const run = useControlRun()

@@ -5,8 +5,9 @@ import {
   PIPELINE_SHORT_LABELS,
   STRATEGY_IDS,
   STRATEGY_LABELS,
+  strategyLabel,
 } from '../data/rag-ui'
-import type { ChunkingStrategyId, StrategyComparison } from '../types'
+import type { RagChunkingStrategyId, StrategyComparison } from '../types'
 import { Alert } from '@/components/ui/Alert'
 import { Button } from '@/components/ui/Button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
@@ -76,7 +77,7 @@ function metricValue(
 
 export default function ComparisonPanel() {
   const [includeRewrite, setIncludeRewrite] = useState(false)
-  const [strategy, setStrategy] = useState<ChunkingStrategyId>('fixed')
+  const [strategy, setStrategy] = useState<RagChunkingStrategyId>('fixed')
   const comparison = useRagComparison(includeRewrite)
   const entries = comparison.data?.strategies ?? []
   const selected = entries.find((entry) => entry.strategy === strategy)
@@ -129,7 +130,7 @@ export default function ComparisonPanel() {
                     key={entry.strategy}
                     className="border-b border-[var(--line)] px-3 py-2 text-left text-xs uppercase tracking-wide text-[var(--ink-muted)]"
                   >
-                    {STRATEGY_LABELS[entry.strategy]}
+                    {strategyLabel(entry.strategy)}
                   </th>
                 ))}
               </tr>

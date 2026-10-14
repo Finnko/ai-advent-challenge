@@ -8,12 +8,13 @@ import type {
   McpCallResult,
   McpToolDescriptor,
   McpToolsResult,
+  StructuredContent,
   ToolArgs,
 } from './types'
 
 const CLIENT_NAME = 'ai-advent-mcp-client'
 
-type SpawnConfig = Pick<McpServerConfig, 'name' | 'entry' | 'childEnv'>
+export type SpawnConfig = Pick<McpServerConfig, 'name' | 'entry' | 'childEnv'>
 
 // Sources are `.ts` and executed by Node directly, which does not read
 // tsconfig paths; the loader teaches it the same `@/` and `@lib/` aliases the
@@ -109,7 +110,11 @@ export async function callToolOn(
       if (result.isError) {
         return { ok: false, error: text || 'Инструмент MCP вернул ошибку.' }
       }
-      return { ok: true, text }
+      return {
+        ok: true,
+        text,
+        structured: result.structuredContent as StructuredContent | undefined,
+      }
     })
   } catch (error) {
     return {
@@ -137,7 +142,12 @@ export async function callToolsFor(
         results.push(
           result.isError
             ? { ok: false, error: text || 'Инструмент MCP вернул ошибку.' }
-            : { ok: true, text },
+            : {
+                ok: true,
+                text,
+                structured: result.structuredContent as
+                  StructuredContent | undefined,
+              },
         )
       }
       return results
@@ -156,7 +166,6 @@ export type McpHost<K extends string = string> = {
     name: string,
     args: ToolArgs,
   ): Promise<McpCallResult>
-  callTool(name: string, args: ToolArgs): Promise<McpCallResult>
 }
 
 export function createMcpHost<K extends string>(
@@ -188,18 +197,6 @@ export function createMcpHost<K extends string>(
         return { ok: false, error: `MCP-сервер ${kind} не сконфигурирован.` }
       }
       return callToolOn(config, name, args)
-    },
-    async callTool(name, args) {
-      for (const config of registry.configs()) {
-        const listed = await listToolsFor(config)
-        if (listed.ok && listed.tools.some((tool) => tool.name === name)) {
-          return callToolOn(config, name, args)
-        }
-      }
-      return {
-        ok: false,
-        error: `MCP-инструмент ${name} не найден ни на одном сервере.`,
-      }
     },
   }
 }

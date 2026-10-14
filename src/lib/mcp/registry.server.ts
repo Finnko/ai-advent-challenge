@@ -1,6 +1,5 @@
 import { accessSync } from 'node:fs'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 
 export type McpServerSpec = {
   name: string
@@ -23,7 +22,6 @@ export type McpRegistry<K extends string = string> = {
   readonly kinds: readonly K[]
   configs(): McpServerConfig<K>[]
   configFor(kind: K): McpServerConfig<K> | undefined
-  resolveEntry(kind: K): string
 }
 
 function fileExists(path: string): boolean {
@@ -39,13 +37,12 @@ function compiledEntry(spec: McpServerSpec): string {
   return join(process.cwd(), 'dist', 'server', 'mcp', spec.compiledFile)
 }
 
-function sourceEntry(spec: McpServerSpec, baseUrl: string): string {
-  return fileURLToPath(new URL(spec.sourcePath, baseUrl))
+function sourceEntry(spec: McpServerSpec): string {
+  return join(process.cwd(), spec.sourcePath)
 }
 
 function resolveEntry<K extends string>(
   specs: Record<K, McpServerSpec>,
-  baseUrl: string,
   kind: K,
 ): string {
   const spec = specs[kind]
@@ -57,7 +54,7 @@ function resolveEntry<K extends string>(
   if (fileExists(compiled)) {
     return compiled
   }
-  return sourceEntry(spec, baseUrl)
+  return sourceEntry(spec)
 }
 
 function childEnvFor(
@@ -74,7 +71,6 @@ function childEnvFor(
 
 export function createMcpRegistry<K extends string>(
   specs: Record<K, McpServerSpec>,
-  baseUrl: string,
 ): McpRegistry<K> {
   const kinds = Object.keys(specs) as K[]
 
@@ -83,7 +79,7 @@ export function createMcpRegistry<K extends string>(
     return {
       kind,
       name: spec.name,
-      entry: resolveEntry(specs, baseUrl, kind),
+      entry: resolveEntry(specs, kind),
       childEnv: childEnvFor(spec),
       hiddenTools: spec.hiddenTools ?? [],
     }
@@ -96,9 +92,6 @@ export function createMcpRegistry<K extends string>(
     },
     configFor(kind) {
       return specs[kind] ? toConfig(kind) : undefined
-    },
-    resolveEntry(kind) {
-      return resolveEntry(specs, baseUrl, kind)
     },
   }
 }

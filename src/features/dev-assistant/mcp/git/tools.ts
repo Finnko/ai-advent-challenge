@@ -1,4 +1,5 @@
 import { errorMessage, fail, ok, type ToolResult } from '@lib/mcp/response.ts'
+import type { StructuredContent } from '@lib/mcp/types.ts'
 import type {
   GitChangedFile,
   GitCommit,
@@ -55,12 +56,25 @@ function formatFile(file: GitChangedFile): string {
   return `${file.status}\t${file.path}`
 }
 
+function commitPayload(commit: GitCommit): StructuredContent {
+  return {
+    hash: commit.hash,
+    date: commit.date,
+    author: commit.author,
+    subject: commit.subject,
+  }
+}
+
+function filePayload(file: GitChangedFile): StructuredContent {
+  return { status: file.status, path: file.path }
+}
+
 export function createGitToolkit(deps: { git: GitSource }): GitToolkit {
   return {
     async branch() {
       try {
         const branch = await deps.git.branch()
-        return ok(`Текущая ветка: ${branch}`)
+        return ok(`Текущая ветка: ${branch}`, { branch })
       } catch (error) {
         return fail(`Не удалось получить ветку: ${errorMessage(error)}`)
       }
@@ -69,9 +83,11 @@ export function createGitToolkit(deps: { git: GitSource }): GitToolkit {
       try {
         const status = await deps.git.status()
         if (status.clean) {
-          return ok('Рабочее дерево чистое, незакоммиченных изменений нет.')
+          return ok('Рабочее дерево чистое, незакоммиченных изменений нет.', {
+            clean: true,
+          })
         }
-        return ok(`git status:\n${status.text}`)
+        return ok(`git status:\n${status.text}`, { clean: false })
       } catch (error) {
         return fail(`Не удалось получить статус: ${errorMessage(error)}`)
       }
@@ -83,10 +99,14 @@ export function createGitToolkit(deps: { git: GitSource }): GitToolkit {
       }
       try {
         const commits = await deps.git.log(limit)
+        const payload = { commits: commits.map(commitPayload) }
         if (commits.length === 0) {
-          return ok('История коммитов пуста.')
+          return ok('История коммитов пуста.', payload)
         }
-        return ok(`Последние коммиты:\n${commits.map(formatCommit).join('\n')}`)
+        return ok(
+          `Последние коммиты:\n${commits.map(formatCommit).join('\n')}`,
+          payload,
+        )
       } catch (error) {
         return fail(`Не удалось получить историю: ${errorMessage(error)}`)
       }
@@ -98,16 +118,19 @@ export function createGitToolkit(deps: { git: GitSource }): GitToolkit {
       }
       try {
         const files = await deps.git.changedFiles(base)
+        const payload = { base: base ?? null, files: files.map(filePayload) }
         if (files.length === 0) {
           return ok(
             base
               ? `Нет изменений относительно ${base}.`
               : 'Нет изменённых файлов.',
+            payload,
           )
         }
         const suffix = base ? ` относительно ${base}` : ''
         return ok(
           `Изменённые файлы${suffix}:\n${files.map(formatFile).join('\n')}`,
+          payload,
         )
       } catch (error) {
         return fail(
@@ -134,14 +157,22 @@ export function createGitToolkit(deps: { git: GitSource }): GitToolkit {
       }
       try {
         const diff = await deps.git.diff({ base, path, maxLines })
+        const payload = {
+          base: base ?? null,
+          path: path ?? null,
+          truncated: diff.truncated,
+          lines: diff.lines,
+          text: diff.text,
+        }
         if (diff.text.length === 0) {
-          return ok('Дифф пуст — изменений нет.')
+          return ok('Дифф пуст — изменений нет.', payload)
         }
         const suffix = diff.truncated
           ? `\n…(обрезано до ${maxLines} строк из ${diff.lines})`
           : ''
         return ok(
           `git diff${base ? ` ${base}...HEAD` : ''}:\n${diff.text}${suffix}`,
+          payload,
         )
       } catch (error) {
         return fail(`Не удалось получить дифф: ${errorMessage(error)}`)

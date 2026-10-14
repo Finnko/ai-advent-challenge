@@ -1,9 +1,4 @@
-import type { Chunk } from '@lib/rag-engine.types'
-
-export type PromptMessage = {
-  role: 'system' | 'user'
-  content: string
-}
+import type { AnswerPersona } from '@lib/rag-engine.types'
 
 // Same JSON contract as the RAG answer path, so `parseAnswerResponse` /
 // `verifyQuotes` can be reused verbatim; only the system prompt differs.
@@ -25,34 +20,11 @@ export function abstainAnswer(question: string): string {
   return `Не знаю: в документации проекта недостаточно данных для ответа на вопрос «${question}». Попробуйте уточнить — например, назовите фичу или ADR.`
 }
 
-export function buildChunkBlock(chunks: Chunk[]): string {
-  const lines = chunks.map((chunk, index) => {
-    const where = chunk.section
-      ? `${chunk.title} — ${chunk.section}`
-      : chunk.title
-    return `[${index + 1}] ${where}\n${chunk.text}`
-  })
-  return `Фрагменты документации проекта:\n\n${lines.join('\n\n')}`
-}
-
-export function buildProjectMessages(input: {
-  question: string
-  chunks: Chunk[]
-  contextBlocks?: string[]
-}): PromptMessage[] {
-  const parts: string[] = []
-  if (input.chunks.length > 0) {
-    parts.push(buildChunkBlock(input.chunks))
-  }
-  const context = (input.contextBlocks ?? []).filter(
-    (block) => block.trim().length > 0,
-  )
-  if (context.length > 0) {
-    parts.push(`Справочный контекст репозитория:\n\n${context.join('\n\n')}`)
-  }
-  parts.push(`Вопрос: ${input.question}`)
-  return [
-    { role: 'system', content: PROJECT_SYSTEM },
-    { role: 'user', content: parts.join('\n\n') },
-  ]
+export const PROJECT_PERSONA: AnswerPersona = {
+  system: PROJECT_SYSTEM,
+  fragmentsHeader: 'Фрагменты документации проекта:',
+  contextHeader: 'Справочный контекст репозитория',
+  contextRescues: true,
+  json: true,
+  abstain: abstainAnswer,
 }

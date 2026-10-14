@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { useBuildIndex, useRagIndex } from '../api/use-rag-index'
 import { useRagCorpus } from '../api/use-rag-corpus'
-import { STRATEGY_DETAILS, STRATEGY_LABELS } from '../data/rag-ui'
-import type { ChunkingStrategyId } from '../types'
+import { strategyDetails, strategyLabel } from '../data/rag-ui'
+import type { RagChunkingStrategyId } from '../types'
 import ChunkBrowser from './ChunkBrowser'
 import { Alert } from '@/components/ui/Alert'
 import { Badge } from '@/components/ui/Badge'
@@ -23,7 +23,7 @@ export default function IndexPanel() {
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const run = async (strategy: ChunkingStrategyId | 'all') => {
+  const run = async (strategy: RagChunkingStrategyId | 'all') => {
     setMessage(null)
     setError(null)
     try {
@@ -105,10 +105,10 @@ export default function IndexPanel() {
             >
               <div className="flex flex-col">
                 <span className="font-semibold text-[var(--ink)]">
-                  {STRATEGY_LABELS[strategy.strategy]}
+                  {strategyLabel(strategy.strategy)}
                 </span>
                 <span className="demo-muted">
-                  {STRATEGY_DETAILS[strategy.strategy]}
+                  {strategyDetails(strategy.strategy)}
                 </span>
               </div>
               <div className="flex flex-wrap items-center gap-2">

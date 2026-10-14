@@ -13,7 +13,7 @@ const SPECS: Record<McpServerKind, McpServerSpec> = {
     name: 'agent-mcp-demo',
     envKey: 'AGENT_MCP_DEMO_ENTRY',
     compiledFile: 'mcp-demo.mjs',
-    sourcePath: '../mcp/server.ts',
+    sourcePath: 'src/features/agent/mcp/server.ts',
     hiddenTools: [],
     childEnvKey: 'AGENT_DB_PATH',
   },
@@ -21,7 +21,7 @@ const SPECS: Record<McpServerKind, McpServerSpec> = {
     name: 'agent-mcp-jobs',
     envKey: 'AGENT_MCP_JOBS_ENTRY',
     compiledFile: 'mcp-jobs.mjs',
-    sourcePath: '../mcp/jobs/server.ts',
+    sourcePath: 'src/features/agent/mcp/jobs/server.ts',
     hiddenTools: ['run_due_jobs'],
     childEnvKey: 'JOBS_DB_PATH',
   },
@@ -29,7 +29,7 @@ const SPECS: Record<McpServerKind, McpServerSpec> = {
     name: 'agent-mcp-research',
     envKey: 'AGENT_MCP_RESEARCH_ENTRY',
     compiledFile: 'mcp-research.mjs',
-    sourcePath: '../mcp/research/server.ts',
+    sourcePath: 'src/features/agent/mcp/research/server.ts',
     hiddenTools: [],
     childEnvKey: 'REPORTS_DIR',
   },
@@ -37,18 +37,14 @@ const SPECS: Record<McpServerKind, McpServerSpec> = {
     name: 'agent-mcp-market',
     envKey: 'AGENT_MCP_MARKET_ENTRY',
     compiledFile: 'mcp-market.mjs',
-    sourcePath: '../mcp/market/server.ts',
+    sourcePath: 'src/features/agent/mcp/market/server.ts',
     hiddenTools: [],
     childEnvKey: null,
   },
 }
 
-export const mcpRegistry = createMcpRegistry(SPECS, import.meta.url)
+export const mcpRegistry = createMcpRegistry(SPECS)
 
 export function mcpServerConfigs(): McpServerConfig<McpServerKind>[] {
   return mcpRegistry.configs()
-}
-
-export function resolveMcpEntry(kind: McpServerKind): string {
-  return mcpRegistry.resolveEntry(kind)
 }

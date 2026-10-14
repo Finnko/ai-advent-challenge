@@ -9,7 +9,7 @@ import { resolveEmbedModelId } from './embedder.server'
 import { getRagStore, type RagIndexStore } from './index-store.server'
 import { buildIndex, type BuildIndexResult } from './indexing.server'
 import { getRagLlmStatus } from './local-llm.server'
-import { runPipeline } from './pipeline-run.server'
+import { searchSources } from './search.server'
 import {
   resolveRuntime,
   type AnswerRuntimeOverrides,
@@ -107,26 +107,33 @@ export async function search(
   deps?: RagRuntimeOverrides,
 ): Promise<SearchResult> {
   const runtime = await resolveRuntime(deps)
-  const threshold =
-    input.threshold === undefined ? runtime.threshold : input.threshold
-  const { retrieval, rewrittenQuery } = await runPipeline(
-    { rewrite: input.rewrite === true, rerank: input.rerank === true },
-    {
+  const outcome = await searchSources({
+    scope: {
       strategy: input.strategy,
-      query: input.query,
       k: input.k,
       candidateK: input.candidateK,
-      threshold,
+      rerank: input.rerank === true,
+      rewrite: input.rewrite === true,
     },
-    {
-      embedder: runtime.embedder,
-      store: runtime.store,
-      reranker: runtime.reranker,
-      rewriter: runtime.rewriter,
-      margin: runtime.margin,
-    },
-  )
-  return { ...retrieval, rewrittenQuery }
+    query: input.query,
+    store: runtime.store,
+    embedder: runtime.embedder,
+    reranker: runtime.reranker,
+    rewriter: runtime.rewriter,
+    rerankThreshold:
+      input.threshold === undefined
+        ? runtime.threshold
+        : (input.threshold ?? undefined),
+    cosineThreshold: runtime.cosineThreshold,
+    margin: runtime.margin,
+  })
+  return {
+    results: outcome.sources,
+    reranked: outcome.reranked,
+    candidateCount: outcome.candidateCount,
+    embeddingQuery: outcome.embeddingQuery,
+    rewrittenQuery: outcome.rewrittenQuery,
+  }
 }
 
 export async function getCorpus(): Promise<CorpusDocStatus[]> {

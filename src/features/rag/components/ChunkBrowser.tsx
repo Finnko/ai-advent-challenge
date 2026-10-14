@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useRagChunks } from '../api/use-rag-chunks'
 import { STRATEGY_IDS, STRATEGY_SHORT_LABELS } from '../data/rag-ui'
-import type { ChunkingStrategyId } from '../types'
+import type { RagChunkingStrategyId } from '../types'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Alert } from '@/components/ui/Alert'
@@ -11,7 +11,7 @@ function excerpt(text: string, limit = 220): string {
 }
 
 export default function ChunkBrowser() {
-  const [strategy, setStrategy] = useState<ChunkingStrategyId>('fixed')
+  const [strategy, setStrategy] = useState<RagChunkingStrategyId>('fixed')
   const chunks = useRagChunks(strategy)
 
   return (

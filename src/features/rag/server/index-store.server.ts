@@ -295,3 +295,22 @@ export function getRagStore(): Promise<RagIndexStore> {
   }
   return singleton
 }
+
+export class EmptyIndexError extends Error {
+  readonly strategy: ChunkingStrategyId
+
+  constructor(strategy: ChunkingStrategyId) {
+    super(`Индекс «${strategy}» ещё не собран — соберите его и повторите.`)
+    this.name = 'EmptyIndexError'
+    this.strategy = strategy
+  }
+}
+
+export function assertIndexBuilt(
+  store: RagIndexStore,
+  strategy: ChunkingStrategyId,
+): void {
+  if (store.countChunks(strategy) === 0) {
+    throw new EmptyIndexError(strategy)
+  }
+}

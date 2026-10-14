@@ -11,13 +11,13 @@ const SPECS: Record<DevAssistantMcpKind, McpServerSpec> = {
     name: 'dev-assistant-mcp-git',
     envKey: 'DEV_ASSISTANT_MCP_GIT_ENTRY',
     compiledFile: 'mcp-git.mjs',
-    sourcePath: '../mcp/git/server.ts',
+    sourcePath: 'src/features/dev-assistant/mcp/git/server.ts',
     hiddenTools: [],
     childEnvKey: 'GIT_REPO_DIR',
   },
 }
 
-export const devAssistantMcpRegistry = createMcpRegistry(SPECS, import.meta.url)
+export const devAssistantMcpRegistry = createMcpRegistry(SPECS)
 
 export function gitServerConfig():
   McpServerConfig<DevAssistantMcpKind> | undefined {

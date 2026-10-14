@@ -62,13 +62,18 @@ adds the developer assistant (`/dev-assistant`): RAG over the project's own docs
   the local MLX model with an OpenAI-compatible API, a chat page and limits; published via Tailscale
   Funnel. Bundled with esbuild, outside `vite build` (module map in the feature README).
 - `src/features/dev-assistant/` — standalone assistant (Day 31) that answers about the project: its own
-  markdown corpus read from disk, a private markdown chunker, its own SQLite index, and a read-only git
-  MCP server. It imports only `@lib` (never `features/rag` or `features/agent`); module map in the feature
-  README.
+  markdown corpus read from disk, a private markdown scope of the shared structural chunker, its own
+  SQLite index, and a read-only git MCP server. It imports only `@lib` (never `features/rag` or
+  `features/agent`); module map in the feature README.
 - `src/lib/` — shared: `llm.ts`/`llm.server.ts` (transport), `agent-rag.server.ts` (agent↔RAG
-  composition), `rag-engine.{types,server}.ts` (app-level RAG engine facade), `git-context.{types,server}.ts`
-  (git MCP → context blocks), `mcp/**` (shared MCP host + server helpers), `functions/*.functions.ts`
+  composition), `rag-engine.{types,server}.ts` (app-level RAG engine facade: index → `searchSources` →
+  `answerFromSources`), `source-format.ts` (numbered Источники), `mcp/**` (shared MCP host, generic
+  context collector, server helpers), `functions/*.functions.ts`
   (Days 1–5 server fns + shared `validation.ts`), `day2.ts`…`day5.ts`, `days.ts` (sidebar), `utils.ts` (`cn`).
+  **`src/lib` composes features, it does not depend on one**: only the app-level composition modules
+  (`agent-rag.server.ts`, `rag-engine.{server,types}.ts`) import `features/*`; every other `lib` module
+  (transport, `mcp/**`, `source-format.ts`) stays feature-agnostic and never reaches into a feature's
+  private registry.
 - `src/components/` — app shell (`Header`, `Sidebar`, `Chat`) and shared `ui/Tabs.tsx`.
 - `src/routes/` — thin route wrappers; `/agent` → `AgentPage`, `/rag` → `RagPage`, `/local-llm` →
   `LocalLlmPage`, `/llm-opt` → `LlmOptPage`, `/dev-assistant` → `DevAssistantPage`; old `/agent-*` routes
@@ -120,13 +125,16 @@ adds the developer assistant (`/dev-assistant`): RAG over the project's own docs
   `LLM_SERVICE_KEYS`, and enforces rate limit / max context / a single-flight queue in-process. Relaxes the
   local-llm dev-only and no-streaming rules — see the feature README and ADR-0008.
 - **Developer assistant (Day 31)**: `features/dev-assistant/` is a dev/local-only `/dev-assistant` page that
-  answers about the project itself. It reuses RAG through `src/lib/rag-engine.server.ts` (a facade over
-  `features/rag`, which it never imports) and git through a read-only MCP server
-  (`dev-assistant-mcp-git`: branch/status/log/changed files/diff) reached via `src/lib/mcp`. Corpus is read
-  from disk (`data/corpus-manifest.ts`), chunked by a private markdown chunker, stored in its own SQLite;
-  the headless core `answerAboutProject` takes plain `contextBlocks` (today git, Day 32 the PR diff) and
-  reuses the RAG JSON contract/quote verification. `/help` is the one real command. See the feature README,
-  ADR-0009 and ADR-0010.
+  answers about the project itself. It reuses RAG through `src/lib/rag-engine.server.ts` (the
+  `searchSources` / `answerFromSources` seams over `features/rag`, which it never imports) and git through
+  a read-only MCP server (`dev-assistant-mcp-git`: branch/status/log/changed files/diff) reached via
+  `src/lib/mcp`. Corpus is read from disk (`data/corpus-manifest.ts`), chunked by a private markdown scope
+  of the shared structural chunker (id `markdown`, unregistered), stored in its own SQLite; the git context
+  is collected by the feature (`server/git-context.server.ts`) over the generic
+  `@lib/mcp/context.server`; the headless core `answerAboutProject({ question, store, generator,
+  contextBlocks })` takes plain `contextBlocks` (today git, Day 32 the PR diff) and reuses the RAG JSON
+  contract/quote verification. `/help` is the one real command. See the feature README, ADR-0009,
+  ADR-0010 and ADR-0011.
 - **MCP tools**: `agent-mcp-demo` is read-only; `agent-mcp-jobs` writes its own `jobs.sqlite`. Tool
   metadata travels over the protocol: each spawned server sets `annotations: { readOnlyHint }`, the host
   derives `descriptor.mutating` (`readOnlyHint !== true` → mutating, fail-closed) and mutating MCP tools
@@ -136,6 +144,10 @@ adds the developer assistant (`/dev-assistant`): RAG over the project's own docs
   browser. **The host machinery lives in `src/lib/mcp/`** (`client.server.ts`, `registry.server.ts`,
   `types.ts`, `serve.ts`, `response.ts`); each feature declares its own `McpServerSpec` list
   (`features/agent/server/mcp-registry.server.ts`, `features/dev-assistant/server/mcp-registry.server.ts`).
+  Spec paths (`compiledFile`, `sourcePath`) resolve from one anchor — `process.cwd()`. Tools may declare
+  `outputSchema` and return `structuredContent`; the host surfaces it as `McpCallResult.structured` and
+  falls back to text, so consumers never parse another server's prose. Agent consumers bind the host to
+  their registry themselves (`server/mcp-tools.server.ts`); there is no per-feature pass-through module.
   MCP servers ship as compiled `.mjs` (`npm run build:mcp`), resolved via `AGENT_MCP_*_ENTRY` /
   `DEV_ASSISTANT_MCP_GIT_ENTRY` → `dist` → dev source. Sources are `.ts` executed by Node, which ignores
   tsconfig paths, so `scripts/mcp-alias-loader.mjs` (`--import`, `.ts` entries only) and an esbuild `alias`

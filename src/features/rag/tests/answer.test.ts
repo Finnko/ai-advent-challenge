@@ -10,6 +10,7 @@ import { answerQuestion, type AnswerLlm } from '../server/answer.server'
 import { buildIndex } from '../server/indexing.server'
 import {
   createRagStore,
+  EmptyIndexError,
   type RagIndexStore,
 } from '../server/index-store.server'
 import { createFixtureCorpus, makeDoc, SAMPLE_WIKI } from './rag-testkit'
@@ -293,7 +294,7 @@ describe('answerQuestion', () => {
         },
         { embedder: createHashEmbedder(256), store, llm },
       ),
-    ).rejects.toThrow(/пуст/)
+    ).rejects.toThrow(EmptyIndexError)
     store.close()
   })
 })

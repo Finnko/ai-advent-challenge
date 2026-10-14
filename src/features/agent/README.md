@@ -285,17 +285,20 @@ FSM `TaskState` к диалоговой памяти не привязан: он
   `npm run build` = `vite build && build:mcp`. В dev/test вход отдаётся исходным `.ts` (Node ≥22 type
   stripping), поэтому относительные импорты в `domain/{jobs,research,market}/**` и
   `mcp/{jobs,research,market}/**` — с явным `.ts`.
-- **Registry**: `server/mcp-registry.server.ts` — `SPECS: Record<McpServerKind, …>` (name, entry,
-  `childEnv`, `hiddenTools`, env-key); `McpServerKind = 'demo' | 'jobs' | 'research' | 'market'`;
-  `resolveMcpEntry(kind)`: env-override (`AGENT_MCP_DEMO_ENTRY`/`AGENT_MCP_JOBS_ENTRY`/
-  `AGENT_MCP_RESEARCH_ENTRY`/`AGENT_MCP_MARKET_ENTRY`) → `dist/server/mcp/*.mjs` (через `process.cwd()`,
-  т.к. в билде серверные чанки лежат в `dist/server/assets`) → dev-исходник. В дочерний процесс
+- **Registry**: `server/mcp-registry.server.ts` — `SPECS: Record<McpServerKind, McpServerSpec>` (name,
+  `envKey`, `compiledFile`, repo-root-relative `sourcePath`, `hiddenTools`, `childEnvKey`);
+  `McpServerKind = 'demo' | 'jobs' | 'research' | 'market'`; `createMcpRegistry(SPECS)` резолвит вход
+  env-override (`AGENT_MCP_DEMO_ENTRY`/`AGENT_MCP_JOBS_ENTRY`/`AGENT_MCP_RESEARCH_ENTRY`/
+  `AGENT_MCP_MARKET_ENTRY`) → `dist/server/mcp/*.mjs` (от `process.cwd()`, т.к. в билде серверные чанки
+  лежат в `dist/server/assets`) → dev-исходник (тоже от `process.cwd()`). В дочерний процесс
   форвардятся только `AGENT_DB_PATH`/`JOBS_DB_PATH`/`REPORTS_DIR`.
-- **Клиент**: `server/mcp.server.ts` — `withClient(entry, env)`, `listToolsFor(config)` и
-  `callToolOn(config, name, args)`; `listMcpTools()` сливает инструменты серверов, сбой одного
-  деградирует построчно; `callTool(name)` маршрутизирует по имени, `callToolOnServer(kind, …)` — явно.
-  Вызовы инструментов маршрутизируются по своему серверу через замыкание в `mcp-tools.server.ts`
-  (`loadMcpTools()` собирает `buildMcpAgentTools(visible, (name, args) => callToolOn(config, name, args))`).
+- **Клиент**: хост живёт в `@lib/mcp/client.server` — `withClient(entry, env)`, `listToolsFor(config)`,
+  `callToolOn(config, name, args)`, `callToolsFor(config, calls)` и `createMcpHost(registry)`.
+  `server/mcp-tools.server.ts` привязывает `mcpRegistry` к хосту: `listMcpTools` сливает инструменты
+  серверов (сбой одного деградирует построчно), `loadMcpTools()` маршрутизирует вызовы по своему серверу
+  через замыкание `(name, args) => callToolOn(config, name, args)`; `jobs.server.ts` берёт конфиг
+  `jobs` из реестра и зовёт `callToolOn` явно. Прежний проходной `server/mcp.server.ts` удалён
+  (ADR-0011).
 - **Интеграция с агентом**: `server/mcp-tools.server.ts` собирает `loadMcpTools()` per-server и
   исключает `hiddenTools` (`run_due_jobs` агенту не предлагается). `domain/mcp/agent-tools.ts`
   добавляет префикс `mcp_`, провенанс сервера в describe (`[research] …` — из `descriptor.server`) и

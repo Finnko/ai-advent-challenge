@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { buildAnswerMessages } from '../domain/answer-prompt'
+import { buildSourceMessages } from '../domain/answer-persona'
+import { personaFor } from '../domain/answer-prompt'
 import { parseCitations } from '../domain/answer-eval'
 import {
   GENERATOR_SHORT_LABELS,
@@ -61,9 +62,9 @@ export default function AnswerCard({
   const [showPrompt, setShowPrompt] = useState(false)
   const citations = parseCitations(result.answer)
   const messages = showPrompt
-    ? buildAnswerMessages({
+    ? buildSourceMessages({
         question: result.query,
-        mode: result.mode,
+        persona: personaFor(result.mode),
         chunks: result.sources.map((source) => source.chunk),
       })
     : []
