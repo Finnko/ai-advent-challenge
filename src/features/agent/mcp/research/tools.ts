@@ -15,7 +15,7 @@ import {
   type SearchResult,
   type WebSource,
 } from '../../domain/research/types.ts'
-import { errorMessage, fail, ok, type ToolResult } from '../shared/response.ts'
+import { errorMessage, fail, ok, type ToolResult } from '@lib/mcp/response.ts'
 
 type Args = Record<string, unknown>
 

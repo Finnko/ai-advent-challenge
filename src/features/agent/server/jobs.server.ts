@@ -1,7 +1,8 @@
+import { callToolOn } from '@lib/mcp/client.server'
 import type { JobsOverview } from '../domain/jobs/types'
 import { runView, scheduleView } from '../domain/jobs/view'
 import { getJobsDb } from '../mcp/jobs/db'
-import { callToolOnServer } from './mcp.server'
+import { mcpRegistry } from './mcp-registry.server'
 
 export type {
   JobsOverview,
@@ -23,7 +24,11 @@ export async function listJobsOverview(): Promise<JobsOverview> {
 export type JobsTickResult = { ok: boolean; text: string }
 
 export async function runJobsTick(): Promise<JobsTickResult> {
-  const result = await callToolOnServer('jobs', 'run_due_jobs', {})
+  const config = mcpRegistry.configFor('jobs')
+  if (!config) {
+    return { ok: false, text: 'MCP-сервер jobs не сконфигурирован.' }
+  }
+  const result = await callToolOn(config, 'run_due_jobs', {})
   if (result.ok) {
     return { ok: true, text: result.text }
   }

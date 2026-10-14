@@ -1,14 +1,13 @@
 import type { ChatUsage } from '@lib/llm'
-import { parseAnswerResponse } from '../domain/answer-format'
-import { abstainAnswer, buildAnswerMessages } from '../domain/answer-prompt'
-import { verdictFor, verifyQuotes } from '../domain/answer-eval'
-import type { AnswerQuote, AnswerVerdict } from '../domain/answer-eval'
+import { personaFor } from '../domain/answer-prompt'
 import {
-  resolvePipeline,
-  type PipelineConfig,
-  type RagPipelineId,
-} from '../domain/pipelines'
-import { cosineOf, relevanceOf } from '../domain/scoring'
+  verdictFor,
+  type AnswerQuote,
+  type AnswerVerdict,
+} from '../domain/answer-eval'
+import type { PipelineConfig, RagPipelineId } from '../domain/pipelines'
+import { resolvePipeline } from '../domain/pipelines'
+import type { SearchScope } from '../domain/search-scope'
 import type {
   AnswerGenerator,
   AnswerMode,
@@ -21,13 +20,14 @@ import {
   createDeepSeekAnswerLlm,
   createDeepSeekLlm,
 } from './answer-llm.server'
-import { runPipeline, type PipelineRunResult } from './pipeline-run.server'
+import { assertIndexBuilt } from './index-store.server'
 import {
   resolveAnswerRuntime,
   type AnswerRuntime,
   type AnswerRuntimeOverrides,
 } from './runtime.server'
-import { stitchSources, type RetrievalResult } from './retrieval.server'
+import { searchSources, type SourcesOutcome } from './search.server'
+import { answerFromSources, type SourceAnswer } from './source-answer.server'
 
 export type { AnswerLlm, AnswerLlmResult } from './answer-llm.server'
 export {
@@ -68,12 +68,6 @@ export type AnswerResponse = {
   latencyMs: number
 }
 
-function emptyIndexError(strategy: ChunkingStrategyId): Error {
-  return new Error(
-    `Индекс стратегии «${strategy}» пуст — соберите его во вкладке «Индекс».`,
-  )
-}
-
 function pipelineConfig(input: AnswerInput): PipelineConfig | null {
   if (input.mode !== 'rag') {
     return null
@@ -81,65 +75,53 @@ function pipelineConfig(input: AnswerInput): PipelineConfig | null {
   return resolvePipeline(input.pipeline ?? 'rag')
 }
 
+function scopeFor(input: AnswerInput, config: PipelineConfig): SearchScope {
+  return {
+    strategy: input.strategy,
+    k: input.k,
+    rerank: config.rerank,
+    rewrite: config.rewrite,
+    stitch: input.stitch === true,
+  }
+}
+
 async function runRetrieval(
   input: AnswerInput,
   deps: AnswerRuntime,
-  config: PipelineConfig | null,
-): Promise<PipelineRunResult> {
-  if (config === null) {
-    return {
-      retrieval: {
-        results: [],
-        reranked: false,
-        candidateCount: 0,
-        embeddingQuery: input.query,
-      },
-      rewrittenQuery: null,
-    }
-  }
-  if (deps.store.countChunks(input.strategy) === 0) {
-    throw emptyIndexError(input.strategy)
-  }
-  return runPipeline(
-    config,
-    {
-      strategy: input.strategy,
-      query: input.query,
-      k: input.k,
-      threshold: deps.threshold,
-    },
-    {
-      embedder: deps.embedder,
-      store: deps.store,
-      reranker: deps.reranker,
-      rewriter: deps.rewriter,
-      margin: deps.margin,
-    },
-  )
+  config: PipelineConfig,
+): Promise<SourcesOutcome> {
+  assertIndexBuilt(deps.store, input.strategy)
+  return searchSources({
+    scope: scopeFor(input, config),
+    query: input.query,
+    store: deps.store,
+    embedder: deps.embedder,
+    reranker: deps.reranker,
+    rewriter: deps.rewriter,
+    rerankThreshold: deps.threshold,
+    cosineThreshold: deps.cosineThreshold,
+    margin: deps.margin,
+  })
 }
 
-function confidence(result: RetrievalResult): number | null {
-  const top = result.results[0]
-  if (!top) {
+function verdictOf(
+  input: AnswerInput,
+  result: SourceAnswer,
+): AnswerVerdict | null {
+  if (!input.expected) {
     return null
   }
-  return result.reranked ? relevanceOf(top) : cosineOf(top)
-}
-
-function shouldAbstain(
-  config: PipelineConfig | null,
-  retrieval: RetrievalResult,
-  deps: AnswerRuntime,
-): boolean {
-  if (config === null) {
-    return false
+  if (result.abstained) {
+    return 'abstained'
   }
-  if (retrieval.results.length === 0) {
-    return true
-  }
-  const threshold = retrieval.reranked ? deps.threshold : deps.cosineThreshold
-  const score = confidence(retrieval)
-  return score !== null && score < threshold
+  return verdictFor({
+    mode: input.mode,
+    answer: result.answer,
+    expected: input.expected,
+    expectedSources: input.expectedSources ?? [],
+    chunks: result.chunks,
+    quotes: result.quotes,
+  })
 }
 
 export async function answerQuestion(
@@ -149,63 +131,31 @@ export async function answerQuestion(
   const generator = input.generator ?? 'cloud'
   const deps = await resolveAnswerRuntime(overrides, generator)
   const config = pipelineConfig(input)
-  const { retrieval, rewrittenQuery } = await runRetrieval(input, deps, config)
-  const base = {
+  const retrieval =
+    config === null ? null : await runRetrieval(input, deps, config)
+  const result = await answerFromSources({
+    question: input.query,
+    persona: personaFor(input.mode),
+    retrieval,
+    generator,
+    llm: deps.llm,
+  })
+  return {
     mode: input.mode,
     generator,
+    model: result.model,
     pipeline: config ? (input.pipeline ?? 'rag') : null,
     query: input.query,
-    embeddingQuery: retrieval.embeddingQuery,
-    rewrittenQuery,
-    reranked: retrieval.reranked,
-  }
-  if (shouldAbstain(config, retrieval, deps)) {
-    return {
-      ...base,
-      model: null,
-      answer: abstainAnswer(input.query),
-      format: 'text',
-      sources: [],
-      quotes: [],
-      abstained: true,
-      verdict: input.expected ? 'abstained' : null,
-      usage: null,
-      latencyMs: 0,
-    }
-  }
-  const sources =
-    input.stitch && config !== null
-      ? stitchSources(retrieval.results, deps.store, input.strategy)
-      : retrieval.results
-  const chunks = sources.map((source) => source.chunk)
-  const messages = buildAnswerMessages({
-    question: input.query,
-    mode: input.mode,
-    chunks,
-  })
-  const reply = await deps.llm(messages, { json: input.mode === 'rag' })
-  const parsed = parseAnswerResponse(reply.content)
-  const quotes = verifyQuotes(parsed.quotes, chunks)
-  const verdict = input.expected
-    ? verdictFor({
-        mode: input.mode,
-        answer: parsed.answer,
-        expected: input.expected,
-        expectedSources: input.expectedSources ?? [],
-        chunks,
-        quotes,
-      })
-    : null
-  return {
-    ...base,
-    model: reply.model,
-    answer: parsed.answer,
-    format: parsed.format,
-    sources,
-    quotes,
-    abstained: false,
-    verdict,
-    usage: reply.usage,
-    latencyMs: reply.latencyMs,
+    embeddingQuery: retrieval?.embeddingQuery ?? input.query,
+    rewrittenQuery: retrieval?.rewrittenQuery ?? null,
+    reranked: retrieval?.reranked ?? false,
+    answer: result.answer,
+    format: result.format,
+    sources: result.sources,
+    quotes: result.quotes,
+    abstained: result.abstained,
+    verdict: verdictOf(input, result),
+    usage: result.usage,
+    latencyMs: result.latencyMs,
   }
 }

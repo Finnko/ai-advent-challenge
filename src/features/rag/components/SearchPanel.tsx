@@ -3,9 +3,9 @@ import { useRagSearch } from '../api/use-rag-search'
 import {
   STRATEGY_IDS,
   STRATEGY_LABELS,
-  STRATEGY_SHORT_LABELS,
+  strategyShortLabel,
 } from '../data/rag-ui'
-import type { ChunkingStrategyId } from '../types'
+import type { RagChunkingStrategyId } from '../types'
 import { Alert } from '@/components/ui/Alert'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
@@ -20,7 +20,7 @@ function scoreLabel(score: number): string {
 }
 
 export default function SearchPanel() {
-  const [strategy, setStrategy] = useState<ChunkingStrategyId>('fixed')
+  const [strategy, setStrategy] = useState<RagChunkingStrategyId>('fixed')
   const [query, setQuery] = useState('')
   const [k, setK] = useState(5)
   const [candidateK, setCandidateK] = useState(20)
@@ -200,7 +200,7 @@ export default function SearchPanel() {
                   </span>
                 )}
                 <span className="demo-muted">
-                  {STRATEGY_SHORT_LABELS[item.chunk.strategy]}
+                  {strategyShortLabel(item.chunk.strategy)}
                 </span>
               </div>
               <p className="m-0 whitespace-pre-wrap text-xs leading-relaxed text-[var(--ink-soft)]">

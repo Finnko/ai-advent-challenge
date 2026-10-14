@@ -59,4 +59,11 @@ export const DAYS = [
     description:
       'Sweep prompt-шаблона, temperature, max_tokens и размера контекста на задаче извлечения фактов: качество, скорость и память до/после, плюс сравнение квантизаций.',
   },
+  {
+    path: '/dev-assistant',
+    label: 'Dev assistant',
+    title: 'Ассистент разработчика',
+    description:
+      'RAG по документации самого проекта (README, ADR, README фич, схемы данных) плюс живой git-контекст через MCP: вопросы о структуре, командах и текущей ветке.',
+  },
 ] as const

@@ -10,8 +10,4 @@ export function getAgentCapabilities(): AgentCapability[] {
   return [...capabilities.values()]
 }
 
-export function findAgentCapability(id: string): AgentCapability | null {
-  return capabilities.get(id) ?? null
-}
-
 export const AGENT_RAG_CAPABILITY_ID = 'rag'

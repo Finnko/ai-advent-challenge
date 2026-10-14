@@ -1,26 +1,40 @@
 import type { AnswerVerdict } from '../domain/answer-eval'
+import { isChunkingStrategyId } from '../domain/chunking/registry'
 import { RAG_PIPELINE_IDS, type RagPipelineId } from '../domain/pipelines'
 import type {
   AnswerGenerator,
   AnswerMode,
   ChunkingStrategyId,
+  RagChunkingStrategyId,
 } from '../domain/types'
 
-export const STRATEGY_IDS: ChunkingStrategyId[] = ['fixed', 'structural']
+export const STRATEGY_IDS: RagChunkingStrategyId[] = ['fixed', 'structural']
 
-export const STRATEGY_LABELS: Record<ChunkingStrategyId, string> = {
+export const STRATEGY_LABELS: Record<RagChunkingStrategyId, string> = {
   fixed: 'По фиксированному размеру',
   structural: 'По структуре (разделы)',
 }
 
-export const STRATEGY_SHORT_LABELS: Record<ChunkingStrategyId, string> = {
+export const STRATEGY_SHORT_LABELS: Record<RagChunkingStrategyId, string> = {
   fixed: 'fixed',
   structural: 'structural',
 }
 
-export const STRATEGY_DETAILS: Record<ChunkingStrategyId, string> = {
+export const STRATEGY_DETAILS: Record<RagChunkingStrategyId, string> = {
   fixed: '256 токенов, перекрытие 32',
   structural: 'разделы статьи до 256 токенов',
+}
+
+export function strategyLabel(id: ChunkingStrategyId): string {
+  return isChunkingStrategyId(id) ? STRATEGY_LABELS[id] : id
+}
+
+export function strategyShortLabel(id: ChunkingStrategyId): string {
+  return isChunkingStrategyId(id) ? STRATEGY_SHORT_LABELS[id] : id
+}
+
+export function strategyDetails(id: ChunkingStrategyId): string {
+  return isChunkingStrategyId(id) ? STRATEGY_DETAILS[id] : id
 }
 
 export const MODE_LABELS: Record<AnswerMode, string> = {

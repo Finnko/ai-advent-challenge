@@ -1,9 +1,10 @@
 # Project: AI Advent Challenge
 
-Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 30 (`feature/day30`).
+Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 31 (`feature/day31`).
 Days 13–20 extend the unified `/agent` (task state, invariants, MCP); Days 21–25 build `/rag` and make it an
 agent capability. Days 26–30 add local-MLX features: the `/local-llm` tab, a Telegram quiz bot, a local RAG
-generator, the `/llm-opt` lab, and the private `llm-service` gateway published over Tailscale Funnel.
+generator, the `/llm-opt` lab, and the private `llm-service` gateway published over Tailscale Funnel. Day 31
+adds the developer assistant (`/dev-assistant`): RAG over the project's own docs plus git over MCP.
 
 ## Where to read more
 
@@ -19,6 +20,9 @@ generator, the `/llm-opt` lab, and the private `llm-service` gateway published o
   results persistence and the quantization procedure. Read it before editing the lab.
 - `src/features/llm-service/README.md` — the private LLM service: gateway module map, API/limits, run and
   publish (Tailscale Funnel) instructions, and the stability probe. Read it before editing the service.
+- `src/features/dev-assistant/README.md` — the developer assistant (Day 31): project corpus, markdown
+  chunker, cosine retrieval, the git MCP server and `/help`. Read it before editing it or the shared RAG
+  engine / MCP host in `src/lib`.
 - `CODING_STANDARDS.md` — style, test and product-scope rules to apply when writing or reviewing code.
 - `GLOSSARY.md` — domain vocabulary (Ход, Задача, Этап, Инвариант, …).
 - `README.md` — day-by-day log of the challenge.
@@ -57,12 +61,23 @@ generator, the `/llm-opt` lab, and the private `llm-service` gateway published o
 - `src/features/llm-service/` — standalone private LLM service (Day 30): a Node HTTP gateway in front of
   the local MLX model with an OpenAI-compatible API, a chat page and limits; published via Tailscale
   Funnel. Bundled with esbuild, outside `vite build` (module map in the feature README).
-- `src/lib/` — shared: `llm.ts`/`llm.server.ts` (transport), `agent-rag.server.ts` (app composition),
-  `functions/*.functions.ts` (Days 1–5 server fns + shared `validation.ts`), `day2.ts`…`day5.ts`,
-  `days.ts` (sidebar), `utils.ts` (`cn`).
+- `src/features/dev-assistant/` — standalone assistant (Day 31) that answers about the project: its own
+  markdown corpus read from disk, a private markdown scope of the shared structural chunker, its own
+  SQLite index, and a read-only git MCP server. It imports only `@lib` (never `features/rag` or
+  `features/agent`); module map in the feature README.
+- `src/lib/` — shared: `llm.ts`/`llm.server.ts` (transport), `agent-rag.server.ts` (agent↔RAG
+  composition), `rag-engine.{types,server}.ts` (app-level RAG engine facade: index → `searchSources` →
+  `answerFromSources`), `source-format.ts` (numbered Источники), `mcp/**` (shared MCP host, generic
+  context collector, server helpers), `functions/*.functions.ts`
+  (Days 1–5 server fns + shared `validation.ts`), `day2.ts`…`day5.ts`, `days.ts` (sidebar), `utils.ts` (`cn`).
+  **`src/lib` composes features, it does not depend on one**: only the app-level composition modules
+  (`agent-rag.server.ts`, `rag-engine.{server,types}.ts`) import `features/*`; every other `lib` module
+  (transport, `mcp/**`, `source-format.ts`) stays feature-agnostic and never reaches into a feature's
+  private registry.
 - `src/components/` — app shell (`Header`, `Sidebar`, `Chat`) and shared `ui/Tabs.tsx`.
 - `src/routes/` — thin route wrappers; `/agent` → `AgentPage`, `/rag` → `RagPage`, `/local-llm` →
-  `LocalLlmPage`, `/llm-opt` → `LlmOptPage`, old `/agent-*` routes redirect to `/agent`.
+  `LocalLlmPage`, `/llm-opt` → `LlmOptPage`, `/dev-assistant` → `DevAssistantPage`; old `/agent-*` routes
+  redirect to `/agent`.
 
 ## Hard rules
 
@@ -109,14 +124,34 @@ generator, the `/llm-opt` lab, and the private `llm-service` gateway published o
   published via Tailscale Funnel; it reaches the model only through `@lib/local-llm.server`, gates with
   `LLM_SERVICE_KEYS`, and enforces rate limit / max context / a single-flight queue in-process. Relaxes the
   local-llm dev-only and no-streaming rules — see the feature README and ADR-0008.
+- **Developer assistant (Day 31)**: `features/dev-assistant/` is a dev/local-only `/dev-assistant` page that
+  answers about the project itself. It reuses RAG through `src/lib/rag-engine.server.ts` (the
+  `searchSources` / `answerFromSources` seams over `features/rag`, which it never imports) and git through
+  a read-only MCP server (`dev-assistant-mcp-git`: branch/status/log/changed files/diff) reached via
+  `src/lib/mcp`. Corpus is read from disk (`data/corpus-manifest.ts`), chunked by a private markdown scope
+  of the shared structural chunker (id `markdown`, unregistered), stored in its own SQLite; the git context
+  is collected by the feature (`server/git-context.server.ts`) over the generic
+  `@lib/mcp/context.server`; the headless core `answerAboutProject({ question, store, generator,
+  contextBlocks })` takes plain `contextBlocks` (today git, Day 32 the PR diff) and reuses the RAG JSON
+  contract/quote verification. `/help` is the one real command. See the feature README, ADR-0009,
+  ADR-0010 and ADR-0011.
 - **MCP tools**: `agent-mcp-demo` is read-only; `agent-mcp-jobs` writes its own `jobs.sqlite`. Tool
   metadata travels over the protocol: each spawned server sets `annotations: { readOnlyHint }`, the host
   derives `descriptor.mutating` (`readOnlyHint !== true` → mutating, fail-closed) and mutating MCP tools
   obey the same task-stage gate as internal mutations; reference MCP tools stay available in every stage.
   Never reintroduce a host-side hardcoded list of MCP tool names. Discovery/listing degrades per
   server (a dead server removes only its tools). The MCP SDK reaches neither the LLM transport nor the
-  browser. MCP servers ship as compiled `.mjs` (`npm run build:mcp`), resolved by
-  `server/mcp-registry.server.ts` via `AGENT_MCP_DEMO_ENTRY`/`AGENT_MCP_JOBS_ENTRY` → `dist` → dev source.
+  browser. **The host machinery lives in `src/lib/mcp/`** (`client.server.ts`, `registry.server.ts`,
+  `types.ts`, `serve.ts`, `response.ts`); each feature declares its own `McpServerSpec` list
+  (`features/agent/server/mcp-registry.server.ts`, `features/dev-assistant/server/mcp-registry.server.ts`).
+  Spec paths (`compiledFile`, `sourcePath`) resolve from one anchor — `process.cwd()`. Tools may declare
+  `outputSchema` and return `structuredContent`; the host surfaces it as `McpCallResult.structured` and
+  falls back to text, so consumers never parse another server's prose. Agent consumers bind the host to
+  their registry themselves (`server/mcp-tools.server.ts`); there is no per-feature pass-through module.
+  MCP servers ship as compiled `.mjs` (`npm run build:mcp`), resolved via `AGENT_MCP_*_ENTRY` /
+  `DEV_ASSISTANT_MCP_GIT_ENTRY` → `dist` → dev source. Sources are `.ts` executed by Node, which ignores
+  tsconfig paths, so `scripts/mcp-alias-loader.mjs` (`--import`, `.ts` entries only) and an esbuild `alias`
+  in `scripts/build-mcp.mjs` provide `@/`/`@lib/` + extensionless resolution at runtime and at build time.
 - **Workflow**: work on `feature/dayN` branches; commit only when asked. Deployment lives in `deploy/`
   (systemd + timer, Tailscale-only; the Day-30 private service adds a `launchd` example and is published
   through Tailscale Funnel). Tracked docs live in `docs/` (decisions in `docs/adr/`); working

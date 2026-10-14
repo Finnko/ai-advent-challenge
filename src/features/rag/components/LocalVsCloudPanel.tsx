@@ -11,7 +11,7 @@ import {
 import type {
   AnswerGenerator,
   AnswerResult,
-  ChunkingStrategyId,
+  RagChunkingStrategyId,
   RagPipelineId,
 } from '../types'
 import AnswerCard from './AnswerCard'
@@ -121,7 +121,7 @@ function summaryText(summary: GeneratorSummary, total: number): string {
 }
 
 export default function LocalVsCloudPanel() {
-  const [strategy, setStrategy] = useState<ChunkingStrategyId>('fixed')
+  const [strategy, setStrategy] = useState<RagChunkingStrategyId>('fixed')
   const [k, setK] = useState(5)
   const [pipeline, setPipeline] = useState<RagPipelineId>('rag+rerank')
   const run = useGeneratorRun()

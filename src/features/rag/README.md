@@ -17,12 +17,14 @@ src/features/rag/
                  # use-rag-local-status + use-generator-run (Day 28)
   functions/     # createServerFn-адаптеры: build-index, search, answer, get-index-stats, get-comparison,
                  # local-status, list-corpus, list-chunks + validation.ts
-  server/        # *.server.ts: corpus, embedder, index-store, indexing, retrieval, pipeline-run, reranker,
-                 # rewrite, answer-llm, local-llm, comparison, answer, runtime, rag
+  server/        # *.server.ts: corpus, embedder, index-store, indexing, retrieval, pipeline-run, search,
+                 # reranker, rewrite, answer-llm, local-llm, comparison, source-answer, answer, runtime, rag
   domain/        # изоморфно, без env/fetch: chunking/{fixed,structural,registry,windows,types}, corpus,
-                 # embedder (шов + hash-эмбеддер), reranker (шов + lexical), pipelines, rewrite-prompt,
-                 # scoring (доступ к скорам), wikipedia (парсер заголовков), metrics, answer-prompt,
-                 # answer-format, answer-eval, types
+                 # embedder (шов + hash-эмбеддер), reranker (шов + lexical), pipelines, search-scope
+                 # (область поиска), rewrite-prompt, scoring (доступ к скорам), sections (общий парсер
+                 # заголовков + правила wiki/markdown), wikipedia (wiki-правило), metrics, answer-prompt
+                 # (personae ответа), answer-persona (шов «Источники → ответ»), answer-format,
+                 # answer-eval, types
   data/          # cities (15 городов), corpus (снапшот 15 статей), eval-queries (16 вопросов),
                  # control-questions (10 контрольных), abstain-questions (3 вне корпуса), rag-ui (подписи)
   components/    # IndexPanel, SearchPanel, AnswerPanel, ControlPanel, AnswerCard, ComparisonPanel,
@@ -56,12 +58,21 @@ src/features/rag/
 - **fixed** (`fixed.ts`): окно по токенам через `gpt-tokenizer`, 256 токенов, перекрытие 32.
   `section` — ближайший предшествующий заголовок, `crossesSection` — разошлись ли начало и конец
   чанка по разделам.
-- **structural** (`structural.ts`): разбиение по заголовкам `== … ==` (`domain/wikipedia.ts`),
-  секции > 256 токенов нарезаются по токенам, мелкие подразделы (< 48 токенов) склеиваются с
-  родительским.
+- **structural** (`structural.ts`): фабрика `createStructuralChunker({ id, parseSections, minTokens,
+  maxTokens })` — разбиение по заголовкам (правило приходит параметром), секции > `maxTokens`
+  нарезаются по токенам, мелкие подразделы (< `minTokens` токенов) склеиваются с родительским.
+  Wiki-вариант — `structuralStrategy` (`parseWikiSections`), markdown-вариант живёт у потребителя
+  (dev-assistant) и в общий реестр не регистрируется.
 
-`domain/wikipedia.ts` строит секции с путём (`Статья > Раздел > Подраздел`), уровнями и
-char-офсетами; `domain/chunking/windows.ts` — общий токенный нарезчик и сборка `Chunk`.
+`domain/sections.ts` — общий парсер секций: `parseSections(text, headingRe)` строит секции с путём
+(`Статья > Раздел > Подраздел`), уровнями и char-офсетами, а также держит оба правила заголовков
+(`WIKI_HEADING_RE`, `MARKDOWN_HEADING_RE`); `domain/wikipedia.ts` — тонкий адаптер wiki-правила.
+`domain/chunking/windows.ts` — общий токенный нарезчик и сборка `Chunk`.
+
+`ChunkingStrategyId` — **открытая строка** (id чанкера задаётся один раз — в фабрике — и попадает и в
+`Chunk.strategy`, и в `chunkId`), а замкнутый набор общей витрины ограничивает
+`RagChunkingStrategyId` (`fixed | structural`) в `domain/chunking/registry.ts`. Поэтому у второго
+корпуса может быть свой id (`markdown`) без правок общего пикера.
 
 Метаданные чанка: `chunk_id, strategy, doc_id, source, title, section, section_path, position,
 char_start, char_end, n_tokens, crosses_section, text`.
@@ -109,10 +120,16 @@ char_start, char_end, n_tokens, crosses_section, text`.
 - Пайплайны (`domain/pipelines.ts`) — именованные пресеты: `rag`, `rag+rerank`, `rag+rewrite`,
   `rag+rewrite+rerank`. Внутри — флаги `{ rewrite, rerank }`; порог — явный параметр
   (`DEFAULT_RERANK_THRESHOLD` = 0.5, `DEFAULT_RERANK_MARGIN` = 0.1, `COSINE_TIE_EPSILON` = 1e-6).
-- `server/pipeline-run.server.ts` (`runPipeline`) — **один шов** для всех пайплайнов: превращает
-  `PipelineConfig` в параметры `retrieve` (реранкер/порог/margin), делает rewrite через
-  `rewriteQuery` (fail-open) и опциональный `rewriteCache`. Им пользуются «Поиск», «Ответ» и
-  «Сравнение» — режимная логика больше не дублируется у вызывающих.
+- `server/pipeline-run.server.ts` (`runPipeline`) — механизм: превращает `PipelineConfig` в параметры
+  `retrieve` (реранкер/порог/margin), делает rewrite через `rewriteQuery` (fail-open) и опциональный
+  `rewriteCache`. Режимная логика не дублируется у вызывающих.
+- `server/search.server.ts` (`searchSources`) — **глубокий шов поиска над `runPipeline`**: принимает
+  «область поиска» (`domain/search-scope.ts`: стратегия, k, rerank, rewrite, stitch, candidateK),
+  запрос и стор, а возвращает Источники вместе с политикой релевантности: `reranked`,
+  `confidence` (relevance при реранке, иначе косинус), `threshold` (какой именно порог применён) и
+  `weak` («фрагментов недостаточно для ответа по документам»). Дефолтные адаптеры (эмбеддер, реранкер,
+  rewrite) резолвятся внутри, но переопределяются параметрами. Им пользуются «Поиск», «Ответ»,
+  способность агента и dev-assistant.
 - `server/runtime.server.ts` (`resolveRuntime`/`resolveAnswerRuntime`) — единая композиция
   адаптеров (`corpus`, `embedder`, `store`, `reranker`, `rewriter`, `llm`) и resolved-порогов;
   точки входа принимают частичный override, тесты подменяют только нужный адаптер.
@@ -155,14 +172,21 @@ char_start, char_end, n_tokens, crosses_section, text`.
 Вкладка «Ответ» — первый RAG-запрос: `вопрос → поиск релевантных чанков → объединение с вопросом →
 запрос к LLM`. Реализован как **фиксированный пайплайн** (не агентный цикл).
 
-- `server/answer.server.ts` (`answerQuestion`) — глубокий модуль. Зависимости — частичный
-  `AnswerRuntime` (см. `server/runtime.server.ts`); `AnswerLlm` по умолчанию оборачивает
-  `callCompletions(TIER_ENDPOINTS.medium, …)` (`temperature: 0`, `max_tokens: 700`). Для режима
-  `baseline` поиск пропускается, для `rag` при `countChunks(strategy) === 0` бросается явная ошибка
-  («соберите индекс») — без автосборки и фолбэков.
-- `domain/answer-prompt.ts` — чистая сборка сообщений. Один базовый system для обоих режимов; у RAG
-  добавляется требование опираться только на контекст и ссылаться `[n]`, контекст — нумерованный блок
-  `[n] title — section\n<text>`. У baseline — просьба честно говорить «не знаю».
+- `server/answer.server.ts` (`answerQuestion`) — тонкий адаптер над `searchSources` и
+  `answerFromSources`: собирает область поиска из `AnswerInput` и пайплайна, гоняет retrieval, затем
+  общий шаг «Источники → ответ» и добавляет режимные поля (`pipeline`, `verdict`, `embeddingQuery`).
+  Зависимости — частичный `AnswerRuntime` (см. `server/runtime.server.ts`); `AnswerLlm` по умолчанию
+  идёт через `resolveAnswerLlm(generator)` (`temperature: 0`, `max_tokens: 700`). Для режима
+  `baseline` поиск не выполняется (`retrieval: null`), для `rag` при пустом индексе бросается
+  `EmptyIndexError` (`assertIndexBuilt`) — без автосборки и фолбэков.
+- `server/source-answer.server.ts` (`answerFromSources`) — общий шов «Источники → ответ»: гейт
+  абстенции (weak + «спасает ли контекст»), сборка сообщений, вызов LLM, разбор JSON и заверение
+  цитат **против тех же чанков, что ушли в промпт**. У каждого потребителя своя персона
+  (`AnswerPersona`: system, заголовок блока фрагментов, заголовок блока контекста, `contextRescues`,
+  `json`, текст абстенции).
+- `domain/answer-prompt.ts` — personae вики-ответа (`personaFor(mode)`) и тексты промптов;
+  нумерованный блок `[n] title — section\n<text>` собирает общий `domain/answer-persona.ts`
+  (`buildSourceMessages`) через `@lib/source-format`.
 - `domain/answer-eval.ts` — детерминированная оценка: `matchExpected` (нормализация регистра,
   схлопывание разрядов чисел в «1 190 254»), `parseCitations` (`[n]`), `citedTitles`, `verdictFor` →
   `correct | partial | wrong | ungrounded`. «Без опоры» — RAG-ответ с фактами, но без цитат или со
@@ -190,11 +214,13 @@ char_start, char_end, n_tokens, crosses_section, text`.
 - **Цитаты заверяются.** `verifyQuotes(quotes, chunks)` (`domain/answer-eval.ts`) принимает цитату только
   если её нормализованный текст — подстрока соответствующего чанка (`n`). Вердикт `ungrounded`, если
   подтверждённых цитат нет или ожидаемые факты не встречаются в них.
-- **«Не знаю» по порогу.** `shouldAbstain` в `server/answer.server.ts`: скор верхнего кандидата ниже
-  порога → сервер без вызова LLM возвращает `abstainAnswer(query)`, `abstained: true`, пустые
-  `sources`/`quotes`, вердикт `abstained`. Для rerank-режимов порог — `relevance` (`RAG_RERANK_THRESHOLD`),
-  для `rag`/`rag+rewrite` — косинус (`RAG_COSINE_THRESHOLD`, дефолт `0.35`). Сам `retrieve` сохраняет
-  гарантию минимум одного результата — это не задевает «Поиск» и сравнение.
+- **«Не знаю» по порогу.** Политика релевантности живёт в `searchSources`: `weak` = пустой результат
+  либо `confidence < threshold`, где `confidence` — `relevance` верхнего кандидата при реранке и
+  косинус без него, а `threshold` — `RAG_RERANK_THRESHOLD` для rerank-режимов и `RAG_COSINE_THRESHOLD`
+  (дефолт `0.35`) для `rag`/`rag+rewrite`. Решение «что делать со weak» принимает
+  `answerFromSources`: без контекстного блока — сервер без вызова LLM возвращает
+  `abstainAnswer(query)`, `abstained: true`, пустые `sources`/`quotes`, вердикт `abstained`. Сам
+  `retrieve` сохраняет гарантию минимум одного результата — это не задевает «Поиск» и сравнение.
 - **Больше контекста.** Опция `stitch` (`stitchSources`) добавляет к выдаче соседние чанки того же
   раздела/документа с флагом `stitched: true` — против «модель заблудилась» в длинной статье. Ранжирование
   не меняется.
@@ -204,12 +230,20 @@ char_start, char_end, n_tokens, crosses_section, text`.
 ## Потребитель: способность агента (Day 25)
 
 RAG отдаётся агенту, но сама фича остаётся автономной: `features/rag` **не импортирует**
-`features/agent`. Адаптер живёт вне обеих фич — `src/lib/agent-rag.server.ts`: он вызывает
-`retrieve`/`createEmbedder`/`createReranker`, мапит `ScoredChunk` в `RetrievedSource`, фильтрует
-ниже порога `RAG_RERANK_THRESHOLD` и регистрирует `AgentCapability` в реестре агента (бутстрап —
-`src/server.ts`). Агент при `ragEnabled` делает always-on retrieval каждый Ход и добавляет
-read-only `rag_search` (стратегия — `structural`, `k = 6`). ONNX/`node:sqlite` остаются внутри
-`features/rag/server`.
+`features/agent`. Адаптер живёт вне обеих фич — `src/lib/agent-rag.server.ts`: он объявляет область
+поиска (`AGENT_RAG_SCOPE`: `structural`, `k = 6`, реранк) и вызывает `searchSources`, мапит полученные
+`ScoredChunk` в `RetrievedSource` (адаптер на шве Способности) и регистрирует `AgentCapability` в
+реестре агента (бутстрап — `src/server.ts`). Агент при `ragEnabled` делает always-on retrieval каждый
+Ход и добавляет read-only `rag_search`. ONNX/`node:sqlite` остаются внутри `features/rag/server`.
+
+## Общий движок для других фич (Day 31)
+
+`src/lib/rag-engine.{server,types}.ts` — приложенческий фасад над этой фичей: другой фиче
+(dev-assistant) доступны сборка индекса, стор, область поиска (`searchSources`) и общий шаг
+«Источники → ответ» (`answerFromSources`) плюс типы. Низкоуровневые `retrieve`/`stitchSources`/
+`runPipeline` остаются внутренними: политика релевантности, промпты и заверение цитат живут за
+фасадом, а не у потребителей. Пустой индекс выражается общим `EmptyIndexError` и проверкой
+`assertIndexBuilt(store, strategy)`. Подробности — ADR-0011.
 
 ## Локальная генерация (Day 28)
 
@@ -261,8 +295,10 @@ read-only `rag_search` (стратегия — `structural`, `k = 6`). ONNX/`nod
   (разбор JSON/фенсов/битых цитат/фолбэк), `answer-contract.test.ts` (синтетический факт: отвечает
   только grounded-RAG; stitch соседних чанков), `rerank.test.ts` (вторая стадия: реордер, порог,
   минимум 1, margin-guard, fail-open, `candidateK`; lexical-реранкер, sigmoid, разбор rewrite), оценка
-  `answer-eval.test.ts` (факты, цитаты, заверение цитат, вердикты) и `local-llm.test.ts` (Day 28:
-  резолв `RAG_LLM_MODEL`/дефолт, локальный адаптер с мок-fetch, JSON-режим, статус сервера).
+  `answer-eval.test.ts` (факты, цитаты, заверение цитат, вердикты), `search.test.ts`
+  (область поиска: выбор порога по реранку, `weak`-сигнал, стежок только по запросу) и
+  `local-llm.test.ts` (Day 28: резолв `RAG_LLM_MODEL`/дефолт, локальный адаптер с мок-fetch,
+  JSON-режим, статус сервера).
 - Gated: `embedder-integration.test.ts` и `reranker-integration.test.ts` (реальная модель) —
   `RUN_MODEL_TESTS=1`; `pipeline-integration.test.ts` (реальная статья + реальная модель) —
   `RUN_MODEL_TESTS=1` и `RUN_NETWORK_TESTS=1`.

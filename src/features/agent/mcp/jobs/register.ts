@@ -7,7 +7,7 @@ import {
   MIN_INTERVAL_MINUTES,
   MIN_WINDOW_HOURS,
 } from '../../domain/jobs/types.ts'
-import { toResponse } from '../shared/response.ts'
+import { toResponse } from '@lib/mcp/response.ts'
 import type { JobsToolkit } from './tools.ts'
 
 export function registerJobsTools(

@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
-import { errorMessage, type ToolResponse } from './shared/response.ts'
+import { errorMessage, type ToolResponse } from '@lib/mcp/response.ts'
 import { bookingsByRoom, dbOverview, employeeSchedule } from './db.ts'
 
 async function textResult(load: () => Promise<string>): Promise<ToolResponse> {

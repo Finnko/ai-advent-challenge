@@ -1,4 +1,4 @@
-import { serve } from '../shared/serve.ts'
+import { serve } from '@lib/mcp/serve.ts'
 import { registerResearchTools } from './register.ts'
 import { createFileReportsStore } from './reports.ts'
 import { createResearchToolkit } from './tools.ts'

@@ -1,4 +1,4 @@
-import { serve } from '../shared/serve.ts'
+import { serve } from '@lib/mcp/serve.ts'
 import { getJobsDb } from './db.ts'
 import { registerJobsTools } from './register.ts'
 import { createOpenMeteoSource } from './weather.ts'

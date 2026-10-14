@@ -1,5 +1,9 @@
 import { countTokens } from 'gpt-tokenizer'
-import { resolveChunkingStrategy } from '../domain/chunking/registry'
+import {
+  isChunkingStrategyId,
+  resolveChunkingStrategy,
+} from '../domain/chunking/registry'
+import type { ChunkingStrategy } from '../domain/chunking/types'
 import type { CorpusRef, CorpusSource } from '../domain/corpus'
 import type { Embedder } from '../domain/embedder'
 import type { Chunk, ChunkingStrategyId, RawDoc } from '../domain/types'
@@ -45,9 +49,20 @@ export type BuildIndexOptions = {
   corpus: CorpusSource
   embedder: Embedder
   store: RagIndexStore
+  chunker?: ChunkingStrategy
   batchSize?: number
   loadConcurrency?: number
   now?: () => Date
+}
+
+function resolveChunker(options: BuildIndexOptions): ChunkingStrategy {
+  if (options.chunker) {
+    return options.chunker
+  }
+  if (!isChunkingStrategyId(options.strategy)) {
+    throw new Error(`Неизвестная стратегия чанкинга: ${options.strategy}`)
+  }
+  return resolveChunkingStrategy(options.strategy)
 }
 
 export async function buildIndex(
@@ -56,7 +71,7 @@ export async function buildIndex(
   const started = Date.now()
   const now = options.now ?? (() => new Date())
   const batchSize = Math.max(1, options.batchSize ?? 16)
-  const strategy = resolveChunkingStrategy(options.strategy)
+  const chunker = resolveChunker(options)
   const refs = await options.corpus.list()
   const loadConcurrency = options.loadConcurrency ?? DEFAULT_LOAD_CONCURRENCY
   const docs = await loadDocs(refs, options.corpus, loadConcurrency)
@@ -65,7 +80,7 @@ export async function buildIndex(
   const chunks: Chunk[] = []
   const docRecords: DocumentRecord[] = []
   for (const doc of docs) {
-    chunks.push(...strategy.chunk(doc))
+    chunks.push(...chunker.chunk(doc))
     docRecords.push({
       id: doc.id,
       title: doc.title,

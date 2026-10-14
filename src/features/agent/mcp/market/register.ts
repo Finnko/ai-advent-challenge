@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
-import { toResponse } from '../shared/response.ts'
+import { toResponse } from '@lib/mcp/response.ts'
 import type { MarketToolkit } from './tools.ts'
 
 export function registerMarketTools(

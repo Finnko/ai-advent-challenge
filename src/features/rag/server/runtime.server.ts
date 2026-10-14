@@ -54,13 +54,17 @@ export async function resolveRuntime(
   }
 }
 
+export function resolveAnswerLlm(generator: AnswerGenerator): AnswerLlm {
+  return generator === 'local'
+    ? createLocalAnswerLlm()
+    : createDeepSeekAnswerLlm()
+}
+
 export async function resolveAnswerRuntime(
   overrides: AnswerRuntimeOverrides = {},
   generator: AnswerGenerator = 'cloud',
 ): Promise<AnswerRuntime> {
   const base = await resolveRuntime(overrides)
-  const llm =
-    overrides.llm ??
-    (generator === 'local' ? createLocalAnswerLlm() : createDeepSeekAnswerLlm())
+  const llm = overrides.llm ?? resolveAnswerLlm(generator)
   return { ...base, llm }
 }

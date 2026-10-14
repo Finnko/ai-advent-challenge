@@ -2,7 +2,11 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { callTool, listMcpTools } from '../server/mcp.server'
+import { createMcpHost } from '@lib/mcp/client.server'
+import { mcpRegistry } from '../server/mcp-registry.server'
+
+const host = createMcpHost(mcpRegistry)
+const listMcpTools = host.listTools
 
 const TOOL_NAMES = [
   'bookings_by_room',
@@ -120,7 +124,7 @@ describe('MCP connection', () => {
   }, 20_000)
 
   it('calls a tool without arguments', async () => {
-    const result = await callTool('now', {})
+    const result = await host.callToolOnServer('demo', 'now', {})
 
     expect(result.ok).toBe(true)
     if (result.ok) {
@@ -129,19 +133,19 @@ describe('MCP connection', () => {
   }, 20_000)
 
   it('reads the agent database over MCP', async () => {
-    const overview = await callTool('db_overview', {})
+    const overview = await host.callToolOnServer('demo', 'db_overview', {})
     expect(overview.ok).toBe(true)
     if (overview.ok) {
       expect(overview.text).toContain('Брони переговорок: 1')
     }
 
-    const byRoom = await callTool('bookings_by_room', {})
+    const byRoom = await host.callToolOnServer('demo', 'bookings_by_room', {})
     expect(byRoom.ok).toBe(true)
     if (byRoom.ok) {
       expect(byRoom.text).toContain('Переговорка «Ладога»: 1')
     }
 
-    const schedule = await callTool('employee_schedule', {
+    const schedule = await host.callToolOnServer('demo', 'employee_schedule', {
       employeeName: 'анна',
     })
     expect(schedule.ok).toBe(true)
