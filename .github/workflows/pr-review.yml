@@ -1,0 +1,96 @@
+name: PR review
+
+# Day 32: an AI review of every pull request. The pipeline is a headless Node
+# entry (`src/features/dev-assistant/cli/review.ts`) over the same RAG engine the
+# `/dev-assistant` page uses: it diffs `base...head`, indexes the docs + code of
+# the checkout, and asks the model for a structured review. `workflow_dispatch`
+# re-runs it by hand on any PR (fill in the PR number).
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request number
+        required: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: pr-review-${{ github.event.pull_request.number || inputs.pr }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Resolve pull request
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_PR: ${{ inputs.pr }}
+          EVENT_PR: ${{ github.event.pull_request.number }}
+          EVENT_BASE: ${{ github.event.pull_request.base.sha }}
+          EVENT_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            payload=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$INPUT_PR")
+            {
+              echo "number=$(echo "$payload" | jq -r '.number')"
+              echo "base=$(echo "$payload" | jq -r '.base.sha')"
+              echo "head=$(echo "$payload" | jq -r '.head.sha')"
+            } >> "$GITHUB_OUTPUT"
+          else
+            {
+              echo "number=$EVENT_PR"
+              echo "base=$EVENT_BASE"
+              echo "head=$EVENT_HEAD"
+            } >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout (pull request)
+        if: github.event_name != 'workflow_dispatch'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Checkout (manual run)
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/checkout@v4
+        with:
+          ref: refs/pull/${{ inputs.pr }}/head
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      - name: Cache embedding model
+        uses: actions/cache@v4
+        with:
+          path: |
+            .cache
+            ~/.cache/huggingface
+          key: hf-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Review pull request
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          HUGGING_FACE_TOKEN: ${{ secrets.HUGGING_FACE_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          PR_BASE_SHA: ${{ steps.pr.outputs.base }}
+          PR_HEAD_SHA: ${{ steps.pr.outputs.head }}
+          DEV_ASSISTANT_REPO_DIR: ${{ github.workspace }}
+          DEV_ASSISTANT_DB_PATH: ${{ runner.temp }}/dev-assistant.sqlite
+        run: node --import ./scripts/mcp-alias-loader.mjs src/features/dev-assistant/cli/review.ts

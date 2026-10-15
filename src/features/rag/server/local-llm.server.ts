@@ -30,7 +30,7 @@ export function createLocalAnswerLlm(): AnswerLlm {
       messages,
       {
         temperature: ANSWER_TEMPERATURE,
-        max_tokens: ANSWER_MAX_TOKENS,
+        max_tokens: options?.maxTokens ?? ANSWER_MAX_TOKENS,
         ...(options?.json ? { response_format: { type: 'json_object' } } : {}),
       },
       { endpoint: resolveRagEndpoint() },

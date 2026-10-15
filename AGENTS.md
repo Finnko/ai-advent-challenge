@@ -1,10 +1,11 @@
 # Project: AI Advent Challenge
 
-Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 31 (`feature/day31`).
+Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 32 (`feature/day32`).
 Days 13–20 extend the unified `/agent` (task state, invariants, MCP); Days 21–25 build `/rag` and make it an
 agent capability. Days 26–30 add local-MLX features: the `/local-llm` tab, a Telegram quiz bot, a local RAG
 generator, the `/llm-opt` lab, and the private `llm-service` gateway published over Tailscale Funnel. Day 31
-adds the developer assistant (`/dev-assistant`): RAG over the project's own docs plus git over MCP.
+adds the developer assistant (`/dev-assistant`): RAG over the project's own docs plus git over MCP. Day 32
+turns the same engine into an automated pull-request review pipeline (GitHub Action + headless CLI).
 
 ## Where to read more
 
@@ -20,9 +21,10 @@ adds the developer assistant (`/dev-assistant`): RAG over the project's own docs
   results persistence and the quantization procedure. Read it before editing the lab.
 - `src/features/llm-service/README.md` — the private LLM service: gateway module map, API/limits, run and
   publish (Tailscale Funnel) instructions, and the stability probe. Read it before editing the service.
-- `src/features/dev-assistant/README.md` — the developer assistant (Day 31): project corpus, markdown
-  chunker, cosine retrieval, the git MCP server and `/help`. Read it before editing it or the shared RAG
-  engine / MCP host in `src/lib`.
+- `src/features/dev-assistant/README.md` — the developer assistant (Day 31) and the PR review pipeline
+  (Day 32): project corpus, markdown/code chunkers, cosine retrieval, the git MCP server, `/help`, the diff
+  reader, the review contract and the GitHub delivery. Read it before editing it or the shared RAG engine /
+  MCP host in `src/lib`.
 - `CODING_STANDARDS.md` — style, test and product-scope rules to apply when writing or reviewing code.
 - `GLOSSARY.md` — domain vocabulary (Ход, Задача, Этап, Инвариант, …).
 - `README.md` — day-by-day log of the challenge.
@@ -63,8 +65,10 @@ adds the developer assistant (`/dev-assistant`): RAG over the project's own docs
   Funnel. Bundled with esbuild, outside `vite build` (module map in the feature README).
 - `src/features/dev-assistant/` — standalone assistant (Day 31) that answers about the project: its own
   markdown corpus read from disk, a private markdown scope of the shared structural chunker, its own
-  SQLite index, and a read-only git MCP server. It imports only `@lib` (never `features/rag` or
-  `features/agent`); module map in the feature README.
+  SQLite index, and a read-only git MCP server. Day 32 adds a headless pull-request review pipeline in the
+  same feature (`cli/review.ts` + `.github/workflows/pr-review.yml`) that indexes docs **and code** under a
+  private `review` strategy. It imports only `@lib` (never `features/rag` or `features/agent`); module map
+  in the feature README.
 - `src/lib/` — shared: `llm.ts`/`llm.server.ts` (transport), `agent-rag.server.ts` (agent↔RAG
   composition), `rag-engine.{types,server}.ts` (app-level RAG engine facade: index → `searchSources` →
   `answerFromSources`), `source-format.ts` (numbered Источники), `mcp/**` (shared MCP host, generic
@@ -132,9 +136,22 @@ adds the developer assistant (`/dev-assistant`): RAG over the project's own docs
   of the shared structural chunker (id `markdown`, unregistered), stored in its own SQLite; the git context
   is collected by the feature (`server/git-context.server.ts`) over the generic
   `@lib/mcp/context.server`; the headless core `answerAboutProject({ question, store, generator,
-  contextBlocks })` takes plain `contextBlocks` (today git, Day 32 the PR diff) and reuses the RAG JSON
+  contextBlocks })` takes plain `contextBlocks` (git today, the PR diff on Day 32) and reuses the RAG JSON
   contract/quote verification. `/help` is the one real command. See the feature README, ADR-0009,
   ADR-0010 and ADR-0011.
+- **PR review pipeline (Day 32)**: `.github/workflows/pr-review.yml` runs the headless
+  `features/dev-assistant/cli/review.ts` on PRs (draft skipped) and on `workflow_dispatch` with a `pr`
+  input. It reads the diff from `git diff base...head` (`server/pr-diff.server.ts`, three-dot, size-capped)
+  rather than the git MCP (`git_diff` caps at 1000 lines), indexes docs + code into the private `review`
+  strategy of the feature's SQLite (`server/review-index.server.ts`, never the chat's `markdown` index),
+  and calls `reviewPullRequest` (`server/review.server.ts`) — the sibling of `answerAboutProject`, sharing
+  `searchSources`/`buildSourceMessages`/`resolveAnswerLlm` but with `REVIEW_PERSONA` and the
+  `{summary, findings}` contract. Findings become inline RIGHT comments only when path+line pass anchor
+  validation (`domain/review-report.ts`); the rest go to one sticky `<!-- ai-pr-review -->` issue comment,
+  with previous bot inline comments deleted and re-posted (`server/github.server.ts`). Generation defaults
+  to cloud (`PR_REVIEW_GENERATOR=local` swaps in the Funnel); a failure posts a note and exits green —
+  never blocks a PR. The CLI runs under plain Node via `scripts/mcp-alias-loader.mjs`, so nothing on its
+  import graph may use Vite-only APIs at module top level. See the feature README and ADR-0012.
 - **MCP tools**: `agent-mcp-demo` is read-only; `agent-mcp-jobs` writes its own `jobs.sqlite`. Tool
   metadata travels over the protocol: each spawned server sets `annotations: { readOnlyHint }`, the host
   derives `descriptor.mutating` (`readOnlyHint !== true` → mutating, fail-closed) and mutating MCP tools
@@ -168,5 +185,6 @@ npm run bot             # build + run the Telegram quiz bot (needs TELEGRAM_BOT_
 npm run build:llm-service   # bundle the private LLM service (esbuild → dist/server/llm-service/)
 npm run llm-service         # build + run the private LLM service (needs local MLX + LLM_SERVICE_KEYS)
 npm run llm-service:load    # stability probe against a running service
+npm run review:pr           # run the PR review pipeline (PR_BASE_SHA=… PR_REVIEW_DRY_RUN=1 for a dry run)
 RUN_NETWORK_TESTS=1 RUN_MODEL_TESTS=1 npm run test  # unlock gated network/model tests
 ```
