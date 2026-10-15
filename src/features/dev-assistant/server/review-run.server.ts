@@ -7,8 +7,15 @@ import {
   renderInlineComment,
   renderReviewBody,
   splitFindings,
+  type AnchoredFinding,
 } from '../domain/review-report'
-import { deliverReview, writeStepSummary } from './github.server'
+import {
+  deliverInline,
+  deliverSummary,
+  writeStepSummary,
+  type GitHubConfig,
+  type ReviewComment,
+} from './github.server'
 import { readPullRequestDiff } from './pr-diff.server'
 import { judgeFindings } from './review-judge.server'
 import { buildReviewIndex } from './review-index.server'
@@ -104,27 +111,49 @@ function renderUnavailable(reason: string): string {
   return `## 🤖 AI-ревью\n\nAI-ревью недоступно: ${reason}`
 }
 
-async function deliver(
-  options: ReviewRunOptions,
-  body: string,
-  comments: { path: string; line: number; body: string }[],
-): Promise<void> {
-  if (
+function canPublish(options: ReviewRunOptions): boolean {
+  return (
     !options.dryRun &&
     options.prNumber !== null &&
-    options.githubToken &&
-    options.githubRepository
-  ) {
-    await deliverReview({
-      config: {
-        token: options.githubToken,
-        repository: options.githubRepository,
-        pullNumber: options.prNumber,
-        headSha: options.head,
-      },
-      body,
-      comments,
-    })
+    Boolean(options.githubToken) &&
+    Boolean(options.githubRepository)
+  )
+}
+
+function githubConfig(options: ReviewRunOptions): GitHubConfig {
+  return {
+    token: options.githubToken ?? '',
+    repository: options.githubRepository ?? '',
+    pullNumber: options.prNumber ?? 0,
+    headSha: options.head,
+  }
+}
+
+async function publishInline(
+  options: ReviewRunOptions,
+  entries: AnchoredFinding[],
+): Promise<AnchoredFinding[]> {
+  if (!canPublish(options)) {
+    return []
+  }
+  const comments: ReviewComment[] = entries.map((entry) => ({
+    path: entry.path,
+    line: entry.line,
+    body: renderInlineComment(entry.finding),
+  }))
+  const result = await deliverInline(githubConfig(options), comments)
+  const failed = new Set(
+    result.failed.map((comment) => `${comment.path}:${comment.line}`),
+  )
+  return entries.filter((entry) => failed.has(`${entry.path}:${entry.line}`))
+}
+
+async function publishSummary(
+  options: ReviewRunOptions,
+  body: string,
+): Promise<void> {
+  if (canPublish(options)) {
+    await deliverSummary(githubConfig(options), body)
   }
   await writeStepSummary(body)
 }
@@ -136,6 +165,7 @@ async function deliver(
 export async function runPullRequestReview(
   options: ReviewRunOptions,
 ): Promise<ReviewRunResult> {
+  let summaryPosted = false
   try {
     const diff = await readPullRequestDiff({
       root: options.root,
@@ -144,7 +174,8 @@ export async function runPullRequestReview(
     })
     if (diff.files.length === 0) {
       const body = `## 🤖 AI-ревью\n\nВ диффе нет изменений, требующих ревью.`
-      await deliver(options, body, [])
+      await publishSummary(options, body)
+      summaryPosted = true
       return {
         ok: true,
         body,
@@ -187,6 +218,7 @@ export async function runPullRequestReview(
       findings,
       changedLinesByPath(diff.files),
     )
+    const failed = await publishInline(options, inline)
     const body = renderReviewBody({
       report: { ...review.report, findings },
       meta: {
@@ -204,25 +236,18 @@ export async function runPullRequestReview(
             }
           : null,
       },
-      summaryFindings: summary,
+      summaryFindings: [...summary, ...failed.map((entry) => entry.finding)],
       droppedFindings: judged?.dropped ?? [],
     })
-    await deliver(
-      options,
-      body,
-      inline.map((entry) => ({
-        path: entry.path,
-        line: entry.line,
-        body: renderInlineComment(entry.finding),
-      })),
-    )
+    await publishSummary(options, body)
+    summaryPosted = true
     return {
       ok: true,
       body,
       error: null,
       files: diff.files.length,
       lines: diff.changedLines,
-      inline: inline.length,
+      inline: inline.length - failed.length,
       kept: findings.length,
       dropped: judged?.dropped.length ?? 0,
       truncated: diff.truncated,
@@ -231,10 +256,12 @@ export async function runPullRequestReview(
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     const body = renderUnavailable(message)
-    try {
-      await deliver(options, body, [])
-    } catch {
-      // Best effort: the job still exits green with the reason on stdout.
+    if (!summaryPosted) {
+      try {
+        await publishSummary(options, body)
+      } catch {
+        // Best effort: the job still exits green with the reason on stdout.
+      }
     }
     return {
       ok: false,

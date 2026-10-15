@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { changedLinesByPath, parseUnifiedDiff } from '../domain/pr-diff'
+import { clipToCaps } from '../server/pr-diff.server'
 
 const RAW = [
   'diff --git a/src/lib/a.ts b/src/lib/a.ts',
@@ -57,5 +58,40 @@ describe('unified diff parser', () => {
     expect(map.get('src/lib/a.ts')?.has(2)).toBe(true)
     expect(map.get('src/lib/a.ts')?.has(1)).toBe(false)
     expect(map.get('src/lib/new.ts')?.has(2)).toBe(true)
+  })
+})
+
+describe('diff size caps', () => {
+  function file(path: string, lineCount: number) {
+    return {
+      path,
+      status: 'modified' as const,
+      patch: Array.from({ length: lineCount }, (_, index) => `+строка ${index}`).join('\n'),
+      addedLines: [1],
+      addedCount: 1,
+    }
+  }
+
+  it('keeps files in order until the budget runs out', () => {
+    const result = clipToCaps([file('a.ts', 5), file('b.ts', 5), file('c.ts', 5)], 40, 12)
+    expect(result.files.map((entry) => entry.path)).toEqual(['a.ts', 'b.ts'])
+    expect(result.omitted).toEqual(['c.ts'])
+    expect(result.lines).toBe(10)
+    expect(result.patchClipped).toBe(false)
+  })
+
+  it('trims an oversized first file instead of letting it eat the whole budget', () => {
+    const result = clipToCaps([file('huge.ts', 500), file('small.ts', 2)], 40, 10)
+    expect(result.files.map((entry) => entry.path)).toEqual(['huge.ts'])
+    expect(result.files[0].patch.split('\n')).toHaveLength(11)
+    expect(result.files[0].patch).toContain('патч обрезан по бюджету')
+    expect(result.omitted).toEqual(['small.ts'])
+    expect(result.patchClipped).toBe(true)
+  })
+
+  it('stops at the file cap', () => {
+    const result = clipToCaps([file('a.ts', 1), file('b.ts', 1), file('c.ts', 1)], 2, 1500)
+    expect(result.files.map((entry) => entry.path)).toEqual(['a.ts', 'b.ts'])
+    expect(result.omitted).toEqual(['c.ts'])
   })
 })

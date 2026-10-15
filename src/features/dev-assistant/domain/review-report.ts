@@ -228,7 +228,7 @@ export function renderReviewBody(input: {
   if (summaryFindings.length > 0) {
     parts.push(
       '',
-      `_Замечания выше не привязаны к строкам диффа (нет валидного якоря) и потому собраны в сводке._`,
+      `_Замечания выше не попали в inline-комментарии (нет валидного якоря в диффе или GitHub отклонил привязку) и потому собраны в сводке._`,
     )
   }
   if (droppedFindings.length > 0) {

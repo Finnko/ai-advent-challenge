@@ -35,28 +35,45 @@ async function runGit(root: string, args: string[]): Promise<string> {
   return String(stdout)
 }
 
-function clipToCaps(
+export function clipToCaps(
   files: PullRequestDiffFile[],
   maxFiles: number,
   maxLines: number,
-): { files: PullRequestDiffFile[]; omitted: string[]; lines: number } {
+): {
+  files: PullRequestDiffFile[]
+  omitted: string[]
+  lines: number
+  patchClipped: boolean
+} {
   const included: PullRequestDiffFile[] = []
   const omitted: string[] = []
   let lines = 0
+  let patchClipped = false
   for (const file of files) {
     const fileLines = file.patch.split('\n').length
-    const first = included.length === 0
-    if (
-      !first &&
-      (included.length >= maxFiles || lines + fileLines > maxLines)
-    ) {
+    if (included.length >= maxFiles) {
       omitted.push(file.path)
+      continue
+    }
+    if (included.length > 0 && lines + fileLines > maxLines) {
+      omitted.push(file.path)
+      continue
+    }
+    if (fileLines > maxLines) {
+      const budget = Math.max(maxLines, 1)
+      const clipped = file.patch.split('\n').slice(0, budget).join('\n')
+      included.push({
+        ...file,
+        patch: `${clipped}\n… (патч обрезан по бюджету)`,
+      })
+      lines += budget
+      patchClipped = true
       continue
     }
     included.push(file)
     lines += fileLines
   }
-  return { files: included, omitted, lines }
+  return { files: included, omitted, lines, patchClipped }
 }
 
 // Reads the pull-request diff from the checkout with a three-dot range
@@ -75,20 +92,24 @@ export async function readPullRequestDiff(
   const parsed = parseUnifiedDiff(raw).filter(
     (file) => !SKIP_RE.some((re) => re.test(file.path)),
   )
+  const maxLines = options.maxLines ?? DEFAULT_MAX_DIFF_LINES
   const clipped = clipToCaps(
     parsed,
     options.maxFiles ?? DEFAULT_MAX_DIFF_FILES,
-    options.maxLines ?? DEFAULT_MAX_DIFF_LINES,
+    maxLines,
   )
-  const truncated = clipped.omitted.length > 0
+  const truncated = clipped.omitted.length > 0 || clipped.patchClipped
   const parts = clipped.files.map((file) => file.patch)
-  if (truncated) {
+  if (clipped.omitted.length > 0) {
     const shown = clipped.omitted.slice(0, 20).join(', ')
     parts.push(
       `\n(дифф усечён по размеру: пропущено файлов — ${clipped.omitted.length}: ${shown}${
         clipped.omitted.length > 20 ? ', …' : ''
       })`,
     )
+  }
+  if (clipped.patchClipped) {
+    parts.push(`\n(патч обрезан по бюджету: ${maxLines} строк)`)
   }
   return {
     base: options.base,

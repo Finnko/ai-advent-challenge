@@ -131,10 +131,14 @@ The same engine, a second headless consumer with no page. `.github/workflows/pr-
    the stage. Fail-open: a model error or an unparsable answer keeps every finding and says so in the
    service block. Dropped findings stay visible under `<details>Отклонено судьёй (N)</details>`.
 6. **Delivery.** A finding becomes an inline RIGHT-side comment only if its path and line are in the diff;
-   everything else lands in the summary. The summary is one sticky issue comment (`<!-- ai-pr-review -->`,
-   edited in place); previous bot inline comments are deleted and re-posted as a single `COMMENT` review.
+   everything else lands in the summary. Inline delivery is best effort and runs first: the batch review is
+   posted in one call, and if GitHub rejects it (stale head, bad anchor) each comment is retried on its own,
+   with the rejects folded into the summary. The summary — one sticky issue comment
+   (`<!-- ai-pr-review -->`, created once and edited in place, duplicates deleted) — is written last and
+   with paginated lookups, so a failed inline can never overwrite it.
 7. **Degradation.** Any failure (index, model, API) posts "AI-ревью недоступно: …" and exits green — the
-   review is advisory and never blocks the PR.
+   review is advisory and never blocks the PR. A summary that was already posted is never overwritten by
+   the failure note; that note then goes to the step summary only.
 
 The core stays headless: `reviewPullRequest` knows nothing about git or GitHub, exactly like
 `answerAboutProject` with its git context block.
