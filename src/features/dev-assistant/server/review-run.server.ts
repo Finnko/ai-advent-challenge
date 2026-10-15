@@ -10,6 +10,7 @@ import {
 } from '../domain/review-report'
 import { deliverReview, writeStepSummary } from './github.server'
 import { readPullRequestDiff } from './pr-diff.server'
+import { judgeFindings } from './review-judge.server'
 import { buildReviewIndex } from './review-index.server'
 import { reviewPullRequest } from './review.server'
 import { getDevAssistantStore } from './store.server'
@@ -24,6 +25,7 @@ export type ReviewRunOptions = {
   prNumber: number | null
   generator: AnswerGenerator
   dryRun: boolean
+  judge: boolean
   githubToken: string | null
   githubRepository: string | null
   runTypecheck: boolean
@@ -36,6 +38,8 @@ export type ReviewRunResult = {
   files: number
   lines: number
   inline: number
+  kept: number
+  dropped: number
   truncated: boolean
   model: string | null
 }
@@ -148,6 +152,8 @@ export async function runPullRequestReview(
         files: 0,
         lines: 0,
         inline: 0,
+        kept: 0,
+        dropped: 0,
         truncated: diff.truncated,
         model: null,
       }
@@ -168,20 +174,38 @@ export async function runPullRequestReview(
       generator: options.generator,
       contextBlocks,
     })
+    const judged = options.judge
+      ? await judgeFindings({
+          findings: review.report.findings,
+          chunks: review.sources.map((source) => source.chunk),
+          contextBlocks,
+          generator: options.generator,
+        })
+      : null
+    const findings = judged ? judged.kept : review.report.findings
     const { inline, summary } = splitFindings(
-      review.report.findings,
+      findings,
       changedLinesByPath(diff.files),
     )
     const body = renderReviewBody({
-      report: review.report,
+      report: { ...review.report, findings },
       meta: {
         model: review.model,
         files: diff.files.length,
         lines: diff.changedLines,
         truncated: diff.truncated,
         omitted: diff.omitted,
+        judge: judged
+          ? {
+              kept: judged.kept.length,
+              dropped: judged.dropped.length,
+              filtered: judged.filtered,
+              error: judged.error,
+            }
+          : null,
       },
       summaryFindings: summary,
+      droppedFindings: judged?.dropped ?? [],
     })
     await deliver(
       options,
@@ -199,6 +223,8 @@ export async function runPullRequestReview(
       files: diff.files.length,
       lines: diff.changedLines,
       inline: inline.length,
+      kept: findings.length,
+      dropped: judged?.dropped.length ?? 0,
       truncated: diff.truncated,
       model: review.model,
     }
@@ -217,6 +243,8 @@ export async function runPullRequestReview(
       files: 0,
       lines: 0,
       inline: 0,
+      kept: 0,
+      dropped: 0,
       truncated: false,
       model: null,
     }

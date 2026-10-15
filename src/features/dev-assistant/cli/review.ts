@@ -21,6 +21,7 @@ async function main(): Promise<void> {
   const parsedNumber = rawNumber ? Number(rawNumber) : Number.NaN
   const prNumber = Number.isFinite(parsedNumber) ? parsedNumber : null
   const generator = env('PR_REVIEW_GENERATOR') === 'local' ? 'local' : 'cloud'
+  const judge = env('PR_REVIEW_JUDGE') !== '0'
   const dryRun = env('PR_REVIEW_DRY_RUN') === '1' || prNumber === null
 
   if (!base) {
@@ -37,6 +38,7 @@ async function main(): Promise<void> {
     prNumber,
     generator,
     dryRun,
+    judge,
     githubToken: env('GITHUB_TOKEN'),
     githubRepository: env('GITHUB_REPOSITORY'),
     runTypecheck: env('PR_REVIEW_SKIP_TYPECHECK') !== '1',
@@ -47,7 +49,7 @@ async function main(): Promise<void> {
     console.log(`\n[review] AI-ревью недоступно: ${result.error}`)
   }
   console.log(
-    `[review] файлов: ${result.files}, добавленных строк: ${result.lines}, inline: ${result.inline}, модель: ${result.model ?? '—'}`,
+    `[review] файлов: ${result.files}, добавленных строк: ${result.lines}, inline: ${result.inline}, судья: ${judge ? `оставил ${result.kept}, отклонил ${result.dropped}` : 'выключен'}, модель: ${result.model ?? '—'}`,
   )
 }
 

@@ -78,7 +78,7 @@ function extractJsonObject(content: string): string | null {
   return start === -1 || end <= start ? null : content.slice(start, end + 1)
 }
 
-function parseJson(content: string): unknown {
+export function parseLooseJson(content: string): unknown {
   for (const candidate of [stripFences(content), extractJsonObject(content)]) {
     if (candidate === null || candidate.length === 0) {
       continue
@@ -96,7 +96,7 @@ function parseJson(content: string): unknown {
 // (a refusal, a prose answer, a malformed payload) degrades to a text report
 // instead of losing the whole review.
 export function parseReviewReport(content: string): ReviewReport {
-  const parsed = parseJson(content)
+  const parsed = parseLooseJson(content)
   if (parsed === null || typeof parsed !== 'object') {
     return {
       summary: content.trim(),
@@ -157,16 +157,39 @@ export type ReviewMeta = {
   lines: number
   truncated: boolean
   omitted: string[]
+  judge: JudgeMeta | null
+}
+
+export type JudgeMeta = {
+  kept: number
+  dropped: number
+  filtered: boolean
+  error: string | null
+}
+
+export type DroppedFinding = {
+  finding: ReviewFinding
+  reason: string
+}
+
+function findingLocation(finding: ReviewFinding): string {
+  if (!finding.file) {
+    return '—'
+  }
+  return finding.line > 0
+    ? `\`${finding.file}:${finding.line}\``
+    : `\`${finding.file}\``
+}
+
+function renderDropped(entry: DroppedFinding, index: number): string {
+  const { finding, reason } = entry
+  const location = findingLocation(finding)
+  const suffix = reason.length > 0 ? ` _(судья: ${reason})_` : ''
+  return `${index + 1}. ${location} — ${finding.message}${suffix}`
 }
 
 function renderFinding(finding: ReviewFinding, index: number): string {
-  let location = '—'
-  if (finding.file) {
-    location =
-      finding.line > 0
-        ? `\`${finding.file}:${finding.line}\``
-        : `\`${finding.file}\``
-  }
+  const location = findingLocation(finding)
   const lines = [`${index + 1}. ${location} — ${finding.message}`]
   if (finding.suggestion.length > 0) {
     lines.push(`   - Как исправить: ${finding.suggestion}`)
@@ -178,8 +201,10 @@ export function renderReviewBody(input: {
   report: ReviewReport
   meta: ReviewMeta
   summaryFindings: ReviewFinding[]
+  droppedFindings?: DroppedFinding[]
 }): string {
   const { report, meta, summaryFindings } = input
+  const droppedFindings = input.droppedFindings ?? []
   const parts: string[] = ['## 🤖 AI-ревью', '']
   parts.push(
     report.summary.length > 0
@@ -206,6 +231,15 @@ export function renderReviewBody(input: {
       `_Замечания выше не привязаны к строкам диффа (нет валидного якоря) и потому собраны в сводке._`,
     )
   }
+  if (droppedFindings.length > 0) {
+    parts.push(
+      '',
+      `<details><summary>Отклонено судьёй (${droppedFindings.length})</summary>`,
+      '',
+    )
+    parts.push(...droppedFindings.map((entry, index) => renderDropped(entry, index)))
+    parts.push('', '</details>')
+  }
   parts.push('', '<details><summary>Служебная информация</summary>', '')
   parts.push(`- Модель: ${meta.model ?? '—'}`)
   parts.push(
@@ -221,8 +255,22 @@ export function renderReviewBody(input: {
       : '- Дифф целиком',
   )
   parts.push(`- В режиме JSON: ${report.format === 'json' ? 'да' : 'нет'}`)
+  if (meta.judge) {
+    parts.push(`- Судья: ${renderJudgeLine(meta.judge)}`)
+  }
   parts.push('', '</details>')
   return parts.join('\n')
+}
+
+function renderJudgeLine(judge: JudgeMeta): string {
+  if (judge.error) {
+    return `этап пропущен, находки не фильтровались (${judge.error})`
+  }
+  if (!judge.filtered) {
+    return 'проверять было нечего'
+  }
+  const total = judge.kept + judge.dropped
+  return `оставил ${judge.kept} из ${total} (отклонено ${judge.dropped})`
 }
 
 export function renderInlineComment(finding: ReviewFinding): string {

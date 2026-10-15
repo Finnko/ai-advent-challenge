@@ -32,8 +32,12 @@ turns the same engine into an automated pull-request review pipeline (GitHub Act
 ## Language
 
 - **Always answer the user in Russian.** All chat replies, plans, summaries and commit messages the user
-  reads must be in Russian. Code, identifiers, file paths and code comments stay in English (comments are
-  only added when asked).
+  reads must be in Russian. Code, identifiers and file paths stay in English.
+- **Never write comments in code.** No explanatory comments, no section banners, no "why" notes, no JSDoc
+  blocks — in new files, in edited files, in tests. Comments are written only when the user explicitly asks
+  for them in that message. Rationale and decisions belong in the feature README or an ADR, not in the
+  source. Do not add comments "for consistency" with the surrounding code, and do not touch existing
+  comments unless the user asks.
 
 ## Stack
 
@@ -146,12 +150,15 @@ turns the same engine into an automated pull-request review pipeline (GitHub Act
   strategy of the feature's SQLite (`server/review-index.server.ts`, never the chat's `markdown` index),
   and calls `reviewPullRequest` (`server/review.server.ts`) — the sibling of `answerAboutProject`, sharing
   `searchSources`/`buildSourceMessages`/`resolveAnswerLlm` but with `REVIEW_PERSONA` and the
-  `{summary, findings}` contract. Findings become inline RIGHT comments only when path+line pass anchor
-  validation (`domain/review-report.ts`); the rest go to one sticky `<!-- ai-pr-review -->` issue comment,
-  with previous bot inline comments deleted and re-posted (`server/github.server.ts`). Generation defaults
-  to cloud (`PR_REVIEW_GENERATOR=local` swaps in the Funnel); a failure posts a note and exits green —
-  never blocks a PR. The CLI runs under plain Node via `scripts/mcp-alias-loader.mjs`, so nothing on its
-  import graph may use Vite-only APIs at module top level. See the feature README and ADR-0012.
+  `{summary, findings}` contract. Stage two is the judge (`server/review-judge.server.ts`): it reuses the
+  same chunks and asks for `{verdicts}` to keep or drop each finding, never rewriting them, failing open
+  (`PR_REVIEW_JUDGE=0` disables it; rejected findings stay in a collapsed block). Findings become inline
+  RIGHT comments only when path+line pass anchor validation (`domain/review-report.ts`); the rest go to one
+  sticky `<!-- ai-pr-review -->` issue comment, with previous bot inline comments deleted and re-posted
+  (`server/github.server.ts`). Generation defaults to cloud (`PR_REVIEW_GENERATOR=local` swaps in the
+  Funnel); a failure posts a note and exits green — never blocks a PR. The CLI runs under plain Node via
+  `scripts/mcp-alias-loader.mjs`, so nothing on its import graph may use Vite-only APIs at module top
+  level. See the feature README, ADR-0012 and ADR-0013.
 - **MCP tools**: `agent-mcp-demo` is read-only; `agent-mcp-jobs` writes its own `jobs.sqlite`. Tool
   metadata travels over the protocol: each spawned server sets `annotations: { readOnlyHint }`, the host
   derives `descriptor.mutating` (`readOnlyHint !== true` → mutating, fail-closed) and mutating MCP tools

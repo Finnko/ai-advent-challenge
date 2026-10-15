@@ -15,8 +15,6 @@ export type AnswerLlmResult = {
 
 export type AnswerLlmOptions = {
   json?: boolean
-  // Consumers with a bigger contract than the short answer (the Day-32 review
-  // returns a whole report) raise the budget; the answer path keeps the default.
   maxTokens?: number
 }
 

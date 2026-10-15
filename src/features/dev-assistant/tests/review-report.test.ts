@@ -134,6 +134,7 @@ describe('review report contract', () => {
         lines: 9,
         truncated: true,
         omitted: ['package-lock.json'],
+        judge: null,
       },
       summaryFindings: [
         {
@@ -150,5 +151,71 @@ describe('review report contract', () => {
     expect(body).toContain('### Архитектурные проблемы')
     expect(body).toContain('deepseek-flash')
     expect(body).toContain('пропущено файлов — 1')
+    expect(body).not.toContain('Отклонено судьёй')
+    expect(body).not.toContain('Судья:')
+  })
+
+  it('reports what the judge dropped and how many findings it kept', () => {
+    const report = parseReviewReport(
+      JSON.stringify({ summary: 'Резюме', findings: [] }),
+    )
+    const body = renderReviewBody({
+      report,
+      meta: {
+        model: 'deepseek-flash',
+        files: 2,
+        lines: 4,
+        truncated: false,
+        omitted: [],
+        judge: { kept: 1, dropped: 2, filtered: true, error: null },
+      },
+      summaryFindings: [],
+      droppedFindings: [
+        {
+          finding: {
+            severity: 'bug',
+            file: 'src/lib/a.ts',
+            line: 7,
+            message: 'модуль дублирует литерал',
+            suggestion: '',
+          },
+          reason: 'модуля нет в контексте',
+        },
+        {
+          finding: {
+            severity: 'style',
+            file: '',
+            line: 0,
+            message: 'общая придирка',
+            suggestion: '',
+          },
+          reason: 'нет конкретного риска',
+        },
+      ],
+    })
+    expect(body).toContain('Отклонено судьёй (2)')
+    expect(body).toContain('модуль дублирует литерал')
+    expect(body).toContain('_(судья: модуля нет в контексте)_')
+    expect(body).toContain('Судья: оставил 1 из 3 (отклонено 2)')
+  })
+
+  it('renders the judge line when the stage degraded to fail-open', () => {
+    const report = parseReviewReport(
+      JSON.stringify({ summary: 'Резюме', findings: [] }),
+    )
+    const body = renderReviewBody({
+      report,
+      meta: {
+        model: null,
+        files: 1,
+        lines: 1,
+        truncated: false,
+        omitted: [],
+        judge: { kept: 2, dropped: 0, filtered: false, error: 'HTTP 500' },
+      },
+      summaryFindings: [],
+    })
+    expect(body).toContain('Судья: этап пропущен, находки не фильтровались (HTTP 500)')
+    expect(body).not.toContain('Отклонено судьёй')
   })
 })

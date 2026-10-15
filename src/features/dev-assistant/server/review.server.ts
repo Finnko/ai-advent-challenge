@@ -19,9 +19,6 @@ import { REVIEW_STRATEGY } from './review-chunker.server'
 
 export const REVIEW_K = 8
 
-// The review contract is a whole JSON report (summary + findings), so it needs a
-// bigger completion budget than the short answer seam's 1200: a truncated reply
-// is invalid JSON and degrades the review to a text blob.
 export const REVIEW_MAX_TOKENS = 4000
 
 // Same policy as the chat scope — cosine top-k, no cross-encoder, no rewrite —
