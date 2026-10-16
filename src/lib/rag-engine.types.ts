@@ -11,6 +11,7 @@ export type {
   AnswerPersona,
   PromptMessage,
 } from '@/features/rag/domain/answer-persona'
+export type { Embedder, EmbedKind } from '@/features/rag/domain/embedder'
 export type { AnswerQuote } from '@/features/rag/domain/answer-eval'
 export type {
   CorpusDocStatus,

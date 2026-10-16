@@ -13,17 +13,30 @@ const MAX_ATTEMPTS = 4
 const FALLBACK_RETRY_DELAY_MS = 5000
 const MAX_RETRY_DELAY_MS = 60000
 
-const SNAPSHOT_LOADERS = import.meta.glob('../data/corpus/*.txt', {
-  query: '?raw',
-  import: 'default',
-}) as Record<string, () => Promise<string>>
+type SnapshotLoader = () => Promise<string>
 
-const SNAPSHOT_BY_ID = new Map<string, () => Promise<string>>()
-for (const [key, loader] of Object.entries(SNAPSHOT_LOADERS)) {
-  const match = /([^/]+)\.txt$/.exec(key)
-  if (match) {
-    SNAPSHOT_BY_ID.set(match[1], loader)
+let snapshotIndex: Map<string, SnapshotLoader> | null = null
+
+// `import.meta.glob` is a Vite macro: it resolves a build-time map of bundled
+// snapshots. It is wrapped lazily so this module can also be imported by a plain
+// Node process (the Day-32 review pipeline runs outside Vite), where the wiki
+// snapshot is never needed and only the cache/fetch path is used.
+function snapshotById(): Map<string, SnapshotLoader> {
+  if (snapshotIndex) {
+    return snapshotIndex
   }
+  const loaders = import.meta.glob('../data/corpus/*.txt', {
+    query: '?raw',
+    import: 'default',
+  }) as Record<string, SnapshotLoader>
+  snapshotIndex = new Map<string, SnapshotLoader>()
+  for (const [key, loader] of Object.entries(loaders)) {
+    const match = /([^/]+)\.txt$/.exec(key)
+    if (match) {
+      snapshotIndex.set(match[1], loader)
+    }
+  }
+  return snapshotIndex
 }
 
 export function wikiSourceUrl(title: string, lang = 'ru'): string {
@@ -90,7 +103,7 @@ function parseExtract(json: WikiResponse, title: string): string {
 }
 
 async function loadSnapshot(id: string): Promise<string | null> {
-  const loader = SNAPSHOT_BY_ID.get(id)
+  const loader = snapshotById().get(id)
   if (!loader) {
     return null
   }

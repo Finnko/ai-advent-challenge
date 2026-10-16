@@ -15,6 +15,7 @@ export type AnswerLlmResult = {
 
 export type AnswerLlmOptions = {
   json?: boolean
+  maxTokens?: number
 }
 
 export type AnswerLlm = (
@@ -24,9 +25,11 @@ export type AnswerLlm = (
 
 export function createDeepSeekLlm(params: DeepSeekParams): AnswerLlm {
   return async (messages, options) => {
-    const merged: DeepSeekParams = options?.json
-      ? { ...params, response_format: { type: 'json_object' } }
-      : params
+    const merged: DeepSeekParams = {
+      ...params,
+      ...(options?.json ? { response_format: { type: 'json_object' } } : {}),
+      ...(options?.maxTokens ? { max_tokens: options.maxTokens } : {}),
+    }
     const reply = await callCompletions(
       TIER_ENDPOINTS.medium,
       apiKeyFor('DEEPSEEK_API_KEY'),

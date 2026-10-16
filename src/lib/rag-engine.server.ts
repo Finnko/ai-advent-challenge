@@ -9,6 +9,7 @@ import {
   createStructuralChunker,
   type StructuralChunkerOptions,
 } from '@/features/rag/domain/chunking/structural'
+import { buildSourceMessages } from '@/features/rag/domain/answer-persona'
 import {
   MARKDOWN_HEADING_RE,
   parseSections,
@@ -60,6 +61,7 @@ export {
   searchSources,
   answerFromSources,
   buildIndex,
+  buildSourceMessages,
 }
 
 export type {

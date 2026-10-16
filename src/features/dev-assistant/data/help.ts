@@ -1,22 +1,24 @@
 import type { CorpusGroup } from './corpus-manifest'
 import {
   CORPUS_GROUP_LABELS,
+  CORPUS_GROUP_ORDER,
   PROJECT_CORPUS,
   PROJECT_QUESTIONS,
 } from './corpus-manifest'
 
 export function helpText(): string {
-  const counts: Record<CorpusGroup, number> = { docs: 0, adr: 0, schema: 0 }
+  const counts = new Map<CorpusGroup, number>()
   for (const file of PROJECT_CORPUS) {
-    counts[file.group] += 1
+    counts.set(file.group, (counts.get(file.group) ?? 0) + 1)
   }
+  const groupLines = CORPUS_GROUP_ORDER.filter((group) =>
+    counts.has(group),
+  ).map((group) => `• ${CORPUS_GROUP_LABELS[group]}: ${counts.get(group)}`)
   const lines = [
     'Я — ассистент разработчика проекта ai-advent-challenge. Отвечаю по документации проекта и вижу текущее состояние репозитория (ветка, статус, коммиты) через MCP.',
     '',
     `В корпусе ${PROJECT_CORPUS.length} документов:`,
-    `• ${CORPUS_GROUP_LABELS.docs}: ${counts.docs}`,
-    `• ${CORPUS_GROUP_LABELS.adr}: ${counts.adr}`,
-    `• ${CORPUS_GROUP_LABELS.schema}: ${counts.schema}`,
+    ...groupLines,
     '',
     'Попробуйте спросить:',
     ...PROJECT_QUESTIONS.map((question) => `— ${question}`),

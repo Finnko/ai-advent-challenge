@@ -1,4 +1,4 @@
-export type CorpusGroup = 'docs' | 'adr' | 'schema'
+export type CorpusGroup = 'docs' | 'adr' | 'schema' | 'code'
 
 export type CorpusFile = {
   id: string
@@ -11,12 +11,20 @@ export const CORPUS_GROUP_LABELS: Record<CorpusGroup, string> = {
   docs: 'Документация',
   adr: 'Решения (ADR)',
   schema: 'Схемы и API',
+  code: 'Исходный код',
 }
 
+export const CORPUS_GROUP_ORDER: CorpusGroup[] = [
+  'docs',
+  'adr',
+  'schema',
+  'code',
+]
+
 // Curated, explicit list: the assistant must answer about the project's own
-// docs, so the corpus is hand-picked rather than globbed. Adding source code
-// for the Day-32 review pipeline is a matter of extending this list (or
-// passing another manifest) — the engine does not care.
+// docs, so the corpus is hand-picked rather than globbed. The Day-32 review
+// pipeline keeps this docs list and adds a walked `code` group on top
+// (`server/review-corpus.server.ts`); the engine does not care either way.
 export const PROJECT_CORPUS: CorpusFile[] = [
   { id: 'readme', title: 'README.md', path: 'README.md', group: 'docs' },
   { id: 'agents', title: 'AGENTS.md', path: 'AGENTS.md', group: 'docs' },
