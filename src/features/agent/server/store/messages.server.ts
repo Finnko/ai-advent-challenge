@@ -1,5 +1,5 @@
 import type { AgentRunResult } from '../../domain/agent'
-import type { TaskEvent } from '../../domain/task/types'
+import type { TaskEvent } from '@lib/task-state/types'
 import { getDb, nowIso, safeParse } from './db.server'
 import { getSession } from './sessions.server'
 

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import type { AgentRunResult } from '../domain/agent'
-import type { TaskEvent } from '../domain/task/types'
+import type { TaskEvent } from '@lib/task-state/types'
 import AssistantMessage from './AssistantMessage'
 import TaskEventRow from './TaskEventRow'
 import ForkButton from './ForkButton'

@@ -1,24 +1,23 @@
 import type { AgentRunResult } from '../domain/agent'
 import type { SummaryUsage } from '../domain/compression'
 import { TIER_ENDPOINTS } from '@lib/llm'
+import { advanceAfterRun, advanceToExecution } from '@lib/task-state/advance'
 import {
-  advanceAfterRun,
-  advanceToExecution,
   looksLikeApproval,
   looksLikeCancel,
   looksLikeCorrection,
   looksLikeResume,
-} from '../domain/task/advance'
+} from '@lib/task-state/gates'
 import {
   applyAnalysis,
   cancelTask,
   createTaskState,
   resumeTask,
   transitionEvent,
-} from '../domain/task/state'
+} from '@lib/task-state/state'
 import type { AnalyzeTaskState } from '../domain/task/analyze'
-import type { TaskAnalysis, TaskRejection } from '../domain/task/state'
-import type { TaskEvent, TaskState } from '../domain/task/types'
+import type { TaskAnalysis, TaskRejection } from '@lib/task-state/state'
+import type { TaskEvent, TaskState } from '@lib/task-state/types'
 import type { AgentExecution } from './agent-service.server'
 
 export type TaskTurnStore = {

@@ -1,22 +1,10 @@
-import { countTokens } from 'gpt-tokenizer'
-import type { LlmMessage } from './agent'
+export { estimateMessagesTokens, estimateTokens } from '@lib/agent-loop/tokens'
 
 export const CONTEXT_BUDGET_TOKENS = 4096
 export const MODEL_CONTEXT_TOKENS = 1_000_000
 export const PRICE_INPUT_PER_1M = 0.15
 export const PRICE_INPUT_CACHE_HIT_PER_1M = 0.003
 export const PRICE_OUTPUT_PER_1M = 0.6
-
-export function estimateTokens(text: string): number {
-  return countTokens(text)
-}
-
-export function estimateMessagesTokens(messages: LlmMessage[]): number {
-  return messages.reduce(
-    (sum, message) => sum + countTokens(message.content),
-    0,
-  )
-}
 
 export type CostBreakdown = {
   cacheHitTokens: number

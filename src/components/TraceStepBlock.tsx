@@ -1,4 +1,4 @@
-import type { AgentTraceStep } from '../domain/agent'
+import type { LoopTraceStep } from '@lib/agent-loop/types'
 import StepBody from './StepBody'
 
 const STAGE_LABELS: Record<string, string> = {
@@ -15,7 +15,7 @@ export default function TraceStepBlock({
   step,
 }: {
   index: number
-  step: AgentTraceStep
+  step: LoopTraceStep
 }) {
   const label = STAGE_LABELS[step.stage] ?? step.stage
 

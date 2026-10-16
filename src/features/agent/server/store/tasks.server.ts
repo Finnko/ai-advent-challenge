@@ -2,8 +2,8 @@ import type {
   TaskActor,
   TaskState,
   TaskTransition,
-} from '../../domain/task/types'
-import { isTaskActor, isTaskStage } from '../../domain/task/types'
+} from '@lib/task-state/types'
+import { isTaskActor, isTaskStage } from '@lib/task-state/types'
 import { getDb, nowIso, safeParse } from './db.server'
 
 type TaskStateRow = {

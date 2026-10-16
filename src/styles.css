@@ -264,6 +264,49 @@ pre code {
   padding: 1rem;
 }
 
+.diff-block {
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  background: var(--surface-tint);
+}
+
+.diff-line {
+  display: block;
+  padding: 0 0.75rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.diff-line-added {
+  background: color-mix(in oklab, var(--positive) 14%, transparent);
+}
+
+.diff-line-removed {
+  background: color-mix(in oklab, var(--danger) 14%, transparent);
+}
+
+.diff-line-hunk {
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
+}
+
+.diff-line-meta {
+  color: var(--ink-muted);
+}
+
+.diff-code {
+  color: var(--shiki-light, var(--ink-soft));
+}
+
+:root[data-theme="dark"] .diff-code {
+  color: var(--shiki-dark, var(--ink-soft));
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .diff-code {
+    color: var(--shiki-dark, var(--ink-soft));
+  }
+}
+
 button,
 .island-shell,
 a {

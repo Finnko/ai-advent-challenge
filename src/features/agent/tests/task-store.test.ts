@@ -2,8 +2,8 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
-import { resumeTask } from '../domain/task/state'
-import type { TaskState } from '../domain/task/types'
+import { resumeTask } from '@lib/task-state/state'
+import type { TaskState } from '@lib/task-state/types'
 
 type Store = typeof import('../server/store/sessions.server') &
   typeof import('../server/store/tasks.server') &

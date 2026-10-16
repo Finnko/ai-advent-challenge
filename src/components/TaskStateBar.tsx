@@ -1,10 +1,10 @@
-import type { TaskState } from '../domain/task/types'
+import type { TaskState } from '@lib/task-state/types'
 import {
   ACTIVE_TASK_STAGES,
   TASK_ACTOR_LABELS,
   TASK_STAGE_LABELS,
   isTerminalTaskStage,
-} from '../domain/task/types'
+} from '@lib/task-state/types'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 
@@ -61,10 +61,6 @@ export default function TaskStateBar({
     !state.approved &&
     (state.stage === 'planning' || state.stage === 'execution')
 
-  const planTitle = state.steps
-    .map((item, index) => `${index + 1}. ${item}`)
-    .join('\n')
-
   return (
     <div className="flex flex-col gap-1.5 rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3 py-2">
       <div className="flex flex-wrap items-center gap-2">
@@ -110,14 +106,27 @@ export default function TaskStateBar({
           )}
         </div>
       </div>
-      <div className="text-xs text-[var(--ink)]" title={planTitle}>
-        {state.steps.length > 1 && (
-          <span className="mr-1 font-semibold">
-            шаг {state.stepIndex + 1}/{state.steps.length} ·
-          </span>
-        )}
-        {state.step.length > 0 ? state.step : '—'}
-      </div>
+      {state.steps.length > 0 ? (
+        <ol className="m-0 flex max-h-40 list-none flex-col gap-0.5 overflow-auto p-0 text-xs text-[var(--ink)]">
+          {state.steps.map((item, index) => (
+            <li
+              key={`${index}-${item}`}
+              className={
+                index === state.stepIndex
+                  ? 'flex gap-1.5 rounded bg-[var(--surface-tint)] px-1.5 py-0.5 font-medium'
+                  : 'flex gap-1.5 px-1.5 py-0.5 text-[var(--ink-muted)]'
+              }
+            >
+              <span className="font-mono">{index + 1}.</span>
+              <span>{item}</span>
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <div className="text-xs text-[var(--ink)]">
+          {state.step.length > 0 ? state.step : '—'}
+        </div>
+      )}
       <div className="demo-muted text-xs">
         {'ожидается '}
         {TASK_ACTOR_LABELS[state.expectedAction.actor]}:{' '}

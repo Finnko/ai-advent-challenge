@@ -1,5 +1,5 @@
-import type { TaskEvent } from '../domain/task/types'
-import { TASK_STAGE_LABELS } from '../domain/task/types'
+import type { TaskEvent } from '@lib/task-state/types'
+import { TASK_STAGE_LABELS } from '@lib/task-state/types'
 import { Badge } from '@/components/ui/Badge'
 
 export default function TaskEventRow({ event }: { event: TaskEvent }) {

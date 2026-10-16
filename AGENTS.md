@@ -5,7 +5,9 @@ Days 13–20 extend the unified `/agent` (task state, invariants, MCP); Days 21�
 agent capability. Days 26–30 add local-MLX features: the `/local-llm` tab, a Telegram quiz bot, a local RAG
 generator, the `/llm-opt` lab, and the private `llm-service` gateway published over Tailscale Funnel. Day 31
 adds the developer assistant (`/dev-assistant`): RAG over the project's own docs plus git over MCP. Day 32
-turns the same engine into an automated pull-request review pipeline (GitHub Action + headless CLI).
+turns the same engine into an automated pull-request review pipeline (GitHub Action + headless CLI). Day 34
+makes `/dev-assistant` a file assistant: a shared tool loop / task FSM / invariants engine in `@lib`, a
+sandboxed file MCP server, and a plan → approve → execute → auto-validate flow with a printed diff.
 
 ## Where to read more
 
@@ -21,10 +23,11 @@ turns the same engine into an automated pull-request review pipeline (GitHub Act
   results persistence and the quantization procedure. Read it before editing the lab.
 - `src/features/llm-service/README.md` — the private LLM service: gateway module map, API/limits, run and
   publish (Tailscale Funnel) instructions, and the stability probe. Read it before editing the service.
-- `src/features/dev-assistant/README.md` — the developer assistant (Day 31) and the PR review pipeline
-  (Day 32): project corpus, markdown/code chunkers, cosine retrieval, the git MCP server, `/help`, the diff
-  reader, the review contract and the GitHub delivery. Read it before editing it or the shared RAG engine /
-  MCP host in `src/lib`.
+- `src/features/dev-assistant/README.md` — the developer assistant (Day 31), the PR review pipeline
+  (Day 32) and the file assistant (Day 34): project corpus, markdown/code chunkers, cosine retrieval, the
+  git/files MCP servers, `/help`, the diff reader, the review contract and the GitHub delivery, plus the
+  file-task orchestration and its invariants. Read it before editing it or the shared RAG engine / MCP
+  host / agent loop in `src/lib`.
 - `CODING_STANDARDS.md` — style, test and product-scope rules to apply when writing or reviewing code.
 - `GLOSSARY.md` — domain vocabulary (Ход, Задача, Этап, Инвариант, …).
 - `README.md` — day-by-day log of the challenge.
@@ -71,18 +74,26 @@ turns the same engine into an automated pull-request review pipeline (GitHub Act
   markdown corpus read from disk, a private markdown scope of the shared structural chunker, its own
   SQLite index, and a read-only git MCP server. Day 32 adds a headless pull-request review pipeline in the
   same feature (`cli/review.ts` + `.github/workflows/pr-review.yml`) that indexes docs **and code** under a
-  private `review` strategy. It imports only `@lib` (never `features/rag` or `features/agent`); module map
-  in the feature README.
+  private `review` strategy. Day 34 adds the file assistant (`mcp/files/*`, `server/file-task.server.ts`,
+  `cli/file-assistant.ts`) with its own `node:sqlite` runs DB, plus docs-vs-files routing on the same page.
+  It imports only `@lib` (never `features/rag` or `features/agent`); module map in the feature README.
 - `src/lib/` — shared: `llm.ts`/`llm.server.ts` (transport), `agent-rag.server.ts` (agent↔RAG
   composition), `rag-engine.{types,server}.ts` (app-level RAG engine facade: index → `searchSources` →
   `answerFromSources`), `source-format.ts` (numbered Источники), `mcp/**` (shared MCP host, generic
-  context collector, server helpers), `functions/*.functions.ts`
+  context collector, server helpers, neutral MCP→Tool adapter), `agent-loop/**` (the tool loop:
+  `Tool.run(args, ctx)`, `$ref`, repeat guard, `maxActions`, pause hook, and the `LoopHooks` seam),
+  `task-state/**` (FSM mechanics, textual gates, analyzer factory, block/line formatting),
+  `invariants/**` (engine over a per-consumer rule registry, block rendering, LLM guard; the loop is
+  covered by its own `agent-loop/loop.test.ts` over a scripted `CallLLM`),
+  `functions/*.functions.ts`
   (Days 1–5 server fns + shared `validation.ts`), `day2.ts`…`day5.ts`, `days.ts` (sidebar), `utils.ts` (`cn`).
   **`src/lib` composes features, it does not depend on one**: only the app-level composition modules
   (`agent-rag.server.ts`, `rag-engine.{server,types}.ts`) import `features/*`; every other `lib` module
   (transport, `mcp/**`, `source-format.ts`) stays feature-agnostic and never reaches into a feature's
   private registry.
-- `src/components/` — app shell (`Header`, `Sidebar`, `Chat`) and shared `ui/Tabs.tsx`.
+- `src/components/` — app shell (`Header`, `Sidebar`, `Chat`), shared `ui/*`, and the shared
+  `TaskStateBar` + `TraceAccordion`/`TraceStepBlock`/`StepBody` over `@lib` types (used by both the agent
+  page and the file assistant).
 - `src/routes/` — thin route wrappers; `/agent` → `AgentPage`, `/rag` → `RagPage`, `/local-llm` →
   `LocalLlmPage`, `/llm-opt` → `LlmOptPage`, `/dev-assistant` → `DevAssistantPage`; old `/agent-*` routes
   redirect to `/agent`.
@@ -143,6 +154,45 @@ turns the same engine into an automated pull-request review pipeline (GitHub Act
   contextBlocks })` takes plain `contextBlocks` (git today, the PR diff on Day 32) and reuses the RAG JSON
   contract/quote verification. `/help` is the one real command. See the feature README, ADR-0009,
   ADR-0010 and ADR-0011.
+- **File assistant (Day 34)**: `features/dev-assistant` gains a third mode. Page input and the CLI route
+  through `domain/file-router.ts`: no file intent → the Day-31 RAG answer; read/search → a read-only loop
+  with no Задача; write → a persisted `planning` task, then `approveFileTask` runs
+  execution → validation → done in one server call with at most one retry. The run itself is one module
+  (`server/file-run.server.ts`: phase allowlists, budgets, touched paths, `runPlan` — one execution phase
+  per plan step, so every step is attempted and only the steps whose paths stayed untouched are retried);
+  `server/file-task.server.ts` keeps routing, the task and persistence. Tools come from
+  `dev-assistant-mcp-files` (`list_files`, `read_file`, `search_text` read-only; `write_file`, `edit_file`
+  mutating) with a sandbox root `DEV_ASSISTANT_REPO_DIR` (git falls back to `GIT_REPO_DIR`) and one
+  protected set — `.git`, `.github`, `node_modules`, `dist`, `.env*`, `*.sqlite`, declared in
+  `domain/protected-paths.ts` and shared by the sandbox and the invariant — on reads and writes;
+  `edit_file` needs a unique `oldString` unless `replaceAll`. Planned paths and file mentions are one
+  module too (`domain/file-paths.ts`: routing, `extractPlanPaths`, `matchesPlannedPath`), so the write
+  gate and the retry decision cannot drift. Only touched paths are diffed (git MCP — an untracked file is
+  diffed with `git diff --no-index /dev/null` so a newly created file still shows up), and the diff is
+  highlighted in `components/DiffBlock.tsx` — client-only `shiki` (fine-grained bundle, `lang: diff`, dual
+  light/dark themes) rendered from tokens, never `dangerouslySetInnerHTML`; the same page shows the whole
+  plan, not just the current step, through the shared `components/TaskStateBar.tsx`. A run carries the
+  result of the finished steps into the next phase as a "what is already done" system block, escalates a
+  step whose planned paths stayed untouched (and reports it as `unfinished`), and reports `notChanged` when
+  a write task produced no edits at all — so a plan can neither stop silently after its first step nor be
+  presented as done. Pinned file
+  invariants (planned paths only, no secrets in contents, protected paths) are seeded into the feature's
+  own `node:sqlite` DB (`DEV_ASSISTANT_RUNS_DB_PATH`, `dev-assistant-runs.sqlite`) and enforced through
+  `@lib/invariants`. Two goals skip the model and answer from the repository: a repo-state goal
+  (`looksLikeRepoStateGoal`) returns `collectRepoChanges` (`server/repo-diff.server.ts`, git MCP:
+  `git_changed_files` + per-file `git_diff`), and an invariant-check goal (`looksLikeInvariantCheckGoal`)
+  reports violations from `domain/invariant-report.ts` over the changed files read through the files MCP
+  (`server/repo-check.server.ts`), reusing the very `containsSecret`/`isProtectedPath` predicates the write
+  gate uses. The loop, task FSM, invariants engine and the MCP→Tool adapter live in `@lib`
+  (`agent-loop`, `task-state`, `invariants`, `mcp/tools.ts`); the agent keeps its prompts, judges and
+  registries and delegates to the same loop, behaviour-preserving. Tool reports are capped by
+  `buildMcpTools(..., { maxChars })` (default `MCP_TOOL_REPORT_MAX_CHARS`, the file feature raises it so a
+  full file fits) and a truncated report says how much was cut and how to narrow the window; the loop's
+  repeat guard is opt-in feedback (`policy.onRepeat`) rather than a silent break. Every run — goal, plan,
+  trace and answer — is stored in the runs DB, and the trace keeps each decision's `raw` model reply, which
+  is the feature's debugging channel. `FILE_ASSISTANT_GENERATOR=local` swaps
+  in the local model. The feature owns `node:sqlite` here (its own runs DB), not through `features/rag`.
+  See the feature README, ADR-0014, ADR-0015, ADR-0016 and ADR-0017.
 - **PR review pipeline (Day 32)**: `.github/workflows/pr-review.yml` runs the headless
   `features/dev-assistant/cli/review.ts` on PRs (draft skipped) and on `workflow_dispatch` with a `pr`
   input. It reads the diff from `git diff base...head` (`server/pr-diff.server.ts`, three-dot, size-capped)
@@ -164,7 +214,10 @@ turns the same engine into an automated pull-request review pipeline (GitHub Act
   derives `descriptor.mutating` (`readOnlyHint !== true` → mutating, fail-closed) and mutating MCP tools
   obey the same task-stage gate as internal mutations; reference MCP tools stay available in every stage.
   Never reintroduce a host-side hardcoded list of MCP tool names. Discovery/listing degrades per
-  server (a dead server removes only its tools). The MCP SDK reaches neither the LLM transport nor the
+  server (a dead server removes only its tools). A consumer whose loop calls tools many times per run
+  opens **one session per server per run** (`openMcpSession` in `client.server.ts`, wrapped by
+  `openDevAssistantTools`) and closes it when the run ends; `callToolOn`/`callToolsFor` stay for the
+  occasional call. The MCP SDK reaches neither the LLM transport nor the
   browser. **The host machinery lives in `src/lib/mcp/`** (`client.server.ts`, `registry.server.ts`,
   `types.ts`, `serve.ts`, `response.ts`); each feature declares its own `McpServerSpec` list
   (`features/agent/server/mcp-registry.server.ts`, `features/dev-assistant/server/mcp-registry.server.ts`).
@@ -193,5 +246,13 @@ npm run build:llm-service   # bundle the private LLM service (esbuild → dist/s
 npm run llm-service         # build + run the private LLM service (needs local MLX + LLM_SERVICE_KEYS)
 npm run llm-service:load    # stability probe against a running service
 npm run review:pr           # run the PR review pipeline (PR_BASE_SHA=… PR_REVIEW_DRY_RUN=1 for a dry run)
+npm run file-assistant -- --scenario find-usages   # file assistant CLI (--apply writes; default plan-only)
+npm run file-assistant -- --goal "…" --apply
 RUN_NETWORK_TESTS=1 RUN_MODEL_TESTS=1 npm run test  # unlock gated network/model tests
 ```
+
+TypeScript is split by alias on purpose: `typescript` → `@typescript/typescript6` (JS API 6.0, bin
+`tsc6`), `@typescript/native` → `typescript@7` (bin `tsc`, no programmatic API in 7.0), so `typecheck`
+runs the native compiler while a future API consumer still gets 6.0. If `npm install` ever re-pins
+`node_modules/typescript` to the plain 6.x package, restore the alias entry in the lockfile by hand — npm
+does not re-resolve it after the switch.

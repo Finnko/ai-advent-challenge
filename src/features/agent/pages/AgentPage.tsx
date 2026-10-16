@@ -26,7 +26,7 @@ import ScenarioPanel from '../components/ScenarioPanel'
 
 import ProfileList from '../components/ProfileList'
 import ProfileEditor from '../components/ProfileEditor'
-import TaskStateBar from '../components/TaskStateBar'
+import TaskStateBar from '@/components/TaskStateBar'
 import SessionConfig from '../components/SessionConfig'
 import EmptySessionPanel from '../components/EmptySessionPanel'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/Tabs'

@@ -1,25 +1,54 @@
+import { runToolLoop } from '@lib/agent-loop/loop'
 import {
-  CONTEXT_BUDGET_TOKENS,
-  costUsd,
-  estimateMessagesTokens,
-  estimateTokens,
-} from './tokens'
-import { normalizeName, pickString, roomsForRole } from './agent-tools'
-import { buildTaskStateLine } from './task/read'
-import type { TaskState } from './task/types'
-import {
-  INVARIANT_PRECEDENCE_LINE,
-  invariantCode,
-  type InvariantCode,
-} from './invariants/types'
+  buildAvailableCatalog,
+  buildGatedCatalog,
+  buildLanguageLine,
+  REF_INSTRUCTION_LINE,
+  REQUEST_SCOPE_LINES,
+} from '@lib/agent-loop/prompt'
 import {
   runActionChecks,
   runAnswerChecks,
   type InvariantCheckResult,
 } from './invariants/checks'
-import type { InvariantRecord } from './invariants/types'
 import type { InvariantGuard, InvariantGuardVerdict } from './invariants/guard'
+import {
+  INVARIANT_PRECEDENCE_LINE,
+  invariantCode,
+  type InvariantCode,
+  type InvariantRecord,
+} from './invariants/types'
+import { buildTaskStateLine } from '@lib/task-state/read'
+import type { TaskState } from '@lib/task-state/types'
+import { CONTEXT_BUDGET_TOKENS, costUsd, estimateTokens } from './tokens'
+import { normalizeName, pickString, roomsForRole } from './agent-tools'
 import type { Grounding, RetrievedSource } from './capabilities/types'
+import type {
+  CallLLM,
+  JudgeVerdict,
+  LlmMessage,
+  LoopAction,
+  LoopRunResult,
+  LoopTraceStep,
+  Tool,
+} from '@lib/agent-loop/types'
+
+export type {
+  CallLLM,
+  DecidedToolArgs,
+  JudgeVerdict,
+  LlmMessage,
+  LlmReply,
+  LlmUsage,
+  LoopAction as AgentAction,
+  LoopTraceStep as AgentTraceStep,
+  TokenBreakdown,
+  ToolArgs,
+  ToolArgRef,
+  ToolArgValue,
+  ToolOutcome,
+} from '@lib/agent-loop/types'
+export { resolveArgRefs } from '@lib/agent-loop/loop'
 
 export type AgentRole = 'employee' | 'manager'
 
@@ -35,52 +64,6 @@ export type AgentCapabilities = {
   identity: AgentIdentity
   allowedTools: string[]
 }
-
-export type ToolArgValue = string | number | boolean | null | string[]
-
-export type ToolArgs = Record<string, ToolArgValue>
-
-export type ToolArgRef = { $ref: string | string[] }
-
-export type DecidedToolArgs = Record<string, ToolArgValue | ToolArgRef>
-
-export type LlmMessage = {
-  role: 'system' | 'user' | 'assistant'
-  content: string
-}
-
-export type LlmUsage = {
-  prompt_tokens: number
-  completion_tokens: number
-  prompt_cache_hit_tokens?: number
-  prompt_cache_miss_tokens?: number
-}
-
-export type TokenBreakdown = {
-  requestTokens: number
-  historyTokens: number
-  historyTokensSent: number
-  contextTokens: number
-  contextMessages: number
-  responseTokens: number
-  promptTokensActual: number
-  cacheHitTokens: number
-  cacheMissTokens: number
-  costUsd: number
-}
-
-export type LlmReply = {
-  content: string
-  usage: LlmUsage | null
-  latencyMs: number
-}
-
-export type CallLLM = (params: {
-  messages: LlmMessage[]
-  temperature?: number
-  response_format?: { type: 'json_object' }
-  max_tokens?: number
-}) => Promise<LlmReply>
 
 export type SystemBlock = {
   kind:
@@ -113,13 +96,6 @@ export const EMPTY_CONTEXT: PreparedContext = {
   history: [],
   blocks: [],
   note: null,
-}
-
-export type ToolOutcome = {
-  ok: boolean
-  text: string
-  reference: string | null
-  refText?: string
 }
 
 export type VacationRecord = {
@@ -220,37 +196,11 @@ export type AgentStore = {
   ) => BookingRecord[] | Promise<BookingRecord[]>
 }
 
-export type AgentTool = {
-  name: string
-  description: string
-  argsExample: string
-  roles: AgentRole[]
-  mutating?: boolean
-  run: (
-    args: ToolArgs,
-    identity: AgentIdentity,
-  ) => ToolOutcome | Promise<ToolOutcome>
-  screenArgs?: (
-    args: ToolArgs,
-    identity: AgentIdentity,
-  ) => ToolArgs | Promise<ToolArgs>
-}
-
-export type JudgeVerdict = {
-  judge: string
-  status: 'pass' | 'fail'
-  message: string
-}
-
-export type AgentAction = {
-  tool: string
-  args: ToolArgs
-  outcome: ToolOutcome
-}
+export type AgentTool = Tool<AgentIdentity> & { roles: AgentRole[] }
 
 export type JudgeContext = {
   request: string
-  actions: AgentAction[]
+  actions: LoopAction[]
   answer: string
   identity: AgentIdentity
   allowedTools: string[]
@@ -262,53 +212,10 @@ export type AgentJudge = {
   evaluate: (ctx: JudgeContext) => JudgeVerdict
 }
 
-export type AgentTraceStep =
-  | { stage: 'input'; accepted: boolean; charCount: number }
-  | {
-      stage: 'decide'
-      raw: string
-      tool: string | null
-      args: DecidedToolArgs
-      usage: LlmUsage | null
-      latencyMs: number
-    }
-  | {
-      stage: 'act'
-      tool: string
-      args: DecidedToolArgs
-      outcome: ToolOutcome
-      mutating: boolean
-      invariantHits?: InvariantCode[]
-    }
-  | {
-      stage: 'finalize'
-      answer: string
-      usage: LlmUsage | null
-      latencyMs: number
-    }
-  | {
-      stage: 'invariant-guard'
-      verdict: JudgeVerdict
-      hits: InvariantCode[]
-      usage: LlmUsage | null
-      latencyMs: number
-      error?: string
-    }
-  | { stage: 'verdicts'; verdicts: JudgeVerdict[] }
-
-export type AgentRunResult = {
-  ok: boolean
-  blocked: boolean
-  reason: string | null
-  answer: string
-  trace: AgentTraceStep[]
-  verdicts: JudgeVerdict[]
-  usage: LlmUsage | null
-  latencyMs: number
-  model: string
-  tokens: TokenBreakdown
-  contextNote: ContextNote | null
+export type AgentRunResult = Omit<LoopRunResult, 'trace' | 'invariantHits'> & {
+  trace: LoopTraceStep[]
   invariantHits: InvariantCode[]
+  contextNote: ContextNote | null
   taskState?: TaskState | null
   sources?: RetrievedSource[]
   grounding?: Grounding
@@ -634,48 +541,6 @@ function buildBaseSystem(caps: AgentCapabilities, today: string): string {
   ].join('\n')
 }
 
-function resolveToolCatalog(
-  tools: AgentTool[],
-  toolNames: string[],
-): AgentTool[] {
-  return toolNames
-    .map((name) => tools.find((t) => t.name === name))
-    .filter((t): t is AgentTool => Boolean(t))
-}
-
-function buildGatedCatalog(
-  tools: AgentTool[],
-  gatedToolNames: string[],
-): string | null {
-  const gated = resolveToolCatalog(tools, gatedToolNames)
-  if (gated.length === 0) {
-    return null
-  }
-  return [
-    'Инструменты, которые станут доступны после подтверждения плана (сейчас их НЕ вызывай, но используй их параметры, чтобы предложить конкретный план):',
-    ...gated.map(
-      (t) => `- ${t.name}: ${t.description}. Аргументы: ${t.argsExample}`,
-    ),
-    ...gated.flatMap((t) => DECIDE_TOOL_HINTS[t.name] ?? []),
-  ].join('\n')
-}
-
-function buildAvailableCatalog(
-  tools: AgentTool[],
-  availableToolNames: string[],
-): string | null {
-  const available = resolveToolCatalog(tools, availableToolNames)
-  if (available.length === 0) {
-    return null
-  }
-  return [
-    'Доступные сейчас (на текущем этапе) инструменты — их можно вызывать:',
-    ...available.map(
-      (t) => `- ${t.name}: ${t.description}. Аргументы: ${t.argsExample}`,
-    ),
-  ].join('\n')
-}
-
 function buildDecideUser(
   request: string,
   tools: AgentTool[],
@@ -692,8 +557,7 @@ function buildDecideUser(
   const lines = [
     `Запрос пользователя:\n${request}`,
     '',
-    'Если запрос требует действия из списка доступных инструментов — выбери ровно один. Выполняй только то, что нужно для запроса. Если следующий шаг выполнять не требуется — верни tool: null.',
-    'Если пользователь ссылается на «эту встречу», «эту заявку», «её/его» или «последнюю», подставь данные из контекста и вызови соответствующий инструмент — не переспрашивай.',
+    ...REQUEST_SCOPE_LINES,
     'Доступные инструменты:',
     ...available.map(
       (t) => `- ${t.name}: ${t.description}. Аргументы: ${t.argsExample}`,
@@ -716,22 +580,9 @@ function buildDecideUser(
         ]
       : []),
     '',
-    'Ответь ровно одним json-объектом вида {"tool": "имя_инструмента" | null, "args": { ... }}. Значение аргумента может быть ссылкой на вывод ранее вызванного инструмента: {"$ref": "<номер>"} или {"$ref": "last"}. Большие тексты передавай ссылкой, а не копированием. Без текста до "{" и после "}", без markdown.',
+    REF_INSTRUCTION_LINE,
   ]
   return lines.join('\n')
-}
-
-function buildLanguageLine(
-  responseLanguage: string | null,
-  hasProfileBlocks: boolean,
-): string {
-  if (responseLanguage) {
-    return `Язык ответа: ${responseLanguage}. Отвечай на нём, даже если запрос или отчёт инструмента на русском.`
-  }
-  if (hasProfileBlocks) {
-    return 'Язык и стиль ответа — по блоку ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ (по умолчанию русский).'
-  }
-  return 'Отвечай по-русски.'
 }
 
 function buildFinalizeUser(
@@ -871,125 +722,6 @@ function blockedAnswer(
   return refusalText(verdicts, actRefusal, invariants, hits)
 }
 
-function formatActionReport(action: AgentAction): string {
-  const reference = action.outcome.reference
-    ? `\nКод подтверждения: ${action.outcome.reference}`
-    : ''
-  return `ОТЧЁТ ИНСТРУМЕНТА (${action.tool}):\n${action.outcome.text}${reference}`
-}
-
-function formatToolReport(actions: AgentAction[]): string {
-  if (actions.length === 0) {
-    return '(инструменты не вызывались)'
-  }
-  return actions.map(formatActionReport).join('\n\n')
-}
-
-function traceOutcome(outcome: ToolOutcome): ToolOutcome {
-  return {
-    ok: outcome.ok,
-    text: outcome.text,
-    reference: outcome.reference,
-  }
-}
-
-function resolveGuardMessage(verdict: InvariantGuardVerdict): string {
-  if (verdict.reason) {
-    return verdict.reason
-  }
-  return verdict.status === 'pass'
-    ? 'Пользовательские инварианты не нарушены.'
-    : 'Ответ нарушает пользовательский инвариант.'
-}
-
-export type ToolOutput = {
-  id: number
-  tool: string
-  text: string
-  refText?: string
-}
-
-function isToolArgRef(value: unknown): value is ToolArgRef {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    return false
-  }
-  const ref = (value as Record<string, unknown>).$ref
-  return typeof ref === 'string' || Array.isArray(ref)
-}
-
-function refValue(ref: string, outputs: ToolOutput[]): string | null {
-  if (ref === 'last') {
-    const output = outputs.at(-1)
-    return output ? (output.refText ?? output.text) : null
-  }
-  const output = outputs.find((entry) => String(entry.id) === ref)
-  return output ? (output.refText ?? output.text) : null
-}
-
-export function resolveArgRefs(
-  rawArgs: DecidedToolArgs,
-  outputs: ToolOutput[],
-): { ok: true; args: ToolArgs } | { ok: false; error: string } {
-  const args: ToolArgs = {}
-  for (const [key, value] of Object.entries(rawArgs)) {
-    if (!isToolArgRef(value)) {
-      args[key] = value
-      continue
-    }
-    const refs = Array.isArray(value.$ref) ? value.$ref : [value.$ref]
-    const parts: string[] = []
-    for (const ref of refs) {
-      const resolved = refValue(ref, outputs)
-      if (resolved === null) {
-        return {
-          ok: false,
-          error: `Ссылка $ref "${ref}" не найдена: вывода инструмента с таким номером нет. Передай {"$ref":"<номер>"} или {"$ref":"last"} из отчёта предыдущего инструмента.`,
-        }
-      }
-      parts.push(resolved)
-    }
-    args[key] = parts.join('\n\n')
-  }
-  return { ok: true, args }
-}
-
-function parseDecideJson(content: string): {
-  tool: string | null
-  args: DecidedToolArgs
-} {
-  const stripped = content
-    .replace(/^```(?:json)?\s*/i, '')
-    .replace(/\s*```$/, '')
-    .trim()
-  const start = stripped.indexOf('{')
-  const end = stripped.lastIndexOf('}')
-  if (start === -1 || end === -1 || end < start) {
-    return { tool: null, args: {} }
-  }
-  try {
-    const parsed = JSON.parse(stripped.slice(start, end + 1)) as {
-      tool?: unknown
-      args?: unknown
-    }
-    if (!parsed || typeof parsed !== 'object') {
-      return { tool: null, args: {} }
-    }
-    const tool =
-      typeof parsed.tool === 'string' && parsed.tool.length > 0
-        ? parsed.tool
-        : null
-    const args =
-      parsed.args &&
-      typeof parsed.args === 'object' &&
-      !Array.isArray(parsed.args)
-        ? (parsed.args as DecidedToolArgs)
-        : {}
-    return { tool, args }
-  } catch {
-    return { tool: null, args: {} }
-  }
-}
-
 function isPermitted(caps: AgentCapabilities, tool: AgentTool): boolean {
   return (
     caps.allowedTools.includes(tool.name) &&
@@ -1024,13 +756,8 @@ export class Agent {
     userInput: string,
     prepared: PreparedContext = EMPTY_CONTEXT,
   ): Promise<AgentRunResult> {
-    const trace: AgentTraceStep[] = []
-    const { capabilities, tools, judges, callLLM, model } = this.config
+    const { capabilities, tools, callLLM, model } = this.config
     const request = userInput.trim()
-    const accepted = request.length > 0 && request.length <= MAX_INPUT_CHARS
-    trace.push({ stage: 'input', accepted, charCount: request.length })
-
-    const history = prepared.history
     const blocks = prepared.blocks
     const profileBlocks = blocks.filter(isProfileBlock)
     const memoryBlocks = blocks.filter(isMemoryBlock)
@@ -1046,8 +773,9 @@ export class Agent {
     const hasMemoryBlocks = memoryBlocks.length > 0
     const hasProfileBlocks = profileBlocks.length > 0
     const hasRagBlock = contextBlocks.some((block) => block.kind === 'rag')
+    const invariantList = this.config.invariants ?? []
     const hasInvariantBlocks =
-      invariantBlocks.length > 0 || (this.config.invariants?.length ?? 0) > 0
+      invariantBlocks.length > 0 || invariantList.length > 0
     const precedenceLine = buildPrecedenceLine(
       hasProfileBlocks,
       hasMemoryBlocks,
@@ -1056,79 +784,8 @@ export class Agent {
     const taskState = this.config.taskState ?? null
     const taskLine = buildTaskStateLine(taskState, this.config.taskNote)
     const taskPaused = taskState?.stage === 'paused'
-    const requestTokens = estimateTokens(request)
-    const historyTokens = estimateMessagesTokens(history)
-    const contextTokens = estimateMessagesTokens(
-      blocks.map((block) => ({
-        role: 'system' as const,
-        content: block.content,
-      })),
-    )
-    const contextMessages = prepared.note?.messages ?? 0
-
-    const emptyTokens = (
-      overrides: Partial<TokenBreakdown> = {},
-    ): TokenBreakdown => ({
-      requestTokens,
-      historyTokens,
-      historyTokensSent: historyTokens,
-      contextTokens,
-      contextMessages,
-      responseTokens: 0,
-      promptTokensActual: 0,
-      cacheHitTokens: 0,
-      cacheMissTokens: 0,
-      costUsd: 0,
-      ...overrides,
-    })
-
-    if (!accepted) {
-      const reason =
-        request.length === 0
-          ? 'Сообщение пустое.'
-          : `Сообщение длиннее ${MAX_INPUT_CHARS} символов.`
-      return {
-        ok: false,
-        blocked: true,
-        reason,
-        answer: `Сообщение отклонено input policy: ${reason}`,
-        trace,
-        verdicts: [],
-        usage: null,
-        latencyMs: 0,
-        model,
-        tokens: emptyTokens(),
-        contextNote: prepared.note,
-        invariantHits: [],
-      }
-    }
-
+    const contextTokens = estimateMessagesTokensOf(blocks)
     const baseSystem = buildBaseSystem(capabilities, this.config.today)
-    const budget = this.config.contextBudgetTokens ?? CONTEXT_BUDGET_TOKENS
-    const systemTokens = estimateTokens(baseSystem) + contextTokens
-
-    if (systemTokens + requestTokens > budget) {
-      const reason =
-        `Запрос (≈${requestTokens} ток.) вместе с системным промптом не влезает ` +
-        `в контекстный бюджет агента (${budget} ток.). Сократи сообщение или начни новую сессию.`
-      return {
-        ok: false,
-        blocked: true,
-        reason,
-        answer: `Сообщение отклонено контекстной политикой: ${reason}`,
-        trace,
-        verdicts: [],
-        usage: null,
-        latencyMs: 0,
-        model,
-        tokens: emptyTokens({ historyTokensSent: 0 }),
-        contextNote: prepared.note,
-        invariantHits: [],
-      }
-    }
-
-    const historyTokensSent = historyTokens
-
     const stageMutatingBlocked =
       (taskState !== null &&
         (taskState.stage !== 'execution' || !taskState.approved)) ||
@@ -1146,65 +803,12 @@ export class Agent {
       capabilities.allowedTools.filter(
         (name) => !allowedToolNames.includes(name),
       ),
+      DECIDE_TOOL_HINTS,
     )
     const availableCatalog = buildAvailableCatalog(tools, allowedToolNames)
-    const maxActions = Math.max(
-      1,
-      this.config.maxActionsPerTurn ?? DEFAULT_MAX_ACTIONS_PER_TURN,
+    const checklessInvariants = invariantList.filter(
+      (record) => record.check === null,
     )
-
-    const runDecide = async (
-      allowed: string[],
-      extra: LlmMessage[],
-      nudge?: string,
-    ) => {
-      const decideUser = buildDecideUser(
-        request,
-        tools,
-        allowed,
-        roomsForRole(capabilities.identity.role),
-        this.config.context,
-        precedenceLine,
-        taskLine,
-        hasInvariantBlocks,
-      )
-      const reply = await callLLM({
-        messages: [
-          { role: 'system', content: baseSystem },
-          ...invariantBlocks.map(asSystemMessage),
-          ...contextBlocks.map(asSystemMessage),
-          ...history,
-          ...profileBlocks.map(asSystemMessage),
-          ...memoryBlocks.map(asSystemMessage),
-          ...taskStateBlocks.map(asSystemMessage),
-          { role: 'user', content: decideUser },
-          ...extra,
-          ...(nudge ? [{ role: 'user' as const, content: nudge }] : []),
-        ],
-        temperature: DECIDE_TEMPERATURE,
-        response_format: { type: 'json_object' },
-        max_tokens: DECIDE_MAX_TOKENS,
-      })
-      const parsed = parseDecideJson(reply.content)
-      trace.push({
-        stage: 'decide',
-        raw: reply.content,
-        tool: parsed.tool,
-        args: parsed.args,
-        usage: reply.usage,
-        latencyMs: reply.latencyMs,
-      })
-      return parsed
-    }
-
-    const actions: AgentAction[] = []
-    const actionInvariantHits: InvariantCode[] = []
-    const loopMessages: LlmMessage[] = []
-    const outputs: ToolOutput[] = []
-    const attempted: Array<{ tool: string; args: DecidedToolArgs }> = []
-    let actRefusal: string | undefined
-    let nudgeUsed = false
-    let stoppedByPause = false
 
     const denialText = (tool: string): string => {
       if (taskPaused) {
@@ -1222,410 +826,185 @@ export class Agent {
       return `Инструмент ${tool} недоступен для роли ${capabilities.identity.role}.`
     }
 
-    const runAction = async (
-      tool: string,
-      rawArgs: DecidedToolArgs,
-    ): Promise<ToolOutcome> => {
-      const requestedTool = tools.find((t) => t.name === tool) ?? null
-      const blockedByStage =
-        taskPaused || (stageMutatingBlocked && mutatingNames.has(tool))
-      if (
-        !requestedTool ||
-        !isPermitted(capabilities, requestedTool) ||
-        blockedByStage
-      ) {
-        const denied: ToolOutcome = {
-          ok: false,
-          text: denialText(tool),
-          reference: null,
-        }
-        actions.push({ tool, args: {}, outcome: denied })
-        actRefusal = denied.text
-        trace.push({
-          stage: 'act',
-          tool,
-          args: rawArgs,
-          outcome: denied,
-          mutating: requestedTool?.mutating ?? true,
-        })
-        return denied
-      }
-      const resolved = resolveArgRefs(rawArgs, outputs)
-      if (!resolved.ok) {
-        const denied: ToolOutcome = {
-          ok: false,
-          text: resolved.error,
-          reference: null,
-        }
-        actions.push({ tool, args: {}, outcome: denied })
-        actRefusal = denied.text
-        trace.push({
-          stage: 'act',
-          tool,
-          args: rawArgs,
-          outcome: denied,
-          mutating: requestedTool.mutating ?? true,
-        })
-        return denied
-      }
-      let screenedArgs = resolved.args
-      if (requestedTool.screenArgs) {
-        try {
-          screenedArgs = await requestedTool.screenArgs(
-            resolved.args,
-            capabilities.identity,
-          )
-        } catch {
-          screenedArgs = resolved.args
-        }
-      }
-      const invariantCheck = runActionChecks(
-        tool,
-        screenedArgs,
-        capabilities.identity,
-        this.config.invariants ?? [],
-      )
-      if (!invariantCheck.ok) {
-        actionInvariantHits.push(...invariantCheck.hits)
-        const denied: ToolOutcome = {
-          ok: false,
-          text: `Действие отклонено: ${invariantCheck.reason}\nПредлагаю совместимый вариант без нарушения инварианта.`,
-          reference: null,
-        }
-        actions.push({ tool, args: resolved.args, outcome: denied })
-        actRefusal = denied.text
-        trace.push({
-          stage: 'act',
-          tool,
-          args: rawArgs,
-          outcome: denied,
-          mutating: requestedTool.mutating ?? true,
-          invariantHits: invariantCheck.hits,
-        })
-        return denied
-      }
-      const outcome = await requestedTool.run(
-        resolved.args,
-        capabilities.identity,
-      )
-      actions.push({ tool, args: resolved.args, outcome })
-      trace.push({
-        stage: 'act',
-        tool,
-        args: rawArgs,
-        outcome: traceOutcome(outcome),
-        mutating: requestedTool.mutating ?? true,
-      })
-      if (!outcome.ok) {
-        actRefusal = outcome.text
-      }
-      return outcome
-    }
-
-    for (let step = 0; step < maxActions; step += 1) {
-      if (this.config.isPaused && (await this.config.isPaused())) {
-        stoppedByPause = true
-        break
-      }
-      let decided = await runDecide(allowedToolNames, loopMessages)
-      if (
-        !decided.tool &&
-        !nudgeUsed &&
-        !taskPaused &&
-        !stageMutatingBlocked &&
-        actions.length === 0 &&
-        looksLikeAction(request)
-      ) {
-        nudgeUsed = true
-        decided = await runDecide(allowedToolNames, loopMessages, DECIDE_NUDGE)
-      }
-      if (!decided.tool) {
-        break
-      }
-      const repeated = attempted.some(
-        (entry) =>
-          entry.tool === decided.tool &&
-          JSON.stringify(entry.args) === JSON.stringify(decided.args),
-      )
-      if (repeated) {
-        break
-      }
-      attempted.push({ tool: decided.tool, args: decided.args })
-      if (this.config.isPaused && (await this.config.isPaused())) {
-        stoppedByPause = true
-        break
-      }
-      const outcome = await runAction(decided.tool, decided.args)
-      if (!outcome.ok) {
-        break
-      }
-      const output: ToolOutput = {
-        id: outputs.length + 1,
-        tool: decided.tool,
-        text: outcome.text,
-        refText: outcome.refText,
-      }
-      outputs.push(output)
-      loopMessages.push({
-        role: 'assistant',
-        content: JSON.stringify({ tool: decided.tool, args: decided.args }),
-      })
-      loopMessages.push({
-        role: 'user',
-        content: [
-          `ОТЧЁТ ИНСТРУМЕНТА (${decided.tool}) [output_id=${output.id}]:`,
-          outcome.text,
-          ...(outcome.reference
-            ? [`Код подтверждения: ${outcome.reference}`]
-            : []),
-          '',
-          `Чтобы передать этот вывод в следующий инструмент, укажи {"$ref": "${output.id}"} или {"$ref": "last"} в нужном аргументе вместо копирования текста.`,
-          'Если текущий шаг ещё не завершён — верни следующий инструмент в его рамках. Если шаг выполнен — верни {"tool": null, "args": {}}.',
-        ].join('\n'),
-      })
-    }
-
-    const pauseProbe = this.config.isPaused
-    const pausedNow = pauseProbe ? await pauseProbe() : false
-    const silentPause = pausedNow && actions.length === 0
-
-    const failed = actions.find((action) => !action.outcome.ok)
-    let answer = ''
-    let toolReport = ''
-    if (failed) {
-      answer = actions.map((action) => action.outcome.text).join('\n\n')
-    } else if (!silentPause) {
-      toolReport = formatToolReport(actions)
-      const pauseNote = stoppedByPause
-        ? '\n\nПользователь поставил задачу на паузу — не выполняй дальнейшие действия, коротко сообщи, что выполнение приостановлено.'
-        : ''
-      const finalizeUser = buildFinalizeUser(
-        request,
-        toolReport + pauseNote,
-        precedenceLine,
-        this.config.responseLanguage ?? null,
-        hasProfileBlocks,
-        taskLine,
-        hasInvariantBlocks,
-        availableCatalog,
-        capabilityCatalog,
-        hasRagBlock,
-      )
-      const finalizeReply = await callLLM({
-        messages: [
-          { role: 'system', content: baseSystem },
-          ...invariantBlocks.map(asSystemMessage),
-          ...contextBlocks.map(asSystemMessage),
-          ...(actions.length > 0 ? [] : history),
-          ...profileBlocks.map(asSystemMessage),
-          ...memoryBlocks.map(asSystemMessage),
-          ...taskStateBlocks.map(asSystemMessage),
-          { role: 'user', content: finalizeUser },
-        ],
-        temperature: hasRagBlock
-          ? RAG_FINALIZE_TEMPERATURE
-          : FINALIZE_TEMPERATURE,
-        max_tokens: FINALIZE_MAX_TOKENS,
-      })
-      answer = finalizeReply.content
-      trace.push({
-        stage: 'finalize',
-        answer,
-        usage: finalizeReply.usage,
-        latencyMs: finalizeReply.latencyMs,
-      })
-    }
-
-    let verdicts = silentPause
-      ? []
-      : judges.map((j) =>
-          j.evaluate({
-            request,
-            actions,
-            answer,
-            identity: capabilities.identity,
-            allowedTools: capabilities.allowedTools,
-            invariants: this.config.invariants ?? [],
-          }),
-        )
-    const answerInvariantCheck = silentPause
-      ? { ok: true, hits: [], reason: null }
-      : runAnswerChecks(answer, this.config.invariants ?? [])
-    let invariantHits = [
-      ...new Set([...answerInvariantCheck.hits, ...actionInvariantHits]),
+    const systemMessages = (
+      phase: 'decide' | 'finalize',
+      actionsCount: number,
+    ): LlmMessage[] => [
+      { role: 'system', content: baseSystem },
+      ...invariantBlocks.map(asSystemMessage),
+      ...contextBlocks.map(asSystemMessage),
+      ...(phase === 'finalize' && actionsCount > 0 ? [] : prepared.history),
+      ...profileBlocks.map(asSystemMessage),
+      ...memoryBlocks.map(asSystemMessage),
+      ...taskStateBlocks.map(asSystemMessage),
     ]
-    const checklessInvariants = (this.config.invariants ?? []).filter(
-      (record) => record.check === null,
-    )
-    let guardVerdict: InvariantGuardVerdict | null = null
-    if (
-      !silentPause &&
-      !failed &&
-      answerInvariantCheck.ok &&
-      this.config.invariantGuard &&
-      checklessInvariants.length > 0
-    ) {
-      try {
-        guardVerdict = await this.config.invariantGuard({
-          request,
-          answer,
-          report: toolReport,
-          invariants: checklessInvariants,
-        })
-        const verdict: JudgeVerdict = {
-          judge: 'invariant-guard',
-          status: guardVerdict.status,
-          message: resolveGuardMessage(guardVerdict),
-        }
-        verdicts = [...verdicts, verdict]
-        invariantHits = [...new Set([...invariantHits, ...guardVerdict.hits])]
-        trace.push({
-          stage: 'invariant-guard',
-          verdict,
-          hits: guardVerdict.hits,
-          usage: guardVerdict.usage,
-          latencyMs: guardVerdict.latencyMs,
-        })
-      } catch (error) {
-        trace.push({
-          stage: 'invariant-guard',
-          verdict: {
-            judge: 'invariant-guard',
-            status: 'pass',
-            message:
-              'LLM-проверка инвариантов недоступна; ответ не заблокирован.',
-          },
-          hits: [],
-          usage: null,
-          latencyMs: 0,
-          error: error instanceof Error ? error.message : String(error),
-        })
-      }
-    }
-    if (!silentPause) {
-      trace.push({ stage: 'verdicts', verdicts })
-    }
 
-    const failing = verdicts.filter((v) => v.status === 'fail')
-    const guardFailed = guardVerdict?.status === 'fail'
-    const actionInvariantFailed = actionInvariantHits.length > 0
-    const blocked =
-      failing.length > 0 ||
-      !answerInvariantCheck.ok ||
-      actionInvariantFailed ||
-      guardFailed
-    const reason = resolveBlockReason({
-      answerCheck: answerInvariantCheck,
-      actionInvariantFailed,
-      guardVerdict,
-      failing,
-      invariants: this.config.invariants ?? [],
-      hits: invariantHits,
-    })
-    if (blocked) {
-      answer = blockedAnswer(
-        answerInvariantCheck,
-        verdicts,
-        actRefusal,
-        this.config.invariants ?? [],
-        invariantHits,
-      )
-    }
-
-    const usage = sumUsage(trace)
-    const latencyMs = sumLatency(trace)
-    const promptTokensActual = usage?.prompt_tokens ?? 0
-    const responseTokens = usage?.completion_tokens ?? 0
-    const cacheHitTokens = usage?.prompt_cache_hit_tokens ?? 0
-    const cacheMissTokens =
-      usage?.prompt_cache_miss_tokens ??
-      Math.max(0, promptTokensActual - cacheHitTokens)
-    const tokens: TokenBreakdown = {
-      requestTokens,
-      historyTokens,
-      historyTokensSent,
-      contextTokens,
-      contextMessages,
-      responseTokens,
-      promptTokensActual,
-      cacheHitTokens,
-      cacheMissTokens,
-      costUsd: costUsd({
-        cacheHitTokens,
-        cacheMissTokens,
-        completionTokens: responseTokens,
-      }),
-    }
-    return {
-      ok: !blocked,
-      blocked,
-      reason,
-      answer,
-      trace,
-      verdicts,
-      usage,
-      latencyMs,
+    const result = await runToolLoop<AgentIdentity>({
+      request: userInput,
       model,
-      tokens,
+      callLLM,
+      toolContext: capabilities.identity,
+      tools,
+      allowedToolNames,
+      history: prepared.history,
+      systemTokens: estimateTokens(baseSystem),
+      contextTokens,
+      contextMessages: prepared.note?.messages ?? 0,
+      budgetTokens: this.config.contextBudgetTokens ?? CONTEXT_BUDGET_TOKENS,
+      maxInputChars: MAX_INPUT_CHARS,
+      maxActions: this.config.maxActionsPerTurn ?? DEFAULT_MAX_ACTIONS_PER_TURN,
+      hooks: {
+        prompts: {
+          systemMessages: (state, phase) =>
+            systemMessages(phase, state.actions.length),
+          decideUser: (state) =>
+            buildDecideUser(
+              state.request,
+              tools,
+              allowedToolNames,
+              roomsForRole(capabilities.identity.role),
+              this.config.context,
+              precedenceLine,
+              taskLine,
+              hasInvariantBlocks,
+            ),
+          finalizeUser: (state, report) =>
+            buildFinalizeUser(
+              state.request,
+              report,
+              precedenceLine,
+              this.config.responseLanguage ?? null,
+              hasProfileBlocks,
+              taskLine,
+              hasInvariantBlocks,
+              availableCatalog,
+              capabilityCatalog,
+              hasRagBlock,
+            ),
+          decideParams: () => ({
+            temperature: DECIDE_TEMPERATURE,
+            response_format: { type: 'json_object' },
+            max_tokens: DECIDE_MAX_TOKENS,
+          }),
+          finalizeParams: () => ({
+            temperature: hasRagBlock
+              ? RAG_FINALIZE_TEMPERATURE
+              : FINALIZE_TEMPERATURE,
+            max_tokens: FINALIZE_MAX_TOKENS,
+          }),
+        },
+        policy: {
+          gate: (_state, tool) => {
+            const requested = tools.find((t) => t.name === tool) ?? null
+            const blockedByStage =
+              taskPaused || (stageMutatingBlocked && mutatingNames.has(tool))
+            if (
+              !requested ||
+              !isPermitted(capabilities, requested) ||
+              blockedByStage
+            ) {
+              return { allow: false, reason: denialText(tool) }
+            }
+            return { allow: true }
+          },
+          nudge: (state) =>
+            !taskPaused &&
+            !stageMutatingBlocked &&
+            looksLikeAction(state.request)
+              ? DECIDE_NUDGE
+              : null,
+          checkAction: (_state, call) =>
+            runActionChecks(
+              call.tool,
+              call.args,
+              capabilities.identity,
+              invariantList,
+            ),
+          checkAnswer: (_state, answer) =>
+            runAnswerChecks(answer, invariantList),
+          guard: (_state, { answer, report }) =>
+            checklessInvariants.length === 0 || !this.config.invariantGuard
+              ? Promise.resolve(null)
+              : this.config.invariantGuard({
+                  request,
+                  answer,
+                  report,
+                  invariants: checklessInvariants,
+                }),
+          judges: () =>
+            this.config.judges.map((judge) => ({
+              name: judge.name,
+              evaluate: (ctx) =>
+                judge.evaluate({
+                  request: ctx.request,
+                  actions: ctx.actions,
+                  answer: ctx.answer,
+                  identity: capabilities.identity,
+                  allowedTools: capabilities.allowedTools,
+                  invariants: invariantList,
+                }),
+            })),
+          onBlocked: (_state, info) => {
+            const hits = [
+              ...new Set([
+                ...info.answerCheck.hits,
+                ...info.actionHits,
+                ...(info.guardVerdict?.hits ?? []),
+              ]),
+            ] as InvariantCode[]
+            const answerCheck: InvariantCheckResult = {
+              ok: info.answerCheck.ok,
+              hits: info.answerCheck.hits as InvariantCode[],
+              reason: info.answerCheck.reason,
+            }
+            const guardVerdict: InvariantGuardVerdict | null = info.guardVerdict
+              ? {
+                  ...info.guardVerdict,
+                  hits: info.guardVerdict.hits as InvariantCode[],
+                }
+              : null
+            return {
+              reason: resolveBlockReason({
+                answerCheck,
+                actionInvariantFailed: info.actionHits.length > 0,
+                guardVerdict,
+                failing: info.failing,
+                invariants: invariantList,
+                hits,
+              }),
+              answer: blockedAnswer(
+                answerCheck,
+                info.failing,
+                info.actRefusal,
+                invariantList,
+                hits,
+              ),
+            }
+          },
+        },
+        cost: (usage) => {
+          const cacheHitTokens = usage?.prompt_cache_hit_tokens ?? 0
+          const cacheMissTokens =
+            usage?.prompt_cache_miss_tokens ??
+            Math.max(0, (usage?.prompt_tokens ?? 0) - cacheHitTokens)
+          return costUsd({
+            cacheHitTokens,
+            cacheMissTokens,
+            completionTokens: usage?.completion_tokens ?? 0,
+          })
+        },
+        isPaused: this.config.isPaused,
+      },
+    })
+
+    return {
+      ...result,
+      invariantHits: result.invariantHits as InvariantCode[],
       contextNote: prepared.note,
-      invariantHits,
     }
   }
 }
 
-function sumUsage(trace: AgentTraceStep[]): LlmUsage | null {
-  let prompt = 0
-  let completion = 0
-  let cacheHit = 0
-  let cacheMiss = 0
-  let hasCacheBreakdown = false
-  let any = false
-  for (const step of trace) {
-    if (
-      step.stage === 'decide' ||
-      step.stage === 'finalize' ||
-      step.stage === 'invariant-guard'
-    ) {
-      if (step.usage) {
-        prompt += step.usage.prompt_tokens
-        completion += step.usage.completion_tokens
-        if (
-          step.usage.prompt_cache_hit_tokens !== undefined ||
-          step.usage.prompt_cache_miss_tokens !== undefined
-        ) {
-          hasCacheBreakdown = true
-          cacheHit += step.usage.prompt_cache_hit_tokens ?? 0
-          cacheMiss += step.usage.prompt_cache_miss_tokens ?? 0
-        }
-        any = true
-      }
-    }
-  }
-  if (!any) {
-    return null
-  }
-  return {
-    prompt_tokens: prompt,
-    completion_tokens: completion,
-    ...(hasCacheBreakdown
-      ? {
-          prompt_cache_hit_tokens: cacheHit,
-          prompt_cache_miss_tokens: cacheMiss,
-        }
-      : {}),
-  }
-}
-
-function sumLatency(trace: AgentTraceStep[]): number {
-  let total = 0
-  for (const step of trace) {
-    if (
-      step.stage === 'decide' ||
-      step.stage === 'finalize' ||
-      step.stage === 'invariant-guard'
-    ) {
-      total += step.latencyMs
-    }
-  }
-  return total
+function estimateMessagesTokensOf(blocks: SystemBlock[]): number {
+  return blocks.reduce((sum, block) => sum + estimateTokens(block.content), 0)
 }

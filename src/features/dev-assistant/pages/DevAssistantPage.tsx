@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import AssistantChat from '../components/AssistantChat'
 import AssistantIndexCard from '../components/AssistantIndexCard'
+import FileRunsPanel from '../components/FileRunsPanel'
 import GitContextPanel from '../components/GitContextPanel'
 import type { DevAssistantAnswer } from '../types'
 
@@ -16,7 +17,9 @@ export default function DevAssistantPage() {
           Ассистент отвечает на вопросы о самом проекте. Корпус — README,
           docs/adr, README фич и схемы данных, проиндексированные локально;
           живое состояние репозитория (ветка, статус, коммиты, дифф) приходит из
-          git-MCP-сервера. Задайте вопрос или введите команду{' '}
+          git-MCP-сервера. Ассистент сам роутит запрос: вопросы по докам — через
+          RAG, файловые операции — через файловые инструменты (план,
+          подтверждение, проверка и diff). Справка —{' '}
           <span className="font-mono">/help</span>.
         </p>
       </header>
@@ -25,6 +28,7 @@ export default function DevAssistantPage() {
         <AssistantChat onAnswer={setLatest} />
         <div className="flex flex-col gap-4">
           <GitContextPanel context={latest?.gitContext ?? null} />
+          <FileRunsPanel />
           <AssistantIndexCard />
         </div>
       </div>

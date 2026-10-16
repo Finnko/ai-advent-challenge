@@ -23,7 +23,7 @@ import type { ExtractMemories } from '../domain/memory/extract'
 import { createAnalyzeTaskState } from '../domain/task/analyze'
 import type { AnalyzeTaskState } from '../domain/task/analyze'
 import { buildTaskStateBlocks } from '../domain/task/read'
-import type { TaskState } from '../domain/task/types'
+import type { TaskState } from '@lib/task-state/types'
 import type { MemoryEntry } from '../domain/memory/types'
 import {
   applyLongTermLimit,

@@ -1,7 +1,7 @@
-import type { AgentTraceStep } from '../domain/agent'
+import type { LoopTraceStep } from '@lib/agent-loop/types'
 import { Badge } from '@/components/ui/Badge'
 
-export default function StepBody({ step }: { step: AgentTraceStep }) {
+export default function StepBody({ step }: { step: LoopTraceStep }) {
   switch (step.stage) {
     case 'input':
       return (

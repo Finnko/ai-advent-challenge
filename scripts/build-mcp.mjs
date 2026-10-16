@@ -21,6 +21,10 @@ const ENTRIES = [
     'src/features/dev-assistant/mcp/git/server.ts',
     'dist/server/mcp/mcp-git.mjs',
   ],
+  [
+    'src/features/dev-assistant/mcp/files/server.ts',
+    'dist/server/mcp/mcp-files.mjs',
+  ],
 ]
 
 for (const [entry, outfile] of ENTRIES) {

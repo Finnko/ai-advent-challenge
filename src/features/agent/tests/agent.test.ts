@@ -9,7 +9,7 @@ import type {
   PreparedContext,
 } from '../domain/agent'
 import { TOOLS_BY_ROLE, createAgentTools } from '../domain/agent-tools'
-import type { TaskState } from '../domain/task/types'
+import type { TaskState } from '@lib/task-state/types'
 import {
   TEST_NOW,
   createBooking,
