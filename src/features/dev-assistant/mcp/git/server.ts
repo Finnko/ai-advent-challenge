@@ -3,7 +3,10 @@ import { createGitRunner, createGitSource } from './git.ts'
 import { registerGitTools } from './register.ts'
 import { createGitToolkit } from './tools.ts'
 
-const cwd = process.env.GIT_REPO_DIR?.trim() || process.cwd()
+const cwd =
+  process.env.DEV_ASSISTANT_REPO_DIR?.trim() ||
+  process.env.GIT_REPO_DIR?.trim() ||
+  process.cwd()
 
 await serve('dev-assistant-mcp-git', (server) => {
   const toolkit = createGitToolkit({

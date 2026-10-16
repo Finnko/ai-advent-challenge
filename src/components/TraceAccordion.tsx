@@ -1,7 +1,7 @@
-import type { AgentTraceStep } from '../domain/agent'
+import type { LoopTraceStep } from '@lib/agent-loop/types'
 import TraceStepBlock from './TraceStepBlock'
 
-export default function TraceAccordion({ trace }: { trace: AgentTraceStep[] }) {
+export default function TraceAccordion({ trace }: { trace: LoopTraceStep[] }) {
   return (
     <details className="mt-1">
       <summary className="cursor-pointer select-none text-xs text-[var(--ink-muted)]">

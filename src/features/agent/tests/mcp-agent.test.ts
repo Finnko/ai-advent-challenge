@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { CallLLM, LlmMessage } from '../domain/agent'
 import { buildMcpAgentTools } from '../domain/mcp/agent-tools'
-import { formatArgsExample } from '../domain/mcp/args-example'
+import { formatArgsExample } from '@lib/mcp/args-example'
 import type { McpToolDescriptor } from '../domain/mcp/types'
 import { noneStrategy } from '../domain/context/none'
 import { executeAgent } from '../server/agent-service.server'

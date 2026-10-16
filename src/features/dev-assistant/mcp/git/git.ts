@@ -7,12 +7,19 @@ import type {
   GitStatus,
 } from '../../domain/git/types.ts'
 
-export type GitRunner = (args: string[]) => Promise<string>
+export type GitRunner = (
+  args: string[],
+  options?: { allowExitCodes?: number[] },
+) => Promise<string>
 
 const MAX_BUFFER = 8 * 1024 * 1024
 const LOG_FIELD_SEPARATOR = '\u001f'
 
-function runGit(cwd: string, args: string[]): Promise<string> {
+function runGit(
+  cwd: string,
+  args: string[],
+  options?: { allowExitCodes?: number[] },
+): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile(
       'git',
@@ -20,6 +27,14 @@ function runGit(cwd: string, args: string[]): Promise<string> {
       { cwd, maxBuffer: MAX_BUFFER, windowsHide: true },
       (error, stdout) => {
         if (error) {
+          const code = typeof error.code === 'number' ? error.code : null
+          if (
+            code !== null &&
+            options?.allowExitCodes?.includes(code) === true
+          ) {
+            resolve(stdout)
+            return
+          }
           reject(error)
           return
         }
@@ -30,7 +45,7 @@ function runGit(cwd: string, args: string[]): Promise<string> {
 }
 
 export function createGitRunner(cwd: string): GitRunner {
-  return (args) => runGit(cwd, args)
+  return (args, options) => runGit(cwd, args, options)
 }
 
 function splitLines(text: string): string[] {
@@ -127,7 +142,15 @@ export function createGitSource(options: { run: GitRunner }): GitSource {
       if (path) {
         args.push('--', path)
       }
-      const text = await run(args)
+      let text = await run(args)
+      if (path && text.trim().length === 0) {
+        const status = await run(['status', '--porcelain', '--', path])
+        if (status.trimStart().startsWith('??')) {
+          text = await run(['diff', '--no-index', '--', '/dev/null', path], {
+            allowExitCodes: [1],
+          })
+        }
+      }
       const lines = text.split('\n')
       const truncated = lines.length > maxLines
       const limited = truncated ? lines.slice(0, maxLines) : lines

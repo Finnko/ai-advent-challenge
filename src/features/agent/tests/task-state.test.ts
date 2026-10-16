@@ -8,10 +8,10 @@ import {
   pauseTask,
   resumeTask,
   transitionTask,
-} from '../domain/task/state'
-import type { TaskAnalysis } from '../domain/task/state'
-import type { TaskStage, TaskState } from '../domain/task/types'
-import { TASK_HISTORY_LIMIT } from '../domain/task/types'
+} from '@lib/task-state/state'
+import type { TaskAnalysis } from '@lib/task-state/state'
+import type { TaskStage, TaskState } from '@lib/task-state/types'
+import { TASK_HISTORY_LIMIT } from '@lib/task-state/types'
 
 const AT = '2026-09-10T12:00:00.000Z'
 

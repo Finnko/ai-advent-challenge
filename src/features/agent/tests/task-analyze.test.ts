@@ -5,7 +5,7 @@ import {
   createAnalyzeTaskState,
   parseTaskAnalysis,
 } from '../domain/task/analyze'
-import type { TaskState } from '../domain/task/types'
+import type { TaskState } from '@lib/task-state/types'
 
 const CURRENT: TaskState = {
   title: 'Забронировать переговорку',

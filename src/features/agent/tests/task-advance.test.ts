@@ -6,11 +6,13 @@ import {
   advanceToExecution,
   hasReadonlyVerification,
   hasSuccessfulMutation,
+} from '@lib/task-state/advance'
+import {
   looksLikeApproval,
   looksLikeCancel,
   looksLikeCorrection,
-} from '../domain/task/advance'
-import type { TaskState } from '../domain/task/types'
+} from '@lib/task-state/gates'
+import type { TaskState } from '@lib/task-state/types'
 import { TEST_NOW } from './agent-testkit'
 
 function taskState(overrides: Partial<TaskState> = {}): TaskState {

@@ -4,8 +4,8 @@ import {
   pauseTask,
   resumeTask,
   transitionEvent,
-} from '../domain/task/state'
-import type { TaskState } from '../domain/task/types'
+} from '@lib/task-state/state'
+import type { TaskState } from '@lib/task-state/types'
 import { appendMessage } from './store/messages.server'
 import { getSession } from './store/sessions.server'
 import { getTaskState, saveTaskState } from './store/tasks.server'

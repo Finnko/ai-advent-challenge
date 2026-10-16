@@ -4,6 +4,7 @@ import type {
   AnswerQuote,
   ScoredChunk,
 } from '@lib/rag-engine.types'
+import type { FileOutcome } from './domain/file-outcome'
 import type { GitContext } from './domain/git/context'
 
 export type {
@@ -60,3 +61,10 @@ export type DevAssistantAnswerInput = {
   question: string
   generator?: AnswerGenerator
 }
+
+export type { TaskState } from '@lib/task-state/types'
+export type { LoopTraceStep } from '@lib/agent-loop/types'
+export type { FileOutcome } from './domain/file-outcome'
+
+export type FileTaskOutcomeView =
+  { kind: 'docs'; answer: DevAssistantAnswer } | FileOutcome

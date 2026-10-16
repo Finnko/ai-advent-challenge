@@ -3,7 +3,7 @@ import type { SummaryUsage } from './domain/compression'
 import type { ContextStrategyId } from './domain/context/types'
 import type { MemoryEntry } from './domain/memory/types'
 import type { ProfileRecord } from './domain/profile/types'
-import type { TaskState } from './domain/task/types'
+import type { TaskState } from '@lib/task-state/types'
 
 export type OrgPerson = {
   token: string

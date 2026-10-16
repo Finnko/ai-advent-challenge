@@ -14,7 +14,7 @@ import type {
   RetrievedSource,
 } from '../domain/capabilities/types'
 import type { InvariantRecord } from '../domain/invariants/types'
-import type { TaskState } from '../domain/task/types'
+import type { TaskState } from '@lib/task-state/types'
 import { createAgentTools } from '../domain/agent-tools'
 import { buildMcpAgentTools } from '../domain/mcp/agent-tools'
 import type { McpCallResult, McpToolDescriptor } from '../domain/mcp/types'

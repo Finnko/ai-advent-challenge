@@ -15,7 +15,7 @@ import type { MemoryEntry } from '../domain/memory/types'
 import type { ProfileRecord } from '../domain/profile/types'
 import type { InvariantRecord } from '../domain/invariants/types'
 import { resolveSessionConfig } from '../domain/session/config'
-import type { TaskEvent, TaskState } from '../domain/task/types'
+import type { TaskEvent, TaskState } from '@lib/task-state/types'
 import type { AgentExecution, AgentRuntime } from './agent-service.server'
 import {
   defaultAgentRuntime,
