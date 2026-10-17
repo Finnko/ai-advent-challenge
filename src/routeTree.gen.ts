@@ -15,6 +15,7 @@ import { Route as LayoutAgentRouteImport } from './routes/_layout/agent'
 import { Route as LayoutAgentMemoryRouteImport } from './routes/_layout/agent-memory'
 import { Route as LayoutAgentProfileRouteImport } from './routes/_layout/agent-profile'
 import { Route as LayoutAgentStrategiesRouteImport } from './routes/_layout/agent-strategies'
+import { Route as LayoutAutoReviewRouteImport } from './routes/_layout/auto-review'
 import { Route as LayoutDay1RouteImport } from './routes/_layout/day1'
 import { Route as LayoutDay2RouteImport } from './routes/_layout/day2'
 import { Route as LayoutDay3RouteImport } from './routes/_layout/day3'
@@ -25,6 +26,8 @@ import { Route as LayoutLlmOptRouteImport } from './routes/_layout/llm-opt'
 import { Route as LayoutLocalLlmRouteImport } from './routes/_layout/local-llm'
 import { Route as LayoutRagRouteImport } from './routes/_layout/rag'
 import { Route as JobsTickRouteImport } from './routes/jobs.tick'
+import { Route as LayoutAutoReviewIndexRouteImport } from './routes/_layout/auto-review.index'
+import { Route as LayoutAutoReviewProjectKeyRouteImport } from './routes/_layout/auto-review.$projectKey'
 
 const LayoutRouteRoute = LayoutRouteRouteImport.update({
   id: '/_layout',
@@ -53,6 +56,11 @@ const LayoutAgentProfileRoute = LayoutAgentProfileRouteImport.update({
 const LayoutAgentStrategiesRoute = LayoutAgentStrategiesRouteImport.update({
   id: '/agent-strategies',
   path: '/agent-strategies',
+  getParentRoute: () => LayoutRouteRoute,
+} as any)
+const LayoutAutoReviewRoute = LayoutAutoReviewRouteImport.update({
+  id: '/auto-review',
+  path: '/auto-review',
   getParentRoute: () => LayoutRouteRoute,
 } as any)
 const LayoutDay1Route = LayoutDay1RouteImport.update({
@@ -105,6 +113,17 @@ const JobsTickRoute = JobsTickRouteImport.update({
   path: '/jobs/tick',
   getParentRoute: () => rootRouteImport,
 } as any)
+const LayoutAutoReviewIndexRoute = LayoutAutoReviewIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => LayoutAutoReviewRoute,
+} as any)
+const LayoutAutoReviewProjectKeyRoute =
+  LayoutAutoReviewProjectKeyRouteImport.update({
+    id: '/$projectKey',
+    path: '/$projectKey',
+    getParentRoute: () => LayoutAutoReviewRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof LayoutIndexRoute
@@ -112,6 +131,7 @@ export interface FileRoutesByFullPath {
   '/agent-memory': typeof LayoutAgentMemoryRoute
   '/agent-profile': typeof LayoutAgentProfileRoute
   '/agent-strategies': typeof LayoutAgentStrategiesRoute
+  '/auto-review': typeof LayoutAutoReviewRouteWithChildren
   '/day1': typeof LayoutDay1Route
   '/day2': typeof LayoutDay2Route
   '/day3': typeof LayoutDay3Route
@@ -122,6 +142,8 @@ export interface FileRoutesByFullPath {
   '/local-llm': typeof LayoutLocalLlmRoute
   '/rag': typeof LayoutRagRoute
   '/jobs/tick': typeof JobsTickRoute
+  '/auto-review/$projectKey': typeof LayoutAutoReviewProjectKeyRoute
+  '/auto-review/': typeof LayoutAutoReviewIndexRoute
 }
 export interface FileRoutesByTo {
   '/agent': typeof LayoutAgentRoute
@@ -139,6 +161,8 @@ export interface FileRoutesByTo {
   '/rag': typeof LayoutRagRoute
   '/jobs/tick': typeof JobsTickRoute
   '/': typeof LayoutIndexRoute
+  '/auto-review/$projectKey': typeof LayoutAutoReviewProjectKeyRoute
+  '/auto-review': typeof LayoutAutoReviewIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -147,6 +171,7 @@ export interface FileRoutesById {
   '/_layout/agent-memory': typeof LayoutAgentMemoryRoute
   '/_layout/agent-profile': typeof LayoutAgentProfileRoute
   '/_layout/agent-strategies': typeof LayoutAgentStrategiesRoute
+  '/_layout/auto-review': typeof LayoutAutoReviewRouteWithChildren
   '/_layout/day1': typeof LayoutDay1Route
   '/_layout/day2': typeof LayoutDay2Route
   '/_layout/day3': typeof LayoutDay3Route
@@ -158,6 +183,8 @@ export interface FileRoutesById {
   '/_layout/rag': typeof LayoutRagRoute
   '/jobs/tick': typeof JobsTickRoute
   '/_layout/': typeof LayoutIndexRoute
+  '/_layout/auto-review/$projectKey': typeof LayoutAutoReviewProjectKeyRoute
+  '/_layout/auto-review/': typeof LayoutAutoReviewIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -167,6 +194,7 @@ export interface FileRouteTypes {
     | '/agent-memory'
     | '/agent-profile'
     | '/agent-strategies'
+    | '/auto-review'
     | '/day1'
     | '/day2'
     | '/day3'
@@ -177,6 +205,8 @@ export interface FileRouteTypes {
     | '/local-llm'
     | '/rag'
     | '/jobs/tick'
+    | '/auto-review/$projectKey'
+    | '/auto-review/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/agent'
@@ -194,6 +224,8 @@ export interface FileRouteTypes {
     | '/rag'
     | '/jobs/tick'
     | '/'
+    | '/auto-review/$projectKey'
+    | '/auto-review'
   id:
     | '__root__'
     | '/_layout'
@@ -201,6 +233,7 @@ export interface FileRouteTypes {
     | '/_layout/agent-memory'
     | '/_layout/agent-profile'
     | '/_layout/agent-strategies'
+    | '/_layout/auto-review'
     | '/_layout/day1'
     | '/_layout/day2'
     | '/_layout/day3'
@@ -212,6 +245,8 @@ export interface FileRouteTypes {
     | '/_layout/rag'
     | '/jobs/tick'
     | '/_layout/'
+    | '/_layout/auto-review/$projectKey'
+    | '/_layout/auto-review/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -261,6 +296,13 @@ declare module '@tanstack/react-router' {
       path: '/agent-strategies'
       fullPath: '/agent-strategies'
       preLoaderRoute: typeof LayoutAgentStrategiesRouteImport
+      parentRoute: typeof LayoutRouteRoute
+    }
+    '/_layout/auto-review': {
+      id: '/_layout/auto-review'
+      path: '/auto-review'
+      fullPath: '/auto-review'
+      preLoaderRoute: typeof LayoutAutoReviewRouteImport
       parentRoute: typeof LayoutRouteRoute
     }
     '/_layout/day1': {
@@ -333,14 +375,42 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof JobsTickRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_layout/auto-review/': {
+      id: '/_layout/auto-review/'
+      path: '/'
+      fullPath: '/auto-review/'
+      preLoaderRoute: typeof LayoutAutoReviewIndexRouteImport
+      parentRoute: typeof LayoutAutoReviewRoute
+    }
+    '/_layout/auto-review/$projectKey': {
+      id: '/_layout/auto-review/$projectKey'
+      path: '/$projectKey'
+      fullPath: '/auto-review/$projectKey'
+      preLoaderRoute: typeof LayoutAutoReviewProjectKeyRouteImport
+      parentRoute: typeof LayoutAutoReviewRoute
+    }
   }
 }
+
+interface LayoutAutoReviewRouteChildren {
+  LayoutAutoReviewProjectKeyRoute: typeof LayoutAutoReviewProjectKeyRoute
+  LayoutAutoReviewIndexRoute: typeof LayoutAutoReviewIndexRoute
+}
+
+const LayoutAutoReviewRouteChildren: LayoutAutoReviewRouteChildren = {
+  LayoutAutoReviewProjectKeyRoute: LayoutAutoReviewProjectKeyRoute,
+  LayoutAutoReviewIndexRoute: LayoutAutoReviewIndexRoute,
+}
+
+const LayoutAutoReviewRouteWithChildren =
+  LayoutAutoReviewRoute._addFileChildren(LayoutAutoReviewRouteChildren)
 
 interface LayoutRouteRouteChildren {
   LayoutAgentRoute: typeof LayoutAgentRoute
   LayoutAgentMemoryRoute: typeof LayoutAgentMemoryRoute
   LayoutAgentProfileRoute: typeof LayoutAgentProfileRoute
   LayoutAgentStrategiesRoute: typeof LayoutAgentStrategiesRoute
+  LayoutAutoReviewRoute: typeof LayoutAutoReviewRouteWithChildren
   LayoutDay1Route: typeof LayoutDay1Route
   LayoutDay2Route: typeof LayoutDay2Route
   LayoutDay3Route: typeof LayoutDay3Route
@@ -358,6 +428,7 @@ const LayoutRouteRouteChildren: LayoutRouteRouteChildren = {
   LayoutAgentMemoryRoute: LayoutAgentMemoryRoute,
   LayoutAgentProfileRoute: LayoutAgentProfileRoute,
   LayoutAgentStrategiesRoute: LayoutAgentStrategiesRoute,
+  LayoutAutoReviewRoute: LayoutAutoReviewRouteWithChildren,
   LayoutDay1Route: LayoutDay1Route,
   LayoutDay2Route: LayoutDay2Route,
   LayoutDay3Route: LayoutDay3Route,

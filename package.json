@@ -20,6 +20,8 @@
     "test:watch": "vitest",
     "review:pr": "node --env-file-if-exists=.env --import ./scripts/mcp-alias-loader.mjs src/features/dev-assistant/cli/review.ts",
     "file-assistant": "node --env-file-if-exists=.env --import ./scripts/mcp-alias-loader.mjs src/features/dev-assistant/cli/file-assistant.ts",
+    "auto-review": "node --env-file-if-exists=.env --import ./scripts/mcp-alias-loader.mjs src/features/auto-review/cli/auto-review.ts",
+    "playwright:install": "playwright install chromium firefox",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
     "typecheck": "tsc --noEmit",
@@ -51,6 +53,7 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@playwright/test": "^1.50.0",
     "@tailwindcss/typography": "^0.5.16",
     "@tanstack/devtools-vite": "latest",
     "@tanstack/router-cli": "^1.132.0",
