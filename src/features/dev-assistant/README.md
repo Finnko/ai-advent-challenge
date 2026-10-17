@@ -21,9 +21,10 @@ engine are shared with the corporate agent through `@lib` (see ADR-0014).
   demand**, so the assistant always describes the project as it is right now — there is no bundled
   snapshot to go stale.
 - **Markdown-aware chunking.** Headings (`#`) drive the split; tiny sections merge, oversized ones window
-  (48–256 tokens). The strategy is a private scope of the shared structural chunker: it passes its own
-  heading rule and carries its own id `markdown`, so it is not registered in the shared RAG strategy
-  picker and cannot collide with the wiki index.
+  (48–256 tokens). The chunker is the shared `@lib/chunking/markdown.server` factory: this feature creates
+  it with id `markdown`, the review pipeline with `review`, and the Ozon assistant with `support`. The id
+  is private, so none of them are registered in the shared RAG strategy picker or collide with the wiki
+  index.
 - **Isolated index.** Its own SQLite file (`DEV_ASSISTANT_DB_PATH`, default
   `~/.ai-advent-challenge/dev-assistant.sqlite`), so the wiki index used by `/rag` is never touched.
 - **Live git context over MCP.** A dedicated read-only MCP server (`dev-assistant-mcp-git`) exposes
@@ -74,7 +75,6 @@ engine are shared with the corporate agent through `@lib` (see ADR-0014).
   Headless, and it owns `DEV_ASSISTANT_STRATEGY`/`DEV_ASSISTANT_K`.
 - `server/git-context.server.ts` — the git calls and the `GitContext` mapping for this feature.
 - `server/project-corpus.server.ts` — `CorpusSource` reading the repo from disk.
-- `server/markdown-chunker.server.ts` — the private markdown scope of the structural chunker.
 - `server/store.server.ts` — the feature's own SQLite index.
 - `server/mcp-registry.server.ts` — declares the git MCP spec for the shared `@lib/mcp` host.
 - `domain/prompt.ts` — `PROJECT_PERSONA` (system prompt, fragments/context headings, abstain text).

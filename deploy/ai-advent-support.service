@@ -1,0 +1,33 @@
+[Unit]
+Description=AI Advent Challenge support assistant (public /support on 127.0.0.1:3001)
+After=network-online.target ai-advent.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=aiadvent
+Group=aiadvent
+WorkingDirectory=/opt/ai-advent-challenge
+EnvironmentFile=/etc/ai-advent.env
+Environment=HOME=/var/lib/ai-advent
+Environment=NPM_CONFIG_CACHE=/var/lib/ai-advent/npm-cache
+Environment=NPM_CONFIG_UPDATE_NOTIFIER=false
+Environment=SUPPORT_PUBLIC=1
+Environment=SUPPORT_WARMUP=1
+Environment=NODE_OPTIONS=--max-old-space-size=384
+ExecStart=/usr/bin/npm run preview -- --host 127.0.0.1 --port 3001
+Restart=always
+RestartSec=5
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/ai-advent /opt/ai-advent-challenge/node_modules/.vite-temp
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

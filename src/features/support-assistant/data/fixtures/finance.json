@@ -1,0 +1,35 @@
+[
+  {
+    "sellerId": "seller_1042",
+    "currency": "RUB",
+    "nextPayoutAt": "2026-10-22T00:00:00Z",
+    "nextPayoutAmount": 0,
+    "accrued": 18400,
+    "onHold": 18400,
+    "lastPayoutAt": "2026-10-01T00:00:00Z",
+    "lastPayoutAmount": 32600,
+    "note": "Выплаты приостановлены до снятия ограничения по документам"
+  },
+  {
+    "sellerId": "seller_2087",
+    "currency": "RUB",
+    "nextPayoutAt": "2026-10-20T00:00:00Z",
+    "nextPayoutAmount": 128400.5,
+    "accrued": 84320.75,
+    "onHold": 0,
+    "lastPayoutAt": "2026-10-06T00:00:00Z",
+    "lastPayoutAmount": 115700,
+    "note": "Схема FBO, выплата по графику два раза в месяц"
+  },
+  {
+    "sellerId": "seller_3310",
+    "currency": "RUB",
+    "nextPayoutAt": "2026-10-24T00:00:00Z",
+    "nextPayoutAmount": 18600,
+    "accrued": 9300,
+    "onHold": 0,
+    "lastPayoutAt": "2026-10-10T00:00:00Z",
+    "lastPayoutAmount": 21200,
+    "note": "Схема FBS, выплата раз в неделю"
+  }
+]

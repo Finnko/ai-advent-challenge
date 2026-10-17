@@ -1,0 +1,148 @@
+[
+  {
+    "id": "ticket_501",
+    "sellerId": "seller_1042",
+    "subject": "Не могу войти в личный кабинет",
+    "status": "open",
+    "createdAt": "2026-10-14T09:12:00Z",
+    "updatedAt": "2026-10-14T10:05:00Z",
+    "orderId": null,
+    "productId": null,
+    "messages": [
+      {
+        "author": "seller",
+        "at": "2026-10-14T09:12:00Z",
+        "text": "С утра не пускает в кабинет, пишет, что доступ ограничен. Что случилось?"
+      },
+      {
+        "author": "support",
+        "at": "2026-10-14T10:05:00Z",
+        "text": "Проверяем документы по бренду. Пока доступ к кабинету ограничен."
+      }
+    ]
+  },
+  {
+    "id": "ticket_502",
+    "sellerId": "seller_1042",
+    "subject": "Не приходят заказы",
+    "status": "open",
+    "createdAt": "2026-10-15T07:40:00Z",
+    "updatedAt": "2026-10-15T08:10:00Z",
+    "orderId": "posting_1042-1",
+    "productId": null,
+    "messages": [
+      {
+        "author": "seller",
+        "at": "2026-10-15T07:40:00Z",
+        "text": "Вчера были заказы, сегодня тишина. Отправление висит в ожидании упаковки."
+      }
+    ]
+  },
+  {
+    "id": "ticket_503",
+    "sellerId": "seller_2087",
+    "subject": "Когда будет выплата",
+    "status": "open",
+    "createdAt": "2026-10-16T11:20:00Z",
+    "updatedAt": "2026-10-16T11:45:00Z",
+    "orderId": null,
+    "productId": null,
+    "messages": [
+      {
+        "author": "seller",
+        "at": "2026-10-16T11:20:00Z",
+        "text": "Подскажите, когда ждать следующую выплату и от чего зависит сумма?"
+      }
+    ]
+  },
+  {
+    "id": "ticket_504",
+    "sellerId": "seller_3310",
+    "subject": "Отклонили карточку товара",
+    "status": "open",
+    "createdAt": "2026-10-16T13:05:00Z",
+    "updatedAt": "2026-10-16T13:30:00Z",
+    "orderId": null,
+    "productId": "product_3310-1",
+    "messages": [
+      {
+        "author": "seller",
+        "at": "2026-10-16T13:05:00Z",
+        "text": "Карточку отклонили на модерации. Не понимаю, что исправить."
+      }
+    ]
+  },
+  {
+    "id": "ticket_505",
+    "sellerId": "seller_1042",
+    "subject": "Какие документы нужны для бренда",
+    "status": "answered",
+    "createdAt": "2026-10-13T16:10:00Z",
+    "updatedAt": "2026-10-13T18:00:00Z",
+    "orderId": null,
+    "productId": null,
+    "messages": [
+      {
+        "author": "seller",
+        "at": "2026-10-13T16:10:00Z",
+        "text": "Готовим документы на товарный знак. Что именно загрузить?"
+      }
+    ]
+  },
+  {
+    "id": "ticket_506",
+    "sellerId": "seller_2087",
+    "subject": "Товар на складе Ozon",
+    "status": "open",
+    "createdAt": "2026-10-12T08:30:00Z",
+    "updatedAt": "2026-10-12T09:00:00Z",
+    "orderId": "posting_2087-1",
+    "productId": "product_2087-1",
+    "messages": [
+      {
+        "author": "seller",
+        "at": "2026-10-12T08:30:00Z",
+        "text": "Когда товар появится в продаже после поставки на склад?"
+      }
+    ]
+  },
+  {
+    "id": "ticket_507",
+    "sellerId": "seller_3310",
+    "subject": "Как изменить тариф",
+    "status": "closed",
+    "createdAt": "2026-10-10T12:00:00Z",
+    "updatedAt": "2026-10-10T15:30:00Z",
+    "orderId": null,
+    "productId": null,
+    "messages": [
+      {
+        "author": "seller",
+        "at": "2026-10-10T12:00:00Z",
+        "text": "Хочу перейти на другой тариф. Где это сделать?"
+      },
+      {
+        "author": "support",
+        "at": "2026-10-10T15:30:00Z",
+        "text": "Переход доступен в разделе «Тариф» в личном кабинете."
+      }
+    ]
+  },
+  {
+    "id": "ticket_508",
+    "sellerId": "seller_2087",
+    "subject": "Ошибка в отчёте по продажам",
+    "status": "open",
+    "createdAt": "2026-10-11T10:15:00Z",
+    "updatedAt": "2026-10-11T10:40:00Z",
+    "orderId": null,
+    "productId": null,
+    "messages": [
+      {
+        "author": "seller",
+        "at": "2026-10-11T10:15:00Z",
+        "text": "В отчёте за неделю сумма не сходится с личным кабинетом."
+      }
+    ]
+  }
+]

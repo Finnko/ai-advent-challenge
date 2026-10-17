@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import {
-  markdownChunker,
-  parseMarkdownSections,
-} from '../server/markdown-chunker.server'
-import type { RawDoc } from '@lib/rag-engine.types'
+import type { RawDoc } from '../rag-engine.types'
+import { createMarkdownChunker, parseMarkdownSections } from './markdown.server'
 
 const DOC: RawDoc = {
   id: 'doc',
@@ -49,7 +46,7 @@ describe('markdown chunker', () => {
   })
 
   it('produces structural chunks with section metadata', () => {
-    const chunks = markdownChunker.chunk(DOC)
+    const chunks = createMarkdownChunker({ id: 'markdown' }).chunk(DOC)
     expect(chunks.length).toBeGreaterThan(0)
     expect(chunks.every((chunk) => chunk.strategy === 'markdown')).toBe(true)
     expect(chunks.every((chunk) => chunk.docId === 'doc')).toBe(true)
@@ -58,8 +55,15 @@ describe('markdown chunker', () => {
   })
 
   it('splits oversized sections into several chunks', () => {
-    const chunks = markdownChunker.chunk(LARGE_DOC)
+    const chunks = createMarkdownChunker({ id: 'markdown' }).chunk(LARGE_DOC)
     expect(chunks.length).toBeGreaterThan(1)
     expect(chunks.every((chunk) => chunk.nTokens <= 300)).toBe(true)
+  })
+
+  it('keeps consumer strategy ids apart', () => {
+    const docs = createMarkdownChunker({ id: 'review' }).chunk(DOC)
+    const support = createMarkdownChunker({ id: 'support' }).chunk(DOC)
+    expect(docs.every((chunk) => chunk.strategy === 'review')).toBe(true)
+    expect(support.every((chunk) => chunk.strategy === 'support')).toBe(true)
   })
 })

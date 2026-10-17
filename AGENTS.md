@@ -1,6 +1,6 @@
 # Project: AI Advent Challenge
 
-Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 32 (`feature/day32`).
+Daily AI-learning steps. Each day is a branch `feature/dayN`; current work: Day 33 (`feature/day33`).
 Days 13–20 extend the unified `/agent` (task state, invariants, MCP); Days 21–25 build `/rag` and make it an
 agent capability. Days 26–30 add local-MLX features: the `/local-llm` tab, a Telegram quiz bot, a local RAG
 generator, the `/llm-opt` lab, and the private `llm-service` gateway published over Tailscale Funnel. Day 31
@@ -9,7 +9,9 @@ turns the same engine into an automated pull-request review pipeline (GitHub Act
 makes `/dev-assistant` a file assistant: a shared tool loop / task FSM / invariants engine in `@lib`, a
 sandboxed file MCP server, and a plan → approve → execute → auto-validate flow with a printed diff. Day 35
 adds `auto-review`: a reviewer console that installs an uploaded student project, judges it with a
-Playwright suite plus static rules and the model, and reports per-criterion verdicts.
+Playwright suite plus static rules and the model, and reports per-criterion verdicts. Day 33
+adds the unofficial Ozon support assistant (`/support`): RAG over the Ozon docs mirror, seller/ticket
+context over MCP, and a public Funnel instance limited to `/support`.
 
 ## Where to read more
 
@@ -30,6 +32,10 @@ Playwright suite plus static rules and the model, and reports per-criterion verd
   git/files MCP servers, `/help`, the diff reader, the review contract and the GitHub delivery, plus the
   file-task orchestration and its invariants. Read it before editing it or the shared RAG engine / MCP
   host / agent loop in `src/lib`.
+- `src/features/support-assistant/README.md` — the unofficial Ozon support assistant (Day 33): corpus
+  fetch and index, the seven-tool Ozon MCP server, ticket context, the abstention contract, public
+  allowlist/limits, and the two-instance Funnel deploy. Read it before editing `/support` or the shared
+  markdown chunker.
 - `CODING_STANDARDS.md` — style, test and product-scope rules to apply when writing or reviewing code.
 - `GLOSSARY.md` — domain vocabulary (Ход, Задача, Этап, Инвариант, …).
 - `README.md` — day-by-day log of the challenge.
@@ -72,13 +78,18 @@ Playwright suite plus static rules and the model, and reports per-criterion verd
 - `src/features/llm-service/` — standalone private LLM service (Day 30): a Node HTTP gateway in front of
   the local MLX model with an OpenAI-compatible API, a chat page and limits; published via Tailscale
   Funnel. Bundled with esbuild, outside `vite build` (module map in the feature README).
+- `src/features/support-assistant/` — standalone unofficial Ozon support assistant (Day 33) on `/support`:
+  a private markdown `support` index over the Ozon docs mirror, a seven-tool read-only Ozon MCP server over
+  fixtures, seller/ticket context, three-block answers and a public Funnel instance limited by an
+  allowlist (`SUPPORT_PUBLIC=1`). Imports only `@lib`; module map in the feature README and ADR-0019.
 - `src/features/dev-assistant/` — standalone assistant (Day 31) that answers about the project: its own
-  markdown corpus read from disk, a private markdown scope of the shared structural chunker, its own
-  SQLite index, and a read-only git MCP server. Day 32 adds a headless pull-request review pipeline in the
-  same feature (`cli/review.ts` + `.github/workflows/pr-review.yml`) that indexes docs **and code** under a
-  private `review` strategy. Day 34 adds the file assistant (`mcp/files/*`, `server/file-task.server.ts`,
-  `cli/file-assistant.ts`) with its own `node:sqlite` runs DB, plus docs-vs-files routing on the same page.
-  It imports only `@lib` (never `features/rag` or `features/agent`); module map in the feature README.
+  markdown corpus read from disk, the shared `@lib/chunking/markdown.server` factory (id `markdown`), its
+  own SQLite index, and a read-only git MCP server. Day 32 adds a headless pull-request review pipeline in
+  the same feature (`cli/review.ts` + `.github/workflows/pr-review.yml`) that indexes docs **and code**
+  under a private `review` strategy. Day 34 adds the file assistant (`mcp/files/*`,
+  `server/file-task.server.ts`, `cli/file-assistant.ts`) with its own `node:sqlite` runs DB, plus
+  docs-vs-files routing on the same page. It imports only `@lib` (never `features/rag` or
+  `features/agent`); module map in the feature README.
 - `src/features/auto-review/` — standalone reviewer console (Day 35) over `/auto-review`: uploads a zip of
   a student project, installs and serves it, judges it with a Playwright suite (Chromium + Firefox) plus
   static Д-rules and DeepSeek for the rest, and stores every review in its own `node:sqlite`
@@ -86,7 +97,8 @@ Playwright suite plus static rules and the model, and reports per-criterion verd
   Vitest) and run from the challenge, not from the reviewed project. Module map in the feature README.
 - `src/lib/` — shared: `llm.ts`/`llm.server.ts` (transport), `agent-rag.server.ts` (agent↔RAG
   composition), `rag-engine.{types,server}.ts` (app-level RAG engine facade: index → `searchSources` →
-  `answerFromSources`), `source-format.ts` (numbered Источники), `mcp/**` (shared MCP host, generic
+  `answerFromSources`), `chunking/markdown.server.ts` (the shared markdown chunker factory used by
+  dev-assistant, PR review and support), `source-format.ts` (numbered Источники), `mcp/**` (shared MCP host, generic
   context collector, server helpers, neutral MCP→Tool adapter), `agent-loop/**` (the tool loop:
   `Tool.run(args, ctx)`, `$ref`, repeat guard, `maxActions`, pause hook, and the `LoopHooks` seam),
   `task-state/**` (FSM mechanics, textual gates, analyzer factory, block/line formatting),
@@ -150,12 +162,26 @@ Playwright suite plus static rules and the model, and reports per-criterion verd
   published via Tailscale Funnel; it reaches the model only through `@lib/local-llm.server`, gates with
   `LLM_SERVICE_KEYS`, and enforces rate limit / max context / a single-flight queue in-process. Relaxes the
   local-llm dev-only and no-streaming rules — see the feature README and ADR-0008.
+- **Support assistant (Day 33)**: `features/support-assistant/` is the unofficial Ozon seller helper on
+  `/support`. It owns a private `support` SQLite index over the Ozon docs mirror (`fetch:ozon-corpus` →
+  `support:index`; `kind: section` pages are skipped, `updated` goes into the chunk title), a read-only
+  stdio MCP server `support-mcp-ozon` with seven tools (`get_seller`, `list_tickets`, `get_ticket`,
+  `list_postings`, `get_posting`, `get_product`, `get_finance`) over synthetic fixtures with masked API
+  keys, and the ask flow `MCP → ticket context → searchSources → answerFromSources`. One MCP session per
+  request; the context is capped at 6000 characters. `contextRescues: false`: ticket context never turns
+  a weak retrieval into an answer, so off-topic questions abstain. The page and the API are real server
+  routes (`/support`, `/api/support/{sellers,ask,health}`), not `createServerFn`, so the public second
+  instance can allowlist them: `SUPPORT_PUBLIC=1` returns 404 for everything else. The private instance
+  stays on `serve --https=8443`; the public one is `funnel --https=443` on port 3001. Limits: 30/hour per
+  IP (only `X-Forwarded-For`; `X-Real-IP` is attacker-controlled), 60/hour globally, 200/day, single-flight
+  queue 2, 4 KB body, 800-char question, 45 s through the transport `AbortSignal`. The answer is rendered
+  by `react-markdown` without raw HTML. See the feature README and ADR-0019.
 - **Developer assistant (Day 31)**: `features/dev-assistant/` is a dev/local-only `/dev-assistant` page that
   answers about the project itself. It reuses RAG through `src/lib/rag-engine.server.ts` (the
   `searchSources` / `answerFromSources` seams over `features/rag`, which it never imports) and git through
   a read-only MCP server (`dev-assistant-mcp-git`: branch/status/log/changed files/diff) reached via
-  `src/lib/mcp`. Corpus is read from disk (`data/corpus-manifest.ts`), chunked by a private markdown scope
-  of the shared structural chunker (id `markdown`, unregistered), stored in its own SQLite; the git context
+  `src/lib/mcp`. Corpus is read from disk (`data/corpus-manifest.ts`), chunked by the shared
+  `@lib/chunking/markdown.server` factory (id `markdown`, unregistered), stored in its own SQLite; the git context
   is collected by the feature (`server/git-context.server.ts`) over the generic
   `@lib/mcp/context.server`; the headless core `answerAboutProject({ question, store, generator,
   contextBlocks })` takes plain `contextBlocks` (git today, the PR diff on Day 32) and reuses the RAG JSON
@@ -256,8 +282,9 @@ Playwright suite plus static rules and the model, and reports per-criterion verd
   in `scripts/build-mcp.mjs` provide `@/`/`@lib/` + extensionless resolution at runtime and at build time.
 - **Workflow**: work on `feature/dayN` branches; commit only when asked. Deployment lives in `deploy/`
   (systemd + timer, Tailscale-only; the Day-30 private service adds a `launchd` example and is published
-  through Tailscale Funnel). Tracked docs live in `docs/` (decisions in `docs/adr/`); working
-  plans go in gitignored `md/`.
+  through Tailscale Funnel; Day 33 adds the second `ai-advent-support.service` on 3001 with a public
+  Funnel only for `/support`, while the main app moves to `serve --https=8443`). Tracked docs live in
+  `docs/` (decisions in `docs/adr/`); working plans go in gitignored `md/`.
 
 ## Commands
 
@@ -276,6 +303,8 @@ npm run auto-review -- --dir <path> [--key <key>]   # то же для уже р
 npm run playwright:install  # браузеры набора авторевью (Chromium + Firefox)
 npm run file-assistant -- --scenario find-usages   # file assistant CLI (--apply writes; default plan-only)
 npm run file-assistant -- --goal "…" --apply
+npm run fetch:ozon-corpus   # скачать зеркало документации Ozon в .cache/ozon-corpus
+npm run support:index       # собрать support.sqlite (локально, затем деплой копирует его)
 RUN_NETWORK_TESTS=1 RUN_MODEL_TESTS=1 npm run test  # unlock gated network/model tests
 ```
 

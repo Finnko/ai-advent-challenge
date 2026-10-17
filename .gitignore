@@ -4,6 +4,7 @@ node_modules
 .vscode/
 dist
 dist-ssr
+.cache/
 *.local
 .env
 deploy/.env.deploy

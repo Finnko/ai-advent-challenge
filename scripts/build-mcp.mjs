@@ -25,6 +25,10 @@ const ENTRIES = [
     'src/features/dev-assistant/mcp/files/server.ts',
     'dist/server/mcp/mcp-files.mjs',
   ],
+  [
+    'src/features/support-assistant/mcp/ozon/server.ts',
+    'dist/server/mcp/mcp-support-ozon.mjs',
+  ],
 ]
 
 for (const [entry, outfile] of ENTRIES) {
