@@ -16,9 +16,14 @@ import type {
   Embedder,
   SearchScope,
 } from '@lib/rag-engine.types'
-import { SUPPORT_K, SUPPORT_STRATEGY } from '../domain/constants'
+import {
+  SUPPORT_K,
+  SUPPORT_RETRIEVAL_K,
+  SUPPORT_STRATEGY,
+} from '../domain/constants'
 import { looksAbstained } from '../domain/answer-check'
 import { SupportError, isSupportError } from '../domain/errors'
+import { boostSources } from '../domain/lexical-boost'
 import { SUPPORT_PERSONA } from '../domain/persona'
 import { buildTicketContext } from '../domain/ticket-context'
 import type {
@@ -27,7 +32,10 @@ import type {
   SellerSummary,
   TicketSummary,
 } from '../domain/types'
-import { resolveSupportGenerator } from './config.server'
+import {
+  resolveSupportGenerator,
+  resolveSupportLexicalBoost,
+} from './config.server'
 import { assertSupportIndex } from './index.server'
 import { collectSupportContext, type SupportContext } from './mcp-tools.server'
 import { ozonServerConfig } from './mcp-registry.server'
@@ -35,7 +43,8 @@ import { getSupportStore } from './store.server'
 
 const SUPPORT_SCOPE: SearchScope = {
   strategy: SUPPORT_STRATEGY,
-  k: SUPPORT_K,
+  k: SUPPORT_RETRIEVAL_K,
+  candidateK: SUPPORT_RETRIEVAL_K,
   rerank: false,
   rewrite: false,
 }
@@ -49,6 +58,7 @@ export type AskSupportDeps = {
   generator?: AnswerGenerator
   llm?: AnswerLlm
   embedder?: Embedder
+  lexicalBoost?: number
   signal?: AbortSignal
 }
 
@@ -190,6 +200,13 @@ export async function askSupport(
       throw new SupportError('timeout', 'Запрос к модели прерван.', 504)
     }
     throw error
+  }
+
+  retrieval = {
+    ...retrieval,
+    sources: boostSources(input.question, retrieval.sources, {
+      weight: deps.lexicalBoost ?? resolveSupportLexicalBoost(),
+    }).slice(0, SUPPORT_K),
   }
 
   try {

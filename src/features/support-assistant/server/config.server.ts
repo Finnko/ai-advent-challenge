@@ -2,6 +2,7 @@ import {
   SUPPORT_DAILY_MAX,
   SUPPORT_GLOBAL_PER_HOUR,
   SUPPORT_IP_PER_HOUR,
+  SUPPORT_LEXICAL_BOOST,
   SUPPORT_MAX_BODY_BYTES,
   SUPPORT_MAX_QUESTION_CHARS,
   SUPPORT_QUEUE_DEPTH,
@@ -21,6 +22,23 @@ function intEnv(name: string, fallback: number, min: number): number {
   return Math.trunc(value)
 }
 
+function floatEnv(
+  name: string,
+  fallback: number,
+  min: number,
+  max: number,
+): number {
+  const raw = process.env[name]?.trim()
+  if (!raw) {
+    return fallback
+  }
+  const value = Number(raw)
+  if (!Number.isFinite(value) || value < min || value > max) {
+    return fallback
+  }
+  return value
+}
+
 export type SupportGenerator = 'cloud' | 'local'
 
 export function resolveSupportGenerator(): SupportGenerator {
@@ -29,6 +47,10 @@ export function resolveSupportGenerator(): SupportGenerator {
 
 export function resolveSupportPublic(): boolean {
   return process.env.SUPPORT_PUBLIC?.trim() === '1'
+}
+
+export function resolveSupportLexicalBoost(): number {
+  return floatEnv('SUPPORT_LEXICAL_BOOST', SUPPORT_LEXICAL_BOOST, 0, 0.2)
 }
 
 export const supportConfig = {

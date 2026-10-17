@@ -23,6 +23,11 @@ new feature would make three consumers of the same 48–256-token structural spl
   `updated` is folded into the chunk title rather than the body.
 - **Index:** a private `support` strategy in its own `support.sqlite`; e5-base embeddings; `k = 6`, no
   reranker, no rewrite.
+- **Lexical boost:** the 24 cosine candidates are re-scored by a feature-local
+  `domain/lexical-boost.ts` — IDF-weighted coverage of normalised query terms, four-letter prefixes plus
+  a de-prefixed variant for Russian morphology, `section` ×2 / `title` ×1.5, additive
+  `SUPPORT_LEXICAL_BOOST · coverage` (default `0.03`, `0` disables). The six best go to the prompt.
+  Abstention still reads the dense top-1, so the boost only reorders; it is not a reranker.
 - **Retrieval plus context:** one MCP session per request for seller, ticket, finance, postings and
   product; the context is a plain text block capped at 6000 characters. The answer goes through
   `answerFromSources` with `SUPPORT_PERSONA`.
@@ -58,3 +63,6 @@ new feature would make three consumers of the same 48–256-token structural spl
   Funnel can lag up to 10 minutes, so external checks are advisory.
 - Fixtures are synthetic; the footer explicitly says the service is unofficial and does not write to
   tickets.
+- The lexical boost costs no model and no second index; it re-sorts the 24 candidates the engine already
+  scored, so the VPS memory budget is unchanged. `SUPPORT_LEXICAL_BOOST=0` restores pure cosine ordering
+  without a redeploy of the index, and the sources panel shows the bonus as a separate delta.

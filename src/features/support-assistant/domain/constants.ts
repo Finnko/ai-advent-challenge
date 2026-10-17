@@ -1,5 +1,7 @@
 export const SUPPORT_STRATEGY = 'support'
 export const SUPPORT_K = 6
+export const SUPPORT_RETRIEVAL_K = 24
+export const SUPPORT_LEXICAL_BOOST = 0.03
 export const SUPPORT_CONTEXT_MAX_CHARS = 6000
 export const SUPPORT_MAX_QUESTION_CHARS = 800
 export const SUPPORT_MAX_BODY_BYTES = 4096

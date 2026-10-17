@@ -153,6 +153,24 @@ describe('askSupport', () => {
     ])
   })
 
+  it('ranks the article matching the question keywords first', async () => {
+    const result = await askSupport(
+      {
+        sellerId: 'seller_1042',
+        ticketId: 'ticket_502',
+        question: 'Почему Ozon блокирует личный кабинет?',
+      },
+      {
+        store,
+        session: fakeSession(),
+        llm: answerLlm,
+        embedder: embedderWith([1, 0, 0, 0]),
+        lexicalBoost: 0.03,
+      },
+    )
+    expect(result.sources[0]?.chunk.title).toContain('блокирует')
+  })
+
   it('abstains when retrieval is weak even with ticket context', async () => {
     let calls = 0
     const countingLlm: AnswerLlm = async () => {

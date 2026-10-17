@@ -32,6 +32,12 @@ export default function SourcesList({
               ) : (
                 <Badge>score {source.score.toFixed(3)}</Badge>
               )}
+              {source.originalScore !== undefined &&
+                source.score - source.originalScore > 1e-6 && (
+                  <Badge variant="accent">
+                    лексика +{(source.score - source.originalScore).toFixed(3)}
+                  </Badge>
+                )}
             </div>
             {source.chunk.section && (
               <span className="demo-muted">{source.chunk.section}</span>

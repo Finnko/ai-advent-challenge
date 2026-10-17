@@ -168,8 +168,11 @@ context over MCP, and a public Funnel instance limited to `/support`.
   stdio MCP server `support-mcp-ozon` with seven tools (`get_seller`, `list_tickets`, `get_ticket`,
   `list_postings`, `get_posting`, `get_product`, `get_finance`) over synthetic fixtures with masked API
   keys, and the ask flow `MCP → ticket context → searchSources → answerFromSources`. One MCP session per
-  request; the context is capped at 6000 characters. `contextRescues: false`: ticket context never turns
-  a weak retrieval into an answer, so off-topic questions abstain. The page and the API are real server
+  request; the context is capped at 6000 characters. Retrieval takes the 24 cosine candidates, applies a
+  feature-local lexical boost (`domain/lexical-boost.ts`: IDF-weighted Russian prefixes and a de-prefixed
+  variant, `section` ×2 / `title` ×1.5, additive `SUPPORT_LEXICAL_BOOST`, default `0.03`, `0` disables)
+  and sends the best 6; abstention still reads the dense top-1. `contextRescues: false`: ticket context
+  never turns a weak retrieval into an answer, so off-topic questions abstain. The page and the API are real server
   routes (`/support`, `/api/support/{sellers,ask,health}`), not `createServerFn`, so the public second
   instance can allowlist them: `SUPPORT_PUBLIC=1` returns 404 for everything else. The private instance
   stays on `serve --https=8443`; the public one is `funnel --https=443` on port 3001. Limits: 30/hour per
