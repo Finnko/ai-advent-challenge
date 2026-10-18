@@ -7,7 +7,9 @@ generator, the `/llm-opt` lab, and the private `llm-service` gateway published o
 adds the developer assistant (`/dev-assistant`): RAG over the project's own docs plus git over MCP. Day 32
 turns the same engine into an automated pull-request review pipeline (GitHub Action + headless CLI). Day 34
 makes `/dev-assistant` a file assistant: a shared tool loop / task FSM / invariants engine in `@lib`, a
-sandboxed file MCP server, and a plan → approve → execute → auto-validate flow with a printed diff.
+sandboxed file MCP server, and a plan → approve → execute → auto-validate flow with a printed diff. Day 35
+adds `auto-review`: a reviewer console that installs an uploaded student project, judges it with a
+Playwright suite plus static rules and the model, and reports per-criterion verdicts.
 
 ## Where to read more
 
@@ -77,6 +79,11 @@ sandboxed file MCP server, and a plan → approve → execute → auto-validate 
   private `review` strategy. Day 34 adds the file assistant (`mcp/files/*`, `server/file-task.server.ts`,
   `cli/file-assistant.ts`) with its own `node:sqlite` runs DB, plus docs-vs-files routing on the same page.
   It imports only `@lib` (never `features/rag` or `features/agent`); module map in the feature README.
+- `src/features/auto-review/` — standalone reviewer console (Day 35) over `/auto-review`: uploads a zip of
+  a student project, installs and serves it, judges it with a Playwright suite (Chromium + Firefox) plus
+  static Д-rules and DeepSeek for the rest, and stores every review in its own `node:sqlite`
+  (`auto-review.sqlite`). Imports only `@lib`; its Playwright specs live under `e2e/` (excluded from
+  Vitest) and run from the challenge, not from the reviewed project. Module map in the feature README.
 - `src/lib/` — shared: `llm.ts`/`llm.server.ts` (transport), `agent-rag.server.ts` (agent↔RAG
   composition), `rag-engine.{types,server}.ts` (app-level RAG engine facade: index → `searchSources` →
   `answerFromSources`), `source-format.ts` (numbered Источники), `mcp/**` (shared MCP host, generic
@@ -209,6 +216,24 @@ sandboxed file MCP server, and a plan → approve → execute → auto-validate 
   Funnel); a failure posts a note and exits green — never blocks a PR. The CLI runs under plain Node via
   `scripts/mcp-alias-loader.mjs`, so nothing on its import graph may use Vite-only APIs at module top
   level. See the feature README, ADR-0012 and ADR-0013.
+- **Auto-review (Day 35)**: `features/auto-review/` is a dev/local-only `/auto-review` console that
+  reviews an uploaded student project («Шесть городов»). Verdicts are deterministic first: Б1/Б2/Б3 come
+  only from a Playwright run of the TЗ suite in Chromium + Firefox, seven Д rules are static
+  (`domain/code-checks.ts`), and DeepSeek only judges the remaining Д and writes the human reasons — it
+  never flips a pass/fail for the basic criteria. The suite lives in the feature (`e2e/`, excluded from
+  Vitest), runs from the challenge with `baseURL` = the reviewed dev server, and answers
+  `*.design.htmlacademy.pro/six-cities/**` from fixtures while aborting every other origin. The project is
+  extracted and served locally, so install failures, a dead dev server or a missing report degrade to
+  `not_checked` with the cause, never to a silent pass; code criteria still run on whatever was extracted.
+  The flow is `@lib/task-state` (`planning` → approve → `execution` → `validation` → `done`) with two
+  parallel tracks (Playwright vs sources), a detached in-process run whose progress is polled from `runs`,
+  and its own `node:sqlite` (`auto-review.sqlite`). A re-review carries `resumedFrom`, is planned and
+  judged only for the previously failed codes, and carries the rest over. The source is a zip **or** an
+  already-extracted folder (UI switch, `--dir` in the CLI); the external folder is never deleted by
+  cleanup, only the challenge-owned copies are. A run can be interrupted: an `AbortController` kills the
+  child process group (install, dev server, Playwright), the task moves to `cancelled` and the review
+  status becomes `cancelled` (the partial report is not presented as a verdict). Clearing sources from
+  the UI keeps history unless asked otherwise. See the feature README, ADR-0018.
 - **MCP tools**: `agent-mcp-demo` is read-only; `agent-mcp-jobs` writes its own `jobs.sqlite`. Tool
   metadata travels over the protocol: each spawned server sets `annotations: { readOnlyHint }`, the host
   derives `descriptor.mutating` (`readOnlyHint !== true` → mutating, fail-closed) and mutating MCP tools
@@ -246,6 +271,9 @@ npm run build:llm-service   # bundle the private LLM service (esbuild → dist/s
 npm run llm-service         # build + run the private LLM service (needs local MLX + LLM_SERVICE_KEYS)
 npm run llm-service:load    # stability probe against a running service
 npm run review:pr           # run the PR review pipeline (PR_BASE_SHA=… PR_REVIEW_DRY_RUN=1 for a dry run)
+npm run auto-review -- --zip <path> [--key <key>]   # авторевью студенческого проекта (ключ — из имени архива; --resume <id> — только проваленные пункты)
+npm run auto-review -- --dir <path> [--key <key>]   # то же для уже распакованного проекта (папку не удаляем)
+npm run playwright:install  # браузеры набора авторевью (Chromium + Firefox)
 npm run file-assistant -- --scenario find-usages   # file assistant CLI (--apply writes; default plan-only)
 npm run file-assistant -- --goal "…" --apply
 RUN_NETWORK_TESTS=1 RUN_MODEL_TESTS=1 npm run test  # unlock gated network/model tests

@@ -20,3 +20,5 @@ md/
 task.md
 .local-llm-venv/
 .impeccable/
+test-results/
+playwright-report/
