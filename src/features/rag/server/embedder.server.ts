@@ -50,6 +50,11 @@ export function resolveEmbedDtype(): EmbedDtype {
   return 'q8'
 }
 
+export function resolveEmbedCacheDir(): string | null {
+  const value = process.env.RAG_EMBED_CACHE_DIR?.trim()
+  return value || null
+}
+
 type Extractor = (
   texts: string[],
   options: { pooling: 'mean' | 'cls'; normalize: boolean },
@@ -66,8 +71,14 @@ async function getExtractor(
   if (!extractorPromise || extractorKey !== key) {
     extractorKey = key
     extractorPromise = (async () => {
-      const { pipeline } = await import('@huggingface/transformers')
-      const pipe = await pipeline('feature-extraction', modelId, { dtype })
+      const transformers = await import('@huggingface/transformers')
+      const cacheDir = resolveEmbedCacheDir()
+      if (cacheDir) {
+        transformers.env.cacheDir = cacheDir
+      }
+      const pipe = await transformers.pipeline('feature-extraction', modelId, {
+        dtype,
+      })
       return pipe as unknown as Extractor
     })()
   }

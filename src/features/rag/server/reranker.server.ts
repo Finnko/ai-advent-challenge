@@ -24,6 +24,11 @@ export function resolveRerankDtype(): RerankDtype {
   return 'q8'
 }
 
+export function resolveRerankCacheDir(): string | null {
+  const value = process.env.RAG_RERANK_CACHE_DIR?.trim()
+  return value || null
+}
+
 export function resolveRerankThreshold(): number {
   const value = process.env.RAG_RERANK_THRESHOLD?.trim()
   if (value === undefined || value === '') {
@@ -85,13 +90,17 @@ async function getCrossEncoder(
   if (!encoderPromise || encoderKey !== key) {
     encoderKey = key
     encoderPromise = (async () => {
-      const { AutoModelForSequenceClassification, AutoTokenizer } =
-        await import('@huggingface/transformers')
-      const tokenizer = await AutoTokenizer.from_pretrained(modelId)
-      const model = await AutoModelForSequenceClassification.from_pretrained(
-        modelId,
-        { dtype },
-      )
+      const transformers = await import('@huggingface/transformers')
+      const cacheDir = resolveRerankCacheDir()
+      if (cacheDir) {
+        transformers.env.cacheDir = cacheDir
+      }
+      const tokenizer = await transformers.AutoTokenizer.from_pretrained(modelId)
+      const model =
+        await transformers.AutoModelForSequenceClassification.from_pretrained(
+          modelId,
+          { dtype },
+        )
       return {
         tokenizer: tokenizer as unknown as CrossEncoderTokenizer,
         model: model as unknown as CrossEncoderModel,

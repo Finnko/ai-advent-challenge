@@ -46,6 +46,8 @@ echo "== 1/7 · /etc/ai-advent.env =="
   printf 'JOBS_DB_PATH=/var/lib/ai-advent/jobs.sqlite\n'
   printf 'SUPPORT_DB_PATH=/var/lib/ai-advent/support.sqlite\n'
   printf 'RAG_EMBED_DTYPE=q8\n'
+  printf 'RAG_EMBED_CACHE_DIR=/var/lib/ai-advent/hf-cache\n'
+  printf 'RAG_RERANK_CACHE_DIR=/var/lib/ai-advent/hf-cache\n'
   printf 'AGENT_MCP_DEMO_ENTRY=%s/dist/server/mcp/mcp-demo.mjs\n' "$REMOTE_DIR"
   printf 'AGENT_MCP_JOBS_ENTRY=%s/dist/server/mcp/mcp-jobs.mjs\n' "$REMOTE_DIR"
   printf 'SUPPORT_MCP_OZON_ENTRY=%s/dist/server/mcp/mcp-support-ozon.mjs\n' "$REMOTE_DIR"
@@ -93,6 +95,7 @@ rsh_script <<REMOTE
 set -euo pipefail
 install -m 644 "$REMOTE_DIR/deploy/ai-advent.service" /etc/systemd/system/ai-advent.service
 install -m 644 "$REMOTE_DIR/deploy/ai-advent-support.service" /etc/systemd/system/ai-advent-support.service
+install -d -m 700 -o aiadvent -g aiadvent /var/lib/ai-advent/hf-cache
 install -m 644 "$REMOTE_DIR/deploy/ai-advent-tick.service" /etc/systemd/system/ai-advent-tick.service
 install -m 644 "$REMOTE_DIR/deploy/ai-advent-tick.timer" /etc/systemd/system/ai-advent-tick.timer
 systemctl daemon-reload
