@@ -1,0 +1,61 @@
+[
+  {
+    "id": "seller_1042",
+    "name": "ИП Соколова А. С.",
+    "legalForm": "ИП",
+    "status": "blocked",
+    "statusReason": "Не подтверждены документы на товарный знак",
+    "tariff": "Базовый",
+    "scheme": "FBS",
+    "registeredAt": "2024-03-12",
+    "apiKeys": [
+      {
+        "label": "Основной ключ",
+        "last4": "7f2a",
+        "expiresAt": "2027-03-12"
+      }
+    ],
+    "restrictions": ["Доступ в личный кабинет ограничен до проверки документов"]
+  },
+  {
+    "id": "seller_2087",
+    "name": "ООО «Северный лён»",
+    "legalForm": "ООО",
+    "status": "active",
+    "statusReason": null,
+    "tariff": "Комфорт",
+    "scheme": "FBO",
+    "registeredAt": "2023-11-02",
+    "apiKeys": [
+      {
+        "label": "Ключ для аналитики",
+        "last4": "c18d",
+        "expiresAt": "2027-01-15"
+      },
+      {
+        "label": "Ключ для заказов",
+        "last4": "4b90",
+        "expiresAt": "2026-12-01"
+      }
+    ],
+    "restrictions": []
+  },
+  {
+    "id": "seller_3310",
+    "name": "ИП Гафаров Р. М.",
+    "legalForm": "ИП",
+    "status": "active",
+    "statusReason": null,
+    "tariff": "Базовый",
+    "scheme": "FBS",
+    "registeredAt": "2025-01-20",
+    "apiKeys": [
+      {
+        "label": "Основной ключ",
+        "last4": "9a31",
+        "expiresAt": "2027-01-20"
+      }
+    ],
+    "restrictions": []
+  }
+]

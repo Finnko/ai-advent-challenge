@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as LayoutRouteRouteImport } from './routes/_layout/route'
+import { Route as SupportRouteImport } from './routes/support'
 import { Route as LayoutIndexRouteImport } from './routes/_layout/index'
 import { Route as LayoutAgentRouteImport } from './routes/_layout/agent'
 import { Route as LayoutAgentMemoryRouteImport } from './routes/_layout/agent-memory'
@@ -28,9 +29,17 @@ import { Route as LayoutRagRouteImport } from './routes/_layout/rag'
 import { Route as JobsTickRouteImport } from './routes/jobs.tick'
 import { Route as LayoutAutoReviewIndexRouteImport } from './routes/_layout/auto-review.index'
 import { Route as LayoutAutoReviewProjectKeyRouteImport } from './routes/_layout/auto-review.$projectKey'
+import { Route as ApiSupportAskRouteImport } from './routes/api/support/ask'
+import { Route as ApiSupportHealthRouteImport } from './routes/api/support/health'
+import { Route as ApiSupportSellersRouteImport } from './routes/api/support/sellers'
 
 const LayoutRouteRoute = LayoutRouteRouteImport.update({
   id: '/_layout',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SupportRoute = SupportRouteImport.update({
+  id: '/support',
+  path: '/support',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LayoutIndexRoute = LayoutIndexRouteImport.update({
@@ -124,9 +133,25 @@ const LayoutAutoReviewProjectKeyRoute =
     path: '/$projectKey',
     getParentRoute: () => LayoutAutoReviewRoute,
   } as any)
+const ApiSupportAskRoute = ApiSupportAskRouteImport.update({
+  id: '/api/support/ask',
+  path: '/api/support/ask',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSupportHealthRoute = ApiSupportHealthRouteImport.update({
+  id: '/api/support/health',
+  path: '/api/support/health',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSupportSellersRoute = ApiSupportSellersRouteImport.update({
+  id: '/api/support/sellers',
+  path: '/api/support/sellers',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof LayoutIndexRoute
+  '/support': typeof SupportRoute
   '/agent': typeof LayoutAgentRoute
   '/agent-memory': typeof LayoutAgentMemoryRoute
   '/agent-profile': typeof LayoutAgentProfileRoute
@@ -143,9 +168,13 @@ export interface FileRoutesByFullPath {
   '/rag': typeof LayoutRagRoute
   '/jobs/tick': typeof JobsTickRoute
   '/auto-review/$projectKey': typeof LayoutAutoReviewProjectKeyRoute
+  '/api/support/ask': typeof ApiSupportAskRoute
+  '/api/support/health': typeof ApiSupportHealthRoute
+  '/api/support/sellers': typeof ApiSupportSellersRoute
   '/auto-review/': typeof LayoutAutoReviewIndexRoute
 }
 export interface FileRoutesByTo {
+  '/support': typeof SupportRoute
   '/agent': typeof LayoutAgentRoute
   '/agent-memory': typeof LayoutAgentMemoryRoute
   '/agent-profile': typeof LayoutAgentProfileRoute
@@ -162,11 +191,15 @@ export interface FileRoutesByTo {
   '/jobs/tick': typeof JobsTickRoute
   '/': typeof LayoutIndexRoute
   '/auto-review/$projectKey': typeof LayoutAutoReviewProjectKeyRoute
+  '/api/support/ask': typeof ApiSupportAskRoute
+  '/api/support/health': typeof ApiSupportHealthRoute
+  '/api/support/sellers': typeof ApiSupportSellersRoute
   '/auto-review': typeof LayoutAutoReviewIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_layout': typeof LayoutRouteRouteWithChildren
+  '/support': typeof SupportRoute
   '/_layout/agent': typeof LayoutAgentRoute
   '/_layout/agent-memory': typeof LayoutAgentMemoryRoute
   '/_layout/agent-profile': typeof LayoutAgentProfileRoute
@@ -184,12 +217,16 @@ export interface FileRoutesById {
   '/jobs/tick': typeof JobsTickRoute
   '/_layout/': typeof LayoutIndexRoute
   '/_layout/auto-review/$projectKey': typeof LayoutAutoReviewProjectKeyRoute
+  '/api/support/ask': typeof ApiSupportAskRoute
+  '/api/support/health': typeof ApiSupportHealthRoute
+  '/api/support/sellers': typeof ApiSupportSellersRoute
   '/_layout/auto-review/': typeof LayoutAutoReviewIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/support'
     | '/agent'
     | '/agent-memory'
     | '/agent-profile'
@@ -206,9 +243,13 @@ export interface FileRouteTypes {
     | '/rag'
     | '/jobs/tick'
     | '/auto-review/$projectKey'
+    | '/api/support/ask'
+    | '/api/support/health'
+    | '/api/support/sellers'
     | '/auto-review/'
   fileRoutesByTo: FileRoutesByTo
   to:
+    | '/support'
     | '/agent'
     | '/agent-memory'
     | '/agent-profile'
@@ -225,10 +266,14 @@ export interface FileRouteTypes {
     | '/jobs/tick'
     | '/'
     | '/auto-review/$projectKey'
+    | '/api/support/ask'
+    | '/api/support/health'
+    | '/api/support/sellers'
     | '/auto-review'
   id:
     | '__root__'
     | '/_layout'
+    | '/support'
     | '/_layout/agent'
     | '/_layout/agent-memory'
     | '/_layout/agent-profile'
@@ -246,12 +291,19 @@ export interface FileRouteTypes {
     | '/jobs/tick'
     | '/_layout/'
     | '/_layout/auto-review/$projectKey'
+    | '/api/support/ask'
+    | '/api/support/health'
+    | '/api/support/sellers'
     | '/_layout/auto-review/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   LayoutRouteRoute: typeof LayoutRouteRouteWithChildren
+  SupportRoute: typeof SupportRoute
   JobsTickRoute: typeof JobsTickRoute
+  ApiSupportAskRoute: typeof ApiSupportAskRoute
+  ApiSupportHealthRoute: typeof ApiSupportHealthRoute
+  ApiSupportSellersRoute: typeof ApiSupportSellersRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -261,6 +313,13 @@ declare module '@tanstack/react-router' {
       path: ''
       fullPath: '/'
       preLoaderRoute: typeof LayoutRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/support': {
+      id: '/support'
+      path: '/support'
+      fullPath: '/support'
+      preLoaderRoute: typeof SupportRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_layout/': {
@@ -389,6 +448,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutAutoReviewProjectKeyRouteImport
       parentRoute: typeof LayoutAutoReviewRoute
     }
+    '/api/support/ask': {
+      id: '/api/support/ask'
+      path: '/api/support/ask'
+      fullPath: '/api/support/ask'
+      preLoaderRoute: typeof ApiSupportAskRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/support/health': {
+      id: '/api/support/health'
+      path: '/api/support/health'
+      fullPath: '/api/support/health'
+      preLoaderRoute: typeof ApiSupportHealthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/support/sellers': {
+      id: '/api/support/sellers'
+      path: '/api/support/sellers'
+      fullPath: '/api/support/sellers'
+      preLoaderRoute: typeof ApiSupportSellersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -447,7 +527,11 @@ const LayoutRouteRouteWithChildren = LayoutRouteRoute._addFileChildren(
 
 const rootRouteChildren: RootRouteChildren = {
   LayoutRouteRoute: LayoutRouteRouteWithChildren,
+  SupportRoute: SupportRoute,
   JobsTickRoute: JobsTickRoute,
+  ApiSupportAskRoute: ApiSupportAskRoute,
+  ApiSupportHealthRoute: ApiSupportHealthRoute,
+  ApiSupportSellersRoute: ApiSupportSellersRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -154,4 +154,31 @@ describe('callCompletions retry', () => {
     ).rejects.toThrow('fetch failed')
     expect(calls()).toBe(1)
   })
+
+  it('передаёт AbortSignal в fetch и прерывает запрос', async () => {
+    const controller = new AbortController()
+    let seen: AbortSignal | undefined
+    const impl = (async (
+      _url: string,
+      init?: RequestInit,
+    ): Promise<Response> => {
+      seen = init?.signal ?? undefined
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => {
+          reject(Object.assign(new Error('aborted'), { name: 'AbortError' }))
+        })
+      })
+    }) as unknown as typeof fetch
+
+    const promise = callCompletions(
+      ENDPOINT,
+      'key',
+      MESSAGES,
+      {},
+      { fetchImpl: impl, attempts: 1, signal: controller.signal },
+    )
+    expect(seen).toBe(controller.signal)
+    controller.abort()
+    await expect(promise).rejects.toThrow('aborted')
+  })
 })

@@ -1,0 +1,41 @@
+[
+  {
+    "id": "product_3310-1",
+    "sellerId": "seller_3310",
+    "name": "Органайзер для кухни",
+    "status": "rejected",
+    "moderationErrors": [
+      "В описании указан бренд, которого нет в документах",
+      "Нет сертификата соответствия для категории «Кухня»"
+    ],
+    "price": 1190,
+    "stock": 14
+  },
+  {
+    "id": "product_3310-2",
+    "sellerId": "seller_3310",
+    "name": "Подставка для специй",
+    "status": "pending",
+    "moderationErrors": [],
+    "price": 790,
+    "stock": 0
+  },
+  {
+    "id": "product_1042-1",
+    "sellerId": "seller_1042",
+    "name": "Набор для ванной «Бриз»",
+    "status": "moderated",
+    "moderationErrors": [],
+    "price": 1490,
+    "stock": 32
+  },
+  {
+    "id": "product_2087-1",
+    "sellerId": "seller_2087",
+    "name": "Комплект постельного белья «Лён»",
+    "status": "moderated",
+    "moderationErrors": [],
+    "price": 3290,
+    "stock": 118
+  }
+]

@@ -7,15 +7,17 @@ import {
   type DocumentRecord,
 } from '@lib/rag-engine.server'
 import type { AnswerGenerator, CorpusDocStatus } from '@lib/rag-engine.types'
+import { createMarkdownChunker } from '@lib/chunking/markdown.server'
 import {
   answerAboutProject,
   DEV_ASSISTANT_STRATEGY,
   type ProjectAnswerResult,
 } from './core.server'
 import { collectGitContext } from './git-context.server'
-import { markdownChunker } from './markdown-chunker.server'
 import { createProjectCorpus, resolveRepoRoot } from './project-corpus.server'
 import { getDevAssistantStore } from './store.server'
+
+const markdownChunker = createMarkdownChunker({ id: DEV_ASSISTANT_STRATEGY })
 
 export { DEV_ASSISTANT_STRATEGY }
 

@@ -33,7 +33,7 @@ export function createLocalAnswerLlm(): AnswerLlm {
         max_tokens: options?.maxTokens ?? ANSWER_MAX_TOKENS,
         ...(options?.json ? { response_format: { type: 'json_object' } } : {}),
       },
-      { endpoint: resolveRagEndpoint() },
+      { endpoint: resolveRagEndpoint(), signal: options?.signal },
     )
     return {
       content: reply.content,

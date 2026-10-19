@@ -33,6 +33,7 @@ export function resolveLocalEndpoint(): CompletionEndpoint {
 export type LocalLlmDeps = {
   fetchImpl?: typeof fetch
   endpoint?: CompletionEndpoint
+  signal?: AbortSignal
 }
 
 export async function runLocalChat(
@@ -51,6 +52,7 @@ export async function runLocalChat(
       attempts: 2,
       baseDelayMs: 200,
       extraBody: { chat_template_kwargs: { enable_thinking: false } },
+      signal: deps.signal,
     },
   )
 }
@@ -71,6 +73,7 @@ export function streamLocalChat(
       attempts: 2,
       baseDelayMs: 200,
       extraBody: { chat_template_kwargs: { enable_thinking: false } },
+      signal: deps.signal,
     },
   )
 }

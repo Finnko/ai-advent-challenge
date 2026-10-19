@@ -89,6 +89,7 @@ export type CallCompletionsOptions = {
   baseDelayMs?: number
   fetchImpl?: typeof fetch
   extraBody?: Record<string, unknown>
+  signal?: AbortSignal
 }
 
 function causeCode(error: unknown): string | null {
@@ -160,6 +161,7 @@ async function openCompletion(
           Authorization: `Bearer ${apiKey}`,
         },
         body,
+        signal: options.signal,
       })
     } catch (error) {
       if (!isLast && isRetryableError(error)) {

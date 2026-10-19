@@ -1,0 +1,66 @@
+[
+  {
+    "postingNumber": "posting_1042-1",
+    "sellerId": "seller_1042",
+    "status": "awaiting_packaging",
+    "createdAt": "2026-10-13T14:22:00Z",
+    "shipBy": "2026-10-15T18:00:00Z",
+    "warehouse": "Хоругвино",
+    "products": [
+      {
+        "sku": "SKU-1042-01",
+        "name": "Набор для ванной «Бриз»",
+        "quantity": 2,
+        "price": 1490
+      }
+    ]
+  },
+  {
+    "postingNumber": "posting_1042-2",
+    "sellerId": "seller_1042",
+    "status": "delivered",
+    "createdAt": "2026-10-10T09:05:00Z",
+    "shipBy": "2026-10-12T18:00:00Z",
+    "warehouse": "Хоругвино",
+    "products": [
+      {
+        "sku": "SKU-1042-02",
+        "name": "Коврик для ванной «Мята»",
+        "quantity": 1,
+        "price": 890
+      }
+    ]
+  },
+  {
+    "postingNumber": "posting_2087-1",
+    "sellerId": "seller_2087",
+    "status": "awaiting_deliver",
+    "createdAt": "2026-10-14T11:00:00Z",
+    "shipBy": "2026-10-18T18:00:00Z",
+    "warehouse": "Тверь",
+    "products": [
+      {
+        "sku": "SKU-2087-01",
+        "name": "Комплект постельного белья «Лён»",
+        "quantity": 3,
+        "price": 3290
+      }
+    ]
+  },
+  {
+    "postingNumber": "posting_3310-1",
+    "sellerId": "seller_3310",
+    "status": "delivered",
+    "createdAt": "2026-10-09T16:40:00Z",
+    "shipBy": "2026-10-11T18:00:00Z",
+    "warehouse": "Хоругвино",
+    "products": [
+      {
+        "sku": "SKU-3310-01",
+        "name": "Органайзер для кухни",
+        "quantity": 1,
+        "price": 1190
+      }
+    ]
+  }
+]

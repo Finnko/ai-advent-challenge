@@ -16,6 +16,7 @@ export type AnswerLlmResult = {
 export type AnswerLlmOptions = {
   json?: boolean
   maxTokens?: number
+  signal?: AbortSignal
 }
 
 export type AnswerLlm = (
@@ -35,6 +36,7 @@ export function createDeepSeekLlm(params: DeepSeekParams): AnswerLlm {
       apiKeyFor('DEEPSEEK_API_KEY'),
       messages,
       merged,
+      { signal: options?.signal },
     )
     return {
       content: reply.content,

@@ -1,0 +1,14 @@
+export const SUPPORT_STRATEGY = 'support'
+export const SUPPORT_K = 6
+export const SUPPORT_RETRIEVAL_K = 24
+export const SUPPORT_LEXICAL_BOOST = 0.03
+export const SUPPORT_CONTEXT_MAX_CHARS = 6000
+export const SUPPORT_MAX_QUESTION_CHARS = 800
+export const SUPPORT_MAX_BODY_BYTES = 4096
+export const SUPPORT_TIMEOUT_MS = 45_000
+export const SUPPORT_IP_PER_HOUR = 30
+export const SUPPORT_GLOBAL_PER_HOUR = 60
+export const SUPPORT_DAILY_MAX = 200
+export const SUPPORT_QUEUE_DEPTH = 2
+export const SUPPORT_QUEUE_WAIT_MS = 15_000
+export const SUPPORT_ID_RE = /^[a-z][a-z0-9_-]{2,40}$/
