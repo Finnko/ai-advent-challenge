@@ -6,6 +6,7 @@ import {
   readdir,
   rm,
   mkdir,
+  stat,
   writeFile,
 } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -47,23 +48,39 @@ async function downloadArchive(target) {
   await writeFile(target, buffer)
 }
 
+async function requireDir(path) {
+  const info = await stat(path).catch(() => null)
+  if (info?.isDirectory()) {
+    return
+  }
+  throw new Error(
+    `В зеркале нет каталога ${path}: структура апстрима изменилась.`,
+  )
+}
+
 async function extract(archive) {
   const work = await mkdtemp(join(tmpdir(), 'ozon-corpus-'))
-  await run('tar', ['-xzf', archive, '-C', work])
-  const [top] = await readdir(work)
-  if (!top) {
-    throw new Error('Архив зеркала пуст.')
+  try {
+    await run('tar', ['-xzf', archive, '-C', work])
+    const [top] = await readdir(work)
+    if (!top) {
+      throw new Error('Архив зеркала пуст.')
+    }
+    const ozon = join(work, top, 'ozon')
+    const kb = join(ozon, 'kb')
+    const guides = join(ozon, 'api', 'seller', 'guides')
+    await requireDir(kb)
+    await requireDir(guides)
+    await mkdir(join(CACHE_DIR, 'ozon', 'api', 'seller'), { recursive: true })
+    await cp(kb, join(CACHE_DIR, 'ozon', 'kb'), {
+      recursive: true,
+    })
+    await cp(guides, join(CACHE_DIR, 'ozon', 'api', 'seller', 'guides'), {
+      recursive: true,
+    })
+  } finally {
+    await rm(work, { recursive: true, force: true })
   }
-  await mkdir(join(CACHE_DIR, 'ozon', 'api', 'seller'), { recursive: true })
-  await cp(join(work, top, 'ozon', 'kb'), join(CACHE_DIR, 'ozon', 'kb'), {
-    recursive: true,
-  })
-  await cp(
-    join(work, top, 'ozon', 'api', 'seller', 'guides'),
-    join(CACHE_DIR, 'ozon', 'api', 'seller', 'guides'),
-    { recursive: true },
-  )
-  await rm(work, { recursive: true, force: true })
 }
 
 async function main() {

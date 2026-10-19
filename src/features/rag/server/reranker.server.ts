@@ -92,14 +92,15 @@ async function getCrossEncoder(
     encoderPromise = (async () => {
       const transformers = await import('@huggingface/transformers')
       const cacheDir = resolveRerankCacheDir()
-      if (cacheDir) {
-        transformers.env.cacheDir = cacheDir
-      }
-      const tokenizer = await transformers.AutoTokenizer.from_pretrained(modelId)
+      const cacheOptions = cacheDir ? { cache_dir: cacheDir } : {}
+      const tokenizer = await transformers.AutoTokenizer.from_pretrained(
+        modelId,
+        cacheOptions,
+      )
       const model =
         await transformers.AutoModelForSequenceClassification.from_pretrained(
           modelId,
-          { dtype },
+          { dtype, ...cacheOptions },
         )
       return {
         tokenizer: tokenizer as unknown as CrossEncoderTokenizer,

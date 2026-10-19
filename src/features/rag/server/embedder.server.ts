@@ -73,11 +73,9 @@ async function getExtractor(
     extractorPromise = (async () => {
       const transformers = await import('@huggingface/transformers')
       const cacheDir = resolveEmbedCacheDir()
-      if (cacheDir) {
-        transformers.env.cacheDir = cacheDir
-      }
       const pipe = await transformers.pipeline('feature-extraction', modelId, {
         dtype,
+        ...(cacheDir ? { cache_dir: cacheDir } : {}),
       })
       return pipe as unknown as Extractor
     })()

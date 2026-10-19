@@ -77,7 +77,7 @@ echo "build ok: dist/server/mcp/mcp-{jobs,research,market,support-ozon}.mjs"
 REMOTE
 
 echo "== 4/7 · support.sqlite =="
-SCP_DB="/tmp/support-seed-$$.sqlite"
+SCP_DB="/root/support-seed-$$.sqlite"
 scp_to "$LOCAL_SUPPORT_DB" "$SCP_DB"
 rsh_script <<REMOTE
 set -euo pipefail
